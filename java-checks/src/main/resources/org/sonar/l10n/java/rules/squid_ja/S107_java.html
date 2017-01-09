@@ -1,0 +1,17 @@
+<p>長いパラメータリストは、多数のパラメータをラップするために新しいデータクラスを作成する必要があること、または関数が多くのことを行っていることを示しています。</p>
+<h2>違反コード例</h2>
+<p>パラメータの最大数 4:</p>
+<pre>
+public void doSomething(int param1, int param2, int param3, String param4, long param5) {
+...
+}
+</pre>
+<h2>準拠方法</h2>
+<pre>
+public void doSomething(int param1, int param2, int param3, String param4) {
+...
+}
+</pre>
+<h2>例外</h2>
+<p>Springの<code>@RequestMapping</code>でアノテーションを付けられたメソッドには、多くのパラメータがあり、カプセル化が可能です。したがって、そのようなメソッドは
+無視されます。</p>

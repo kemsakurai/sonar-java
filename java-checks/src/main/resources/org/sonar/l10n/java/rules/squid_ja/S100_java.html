@@ -1,0 +1,16 @@
+<p>命名規則を共有することにより、チームが効率的に共同作業することができます。このルールは、すべてのメソッド名が与えられた正規表現と一致することを確認します。</p>
+<h2>違反コード例</h2>
+<p>デフォルトで提供される正規表現 <code>^[a-z][a-zA-Z0-9]*$</code>:</p>
+<pre>
+public int DoSomething(){...}
+</pre>
+<h2>準拠方法</h2>
+<pre>
+public int doSomething(){...}
+</pre>
+<h2>例外</h2>
+<p>オーバーライドメソッドは除外されます。</p>
+<pre>
+@Override
+public int Do_Something(){...}
+</pre>

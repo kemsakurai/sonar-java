@@ -1,0 +1,21 @@
+<p>メッセージをログに記録する際、満たされなければならないいくつかの重要な要件があります。</p>
+<ul>
+  <li>ユーザーは簡単にログを取得することができなければなりません</li>
+  <li>すべてログに記録されたメッセージの形式は、ユーザーが簡単にログを読むことができるように、統一する必要があります</li>
+  <li>記録対象データは、実際に記録しなければなりません</li>
+  <li>機密データはセキュアな形式で記録しなければなりません</li>
+</ul>
+<p>プログラムが直接標準出力に書き込む場合、これらの要件を遵守することができません。そのため、専用ロガーの定義と使用を強く推奨します。</p>
+<h2>違反コード例</h2>
+<pre>
+System.out.println("My Message");  // Noncompliant
+</pre>
+<h2>準拠方法</h2>
+<pre>
+logger.log("My Message");
+</pre>
+<h2>参考</h2>
+<ul>
+  <li> <a href="https://www.jpcert.or.jp/java-rules/err02-j.html">JPCERT, ERR02-J.</a> - ログ保存中の例外発生を防ぐ</li>
+  <li> <a href="https://www.securecoding.cert.org/confluence/x/RoElAQ">CERT, ERR02-J.</a> - Prevent exceptions while logging data </li>
+</ul>
