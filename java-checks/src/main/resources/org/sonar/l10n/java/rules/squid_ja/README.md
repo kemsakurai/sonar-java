@@ -115,8 +115,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S1126_java.json
 - [ ] S1128_java.html
 - [ ] S1128_java.json
-- [ ] S112_java.html
-- [ ] S112_java.json
+- [X] S112_java.html
+- [X] S112_java.json
 - [ ] S1130_java.html
 - [ ] S1130_java.json
 - [ ] S1132_java.html
@@ -127,8 +127,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S1134_java.json
 - [ ] S1135_java.html
 - [ ] S1135_java.json
-- [ ] S113_java.html
-- [ ] S113_java.json
+- [X] S113_java.html
+- [X] S113_java.json
 - [ ] S1141_java.html
 - [ ] S1141_java.json
 - [ ] S1142_java.html
@@ -145,8 +145,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S1148_java.json
 - [ ] S1149_java.html
 - [ ] S1149_java.json
-- [ ] S114_java.html
-- [ ] S114_java.json
+- [X] S114_java.html
+- [X] S114_java.json
 - [ ] S1150_java.html
 - [ ] S1150_java.json
 - [ ] S1151_java.html
@@ -159,8 +159,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S1157_java.json
 - [ ] S1158_java.html
 - [ ] S1158_java.json
-- [ ] S115_java.html
-- [ ] S115_java.json
+- [X] S115_java.html
+- [X] S115_java.json
 - [ ] S1160_java.html
 - [ ] S1160_java.json
 - [ ] S1161_java.html
@@ -175,8 +175,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S1166_java.json
 - [ ] S1168_java.html
 - [ ] S1168_java.json
-- [ ] S116_java.html
-- [ ] S116_java.json
+- [X] S116_java.html
+- [X] S116_java.json
 - [ ] S1170_java.html
 - [ ] S1170_java.json
 - [ ] S1171_java.html
