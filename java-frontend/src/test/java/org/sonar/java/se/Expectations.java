@@ -1,7 +1,7 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2016 SonarSource SA
- * mailto:contact AT sonarsource DOT com
+ * Copyright (C) 2012-2017 SonarSource SA
+ * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -250,7 +250,10 @@ class Expectations {
 
     @Override
     public void visitTrivia(SyntaxTrivia syntaxTrivia) {
-      collectExpectedIssues(syntaxTrivia.comment(), syntaxTrivia.startLine());
+      // ignore whole commented lines
+      if (syntaxTrivia.column() != 0) {
+        collectExpectedIssues(syntaxTrivia.comment(), syntaxTrivia.startLine());
+      }
     }
 
     @VisibleForTesting

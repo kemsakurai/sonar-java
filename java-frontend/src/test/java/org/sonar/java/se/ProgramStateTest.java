@@ -1,7 +1,7 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2016 SonarSource SA
- * mailto:contact AT sonarsource DOT com
+ * Copyright (C) 2012-2017 SonarSource SA
+ * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -76,7 +76,8 @@ public class ProgramStateTest {
     state = state.put(variable, sv4);
     SymbolicValue sv5 = new SymbolicValue(5);
     state = state.stackValue(sv5);
-    assertThat(state.toString()).isEqualTo("{ A#x->SV_4}  { SV_0_NULL->NULL SV_1_TRUE->TRUE SV_2_FALSE->FALSE} { [SV_5, SV_3] }");
+    state.lastEvaluated = variable;
+    assertThat(state.toString()).isEqualTo("{ A#x->SV_4}  { SV_0_NULL->NULL SV_1_TRUE->TRUE SV_2_FALSE->FALSE} { [SV_5, SV_3] } { A#x } ");
   }
 
   @Test

@@ -1,7 +1,7 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2016 SonarSource SA
- * mailto:contact AT sonarsource DOT com
+ * Copyright (C) 2012-2017 SonarSource SA
+ * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -22,7 +22,6 @@ package org.sonar.java.checks;
 import com.google.common.collect.ImmutableList;
 import org.sonar.check.Rule;
 import org.sonar.java.model.ModifiersUtils;
-import org.sonar.java.model.declaration.MethodTreeImpl;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.tree.AnnotationTree;
@@ -57,18 +56,13 @@ public class MethodOnlyCallsSuperCheck extends IssuableSubscriptionVisitor {
     }
     MethodTree methodTree = (MethodTree) tree;
     if (isSingleStatementMethod(methodTree) && isUselessSuperCall(methodTree)
-      && !hasAnnotationDifferentFromOverride(methodTree.modifiers().annotations()) && !isFinalObjectMethod(methodTree)) {
+      && !hasAnnotationDifferentFromOverride(methodTree.modifiers().annotations()) && !isFinal(methodTree)) {
       reportIssue(methodTree.simpleName(), "Remove this method to simply inherit it.");
     }
   }
 
-  private boolean isFinalObjectMethod(MethodTree methodTree) {
-    MethodTreeImpl methodTreeImpl = (MethodTreeImpl) methodTree;
-    return hasSemantic() && ModifiersUtils.hasModifier(methodTree.modifiers(), Modifier.FINAL) && isObjectMethod(methodTreeImpl);
-  }
-
-  private static boolean isObjectMethod(MethodTreeImpl methodTreeImpl) {
-    return methodTreeImpl.isEqualsMethod() || methodTreeImpl.isHashCodeMethod() || methodTreeImpl.isToStringMethod();
+  private static boolean isFinal(MethodTree methodTree) {
+    return ModifiersUtils.hasModifier(methodTree.modifiers(), Modifier.FINAL);
   }
 
   private static boolean isSingleStatementMethod(MethodTree methodTree) {

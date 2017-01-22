@@ -1,7 +1,7 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2016 SonarSource SA
- * mailto:contact AT sonarsource DOT com
+ * Copyright (C) 2012-2017 SonarSource SA
+ * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -193,7 +193,7 @@ public class ProgramState {
 
   @Override
   public String toString() {
-    return "{" + values.toString() + "}  {" + constraints.toString() + "}" + " { " + stack.toString() + " }";
+    return "{" + values.toString() + "}  {" + constraints.toString() + "}" + " { " + stack.toString() + " }" + " { " + getLastEvaluated() + " } ";
   }
 
   public ProgramState addConstraint(SymbolicValue symbolicValue, Constraint constraint) {
@@ -365,11 +365,11 @@ public class ProgramState {
     return values.get(symbol);
   }
 
-  public Map<SymbolicValue, ObjectConstraint> getValuesWithConstraints(final Object state) {
-    final Map<SymbolicValue, ObjectConstraint> result = new HashMap<>();
+  public Map<SymbolicValue, ObjectConstraint<ObjectConstraint.Status>> getValuesWithConstraints(final Object state) {
+    final Map<SymbolicValue, ObjectConstraint<ObjectConstraint.Status>> result = new HashMap<>();
     constraints.forEach((symbolicValue, valueConstraint) -> {
       if (valueConstraint instanceof ObjectConstraint) {
-        ObjectConstraint constraint = (ObjectConstraint) valueConstraint;
+        ObjectConstraint<ObjectConstraint.Status> constraint = (ObjectConstraint<ObjectConstraint.Status>) valueConstraint;
         if (constraint.hasStatus(state)) {
           result.put(symbolicValue, constraint);
         }

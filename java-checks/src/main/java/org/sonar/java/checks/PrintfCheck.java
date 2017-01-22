@@ -1,7 +1,7 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2016 SonarSource SA
- * mailto:contact AT sonarsource DOT com
+ * Copyright (C) 2012-2017 SonarSource SA
+ * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -347,9 +347,9 @@ public class PrintfCheck extends AbstractMethodDetection {
 
   private void checkTimeTypeArgument(MethodInvocationTree mit, Type argType) {
     if (!(argType.isNumerical()
-      || isTypeOfAny(argType, "java.lang.Long", "java.time.LocalDate")
-      || isSubtypeOfAny(argType, "java.util.Date", "java.util.Calendar"))) {
-      reportIssue(mit, "Time argument is expected (long, Long, LocalDate, Date or Calendar).");
+      || isTypeOfAny(argType, "java.lang.Long")
+      || isSubtypeOfAny(argType, "java.util.Date", "java.util.Calendar", "java.time.temporal.TemporalAccessor"))) {
+      reportIssue(mit, "Time argument is expected (long, Long, Calendar, Date and TemporalAccessor).");
     }
   }
 

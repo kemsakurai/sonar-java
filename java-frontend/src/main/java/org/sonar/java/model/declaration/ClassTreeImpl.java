@@ -1,7 +1,7 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2016 SonarSource SA
- * mailto:contact AT sonarsource DOT com
+ * Copyright (C) 2012-2017 SonarSource SA
+ * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -46,10 +46,8 @@ import java.util.List;
 public class ClassTreeImpl extends JavaTree implements ClassTree {
 
   private final Kind kind;
-  @Nullable
   private final SyntaxToken openBraceToken;
   private final List<Tree> members;
-  @Nullable
   private final SyntaxToken closeBraceToken;
   private ModifiersTree modifiers;
   private SyntaxToken atToken;
@@ -165,7 +163,6 @@ public class ClassTreeImpl extends JavaTree implements ClassTree {
     return superInterfaces;
   }
 
-  @Nullable
   @Override
   public SyntaxToken openBraceToken() {
     return openBraceToken;
@@ -176,7 +173,6 @@ public class ClassTreeImpl extends JavaTree implements ClassTree {
     return members;
   }
 
-  @Nullable
   @Override
   public SyntaxToken closeBraceToken() {
     return closeBraceToken;
@@ -223,9 +219,9 @@ public class ClassTreeImpl extends JavaTree implements ClassTree {
       addIfNotNull(superClass),
       addIfNotNull(implementsKeyword),
       Collections.singletonList(superInterfaces),
-      addIfNotNull(openBraceToken),
+      Collections.singletonList(openBraceToken),
       members,
-      addIfNotNull(closeBraceToken)
+      Collections.singletonList(closeBraceToken)
     );
   }
 

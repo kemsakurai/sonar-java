@@ -1,7 +1,7 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2016 SonarSource SA
- * mailto:contact AT sonarsource DOT com
+ * Copyright (C) 2012-2017 SonarSource SA
+ * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -52,8 +52,18 @@ public class DivisionByZeroCheck extends SECheck {
         return "zero";
       }
     },
-    NON_ZERO,
-    UNDETERMINED
+    NON_ZERO {
+      @Override
+      public String valueAsString() {
+        return "non-zero";
+      }
+    },
+    UNDETERMINED {
+      @Override
+      public String valueAsString() {
+        return "\"maybe-zero\"";
+      }
+    }
   }
 
   /**
@@ -229,7 +239,7 @@ public class DivisionByZeroCheck extends SECheck {
       if (expression.is(Tree.Kind.IDENTIFIER)) {
         String name = ((IdentifierTree) expression).name();
         expressionName = "'" + name + "'";
-        flowMessage = name + " is divided by zero";
+        flowMessage = expressionName + " is divided by zero";
       } else {
         expressionName = "this expression";
         flowMessage = "this expression contains division by zero";

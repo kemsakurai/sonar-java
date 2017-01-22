@@ -1,7 +1,7 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2016 SonarSource SA
- * mailto:contact AT sonarsource DOT com
+ * Copyright (C) 2012-2017 SonarSource SA
+ * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -28,6 +28,7 @@ import org.sonar.plugins.java.api.tree.ParenthesizedTree;
 import org.sonar.plugins.java.api.tree.SwitchStatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.TypeCastTree;
+import org.sonar.plugins.java.api.tree.VariableTree;
 
 public class SyntaxTreeNameFinder extends BaseTreeVisitor {
 
@@ -75,6 +76,15 @@ public class SyntaxTreeNameFinder extends BaseTreeVisitor {
       name = ((MemberSelectExpressionTree) methodSelect).identifier().name();
     } else {
       methodSelect.accept(this);
+    }
+  }
+
+  @Override
+  public void visitVariable(VariableTree tree) {
+    if (tree.initializer() == null) {
+      name = tree.simpleName().name();
+    } else {
+      super.visitVariable(tree);
     }
   }
 }

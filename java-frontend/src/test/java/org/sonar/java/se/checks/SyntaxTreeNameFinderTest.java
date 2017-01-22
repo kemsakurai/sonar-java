@@ -1,7 +1,7 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2016 SonarSource SA
- * mailto:contact AT sonarsource DOT com
+ * Copyright (C) 2012-2017 SonarSource SA
+ * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -83,5 +83,17 @@ public class SyntaxTreeNameFinderTest {
     BlockTree block = tree.block();
     StatementTree statementTree = block.body().get(0);
     assertThat(SyntaxTreeNameFinder.getName(statementTree)).isEqualTo("checkForNullMethod");
+  }
+
+  @Test
+  public void testCatchParameter() {
+    MethodTree tree = buildSyntaxTree("public void test() {try {} catch (Exception ex) {} }");
+    assertThat(SyntaxTreeNameFinder.getName(tree)).isEqualTo("ex");
+  }
+
+  @Test
+  public void testVariableWithInitializer() {
+    MethodTree tree = buildSyntaxTree("public void test() {int i = length;}");
+    assertThat(SyntaxTreeNameFinder.getName(tree)).isEqualTo("length");
   }
 }

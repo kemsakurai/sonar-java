@@ -1,7 +1,7 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2016 SonarSource SA
- * mailto:contact AT sonarsource DOT com
+ * Copyright (C) 2012-2017 SonarSource SA
+ * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -109,9 +109,9 @@ public class NullDereferenceCheck extends SECheck {
     String symbolName = SyntaxTreeNameFinder.getName(syntaxNode);
     String msg;
     if (syntaxNode.is(Tree.Kind.MEMBER_SELECT) && ((MemberSelectExpressionTree) syntaxNode).expression().is(Tree.Kind.METHOD_INVOCATION)) {
-      msg = String.format("Result of %s() is dereferenced", symbolName);
+      msg = String.format("Result of '%s()' is dereferenced", symbolName);
     } else {
-      msg = String.format("%s is dereferenced", symbolName);
+      msg = String.format("'%s' is dereferenced", symbolName);
     }
     flow.add(0, new JavaFileScannerContext.Location(msg, syntaxNode));
   }
