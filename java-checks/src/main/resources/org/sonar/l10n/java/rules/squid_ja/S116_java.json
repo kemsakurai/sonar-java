@@ -1,0 +1,13 @@
+{
+  "title": "フィールド名は命名規則に準拠する必要があります。",
+  "type": "CODE_SMELL",
+  "status": "ready",
+  "remediation": {
+    "func": "Constant\/Issue",
+    "constantCost": "2min"
+  },
+  "tags": [
+    "convention"
+  ],
+  "defaultSeverity": "Minor"
+}

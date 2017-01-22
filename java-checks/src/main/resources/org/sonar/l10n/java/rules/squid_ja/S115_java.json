@@ -1,0 +1,13 @@
+{
+  "title": "定数名は命名規則に従うべきです",
+  "type": "CODE_SMELL",
+  "status": "ready",
+  "remediation": {
+    "func": "Constant\/Issue",
+    "constantCost": "2min"
+  },
+  "tags": [
+    "convention"
+  ],
+  "defaultSeverity": "Critical"
+}

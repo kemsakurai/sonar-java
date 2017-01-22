@@ -1,0 +1,28 @@
+<p><code>Error</code>、<code>RuntimeException</code>、<code>Throwable</code>、<code>Exception</code>等の一般的な例外を使用すると、
+本当のシステムエラーと、アプリケーションエラーを区別してハンドリングすることを妨げてしまいます。</p>
+<h2>違反コード例</h2>
+<pre>
+public void foo(String bar) throws Throwable {  // Noncompliant
+  throw new RuntimeException("My Message");     // Noncompliant
+}
+</pre>
+<h2>準拠方法</h2>
+<pre>
+public void foo(String bar) {
+  throw new MyOwnRuntimeException("My Message");
+}
+</pre>
+<h2>例外</h2>
+<p>オーバーライドされたメソッド内の一般的な例外は無視されます。</p>
+<pre>
+@Override
+public void myMethod() throws Exception {...}
+</pre>
+<h2>参考</h2>
+<ul>
+  <li> <a href="http://cwe.mitre.org/data/definitions/397.html">MITRE, CWE-397</a> - Declaration of Throws for Generic Exception </li>
+  <li> <a href="https://www.jpcert.or.jp/java-rules/err07-j.html">JPCERT, ERR07-J.</a> - RuntimeException, Exception, Throwable をスローしない
+  </li>
+  <li> <a href="https://www.securecoding.cert.org/confluence/x/BoB3AQ">CERT, ERR07-J.</a> - Do not throw RuntimeException, Exception, or Throwable
+  </li>
+</ul>

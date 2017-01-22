@@ -1,0 +1,15 @@
+<p>いくつかの命名規則を共有することは、チームが効率的にコラボレーションすることを可能にする重要なポイントです。 このルールでは、フィールド名が指定された正規表現と一致するかどうかを検証します。</p>
+<h2>違反コード例</h2>
+<p>デフォルトで提供される正規表現 <code>^[a-z][a-zA-Z0-9]*$</code>:</p>
+<pre>
+class MyClass {
+   private int my_field;
+}
+</pre>
+<h2>準拠方法</h2>
+<pre>
+class MyClass {
+   private int myField;
+}
+</pre>
+

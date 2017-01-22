@@ -1,0 +1,12 @@
+<p>いくつかの命名規則を共有することは、チームが効率的にコラボレーションすることを可能にする重要なポイントです。 このルールは、
+インタフェース名は、指定された正規表現と一致する検証します。</p>
+<h2>違反コード例</h2>
+<p>デフォルトで提供される正規表現 <code>^[A-Z][a-zA-Z0-9]*$</code>:</p>
+<pre>
+public interface myInterface {...} // Noncompliant
+</pre>
+<h2>準拠方法</h2>
+<pre>
+public interface MyInterface {...}
+</pre>
+

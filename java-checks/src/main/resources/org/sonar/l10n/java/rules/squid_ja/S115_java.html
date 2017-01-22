@@ -1,0 +1,23 @@
+<p>共有コーディング規則により、チームは効率的にコラボレーションすることができます。 このルールは、すべての定数名が指定された正規表現と一致するかどうかを検証します。</p>
+<h2>違反コード例</h2>
+<p>デフォルトで提供される正規表現 <code>^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$</code>:</p>
+<pre>
+public class MyClass {
+  public static final int first = 1;
+}
+
+public enum MyEnum {
+  first;
+}
+</pre>
+<h2>準拠方法</h2>
+<pre>
+public class MyClass {
+  public static final int FIRST = 1;
+}
+
+public enum MyEnum {
+  FIRST;
+}
+</pre>
+

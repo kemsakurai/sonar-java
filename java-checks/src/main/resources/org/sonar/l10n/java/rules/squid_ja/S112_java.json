@@ -1,0 +1,20 @@
+{
+  "title": "スローする例外が一般的すぎます",
+  "type": "BUG",
+  "status": "ready",
+  "remediation": {
+    "func": "Constant\/Issue",
+    "constantCost": "20min"
+  },
+  "tags": [
+    "cwe",
+    "error-handling",
+    "bug",
+    "cert"
+  ],
+  "standards": [
+    "CWE",
+    "CERT"
+  ],
+  "defaultSeverity": "Major"
+}
