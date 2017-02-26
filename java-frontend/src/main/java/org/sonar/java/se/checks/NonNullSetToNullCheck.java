@@ -19,6 +19,8 @@
  */
 package org.sonar.java.se.checks;
 
+import com.google.common.collect.Lists;
+
 import org.sonar.check.Rule;
 import org.sonar.java.cfg.CFG;
 import org.sonar.java.model.ExpressionUtils;
@@ -26,8 +28,8 @@ import org.sonar.java.resolve.JavaSymbol;
 import org.sonar.java.resolve.Scope;
 import org.sonar.java.se.CheckerContext;
 import org.sonar.java.se.ProgramState;
-import org.sonar.java.se.constraint.Constraint;
 import org.sonar.java.se.constraint.ConstraintManager;
+import org.sonar.java.se.constraint.ObjectConstraint;
 import org.sonar.java.se.symbolicvalues.SymbolicValue;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.SymbolMetadata;
@@ -45,9 +47,8 @@ import org.sonar.plugins.java.api.tree.VariableTree;
 
 import javax.annotation.CheckForNull;
 import javax.annotation.Nullable;
+
 import java.text.MessageFormat;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -158,7 +159,7 @@ public class NonNullSetToNullCheck extends SECheck {
         String nonNullAnnotation = nonNullAnnotation(symbol);
         if (nonNullAnnotation != null) {
           SymbolicValue assignedValue = programState.peekValue();
-          Constraint constraint = programState.getConstraint(assignedValue);
+          ObjectConstraint constraint = programState.getConstraint(assignedValue, ObjectConstraint.class);
           if (constraint != null && constraint.isNull()) {
             reportIssue(tree, "\"{0}\" is marked \"{1}\" but is set to null.", symbol.name(), nonNullAnnotation);
           }
@@ -171,9 +172,8 @@ public class NonNullSetToNullCheck extends SECheck {
       Symbol symbol = syntaxTree.constructorSymbol();
       if (symbol.isMethodSymbol()) {
         int peekSize = syntaxTree.arguments().size();
-        List<SymbolicValue> argumentValues = new ArrayList<>(programState.peekValues(peekSize));
+        List<SymbolicValue> argumentValues = Lists.reverse(programState.peekValues(peekSize));
         JavaSymbol.MethodJavaSymbol methodSymbol = (JavaSymbol.MethodJavaSymbol) symbol;
-        Collections.reverse(argumentValues);
         checkNullArguments(syntaxTree, methodSymbol.getParameters(),
           argumentValues, "Parameter {0} to this constructor is marked \"{1}\" but null is passed.");
       }
@@ -185,9 +185,7 @@ public class NonNullSetToNullCheck extends SECheck {
       if (symbol.isMethodSymbol()) {
         Arguments arguments = syntaxTree.arguments();
         int peekSize = arguments.size() + 1;
-        List<SymbolicValue> argumentValues = new ArrayList<>(programState.peekValues(peekSize));
-        argumentValues.remove(arguments.size());
-        Collections.reverse(argumentValues);
+        List<SymbolicValue> argumentValues = Lists.reverse(programState.peekValues(peekSize).subList(0, peekSize - 1));
         JavaSymbol.MethodJavaSymbol methodSymbol = (JavaSymbol.MethodJavaSymbol) symbol;
         checkNullArguments(syntaxTree, methodSymbol.getParameters(),
           argumentValues, "Parameter {0} to this call is marked \"{1}\" but null is passed.");
@@ -211,7 +209,7 @@ public class NonNullSetToNullCheck extends SECheck {
     protected void checkNullArgument(Tree syntaxTree, String message, List<JavaSymbol> scopeSymbols, List<SymbolicValue> argumentValues, int i) {
       String nonNullAnnotation = nonNullAnnotation(scopeSymbols.get(i));
       if (nonNullAnnotation != null) {
-        Constraint constraint = programState.getConstraint(argumentValues.get(i));
+        ObjectConstraint constraint = programState.getConstraint(argumentValues.get(i), ObjectConstraint.class);
         if (constraint != null && constraint.isNull()) {
           reportIssue(syntaxTree, message, Integer.valueOf(i + 1), nonNullAnnotation);
         }
@@ -255,7 +253,7 @@ public class NonNullSetToNullCheck extends SECheck {
 
     private void checkReturnedValue(ReturnStatementTree tree, String nonNullAnnotation) {
       SymbolicValue returnedValue = programState.peekValue();
-      Constraint constraint = programState.getConstraint(returnedValue);
+      ObjectConstraint constraint = programState.getConstraint(returnedValue, ObjectConstraint.class);
       if (constraint != null && constraint.isNull()) {
         reportIssue(tree, "This method''s return value is marked \"{0}\" but null is returned.", nonNullAnnotation);
       }

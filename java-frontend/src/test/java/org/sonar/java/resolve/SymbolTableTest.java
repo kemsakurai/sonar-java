@@ -529,6 +529,17 @@ public class SymbolTableTest {
   }
 
   @Test
+  public void StrictThenLooseInvocationContext() {
+    Result result = Result.createFor("StrictThenLooseInvocationContext");
+    JavaSymbol fooA = result.symbol("foo", 2);
+    JavaSymbol fooC = result.symbol("foo", 12);
+
+    assertThat(fooA).isSameAs(result.reference(9, 5));
+    assertThat(fooA.usages()).hasSize(1);
+    assertThat(fooC.usages()).hasSize(0);
+  }
+
+  @Test
   public void ConstructorWithEnclosingClass() {
     Result result = Result.createFor("ConstructorWithEnclosingClass");
 
@@ -1118,6 +1129,19 @@ public class SymbolTableTest {
   }
 
   @Test
+  public void method_references_type_defered_should_not_raise_npe() throws Exception {
+    Result result = Result.createFor("MethodReferencesDeferedType");
+    LambdaExpressionTree lambda = (LambdaExpressionTree) result.symbol("qualifier").declaration().parent();
+    Type symbolType = ((MethodInvocationTree) lambda.body()).symbolType();
+    assertThat(symbolType.is("java.util.stream.Stream")).isTrue() ;
+    assertThat(symbolType).isInstanceOf(ParametrizedTypeJavaType.class);
+    List<JavaType> substitutedTypes = ((ParametrizedTypeJavaType) symbolType).typeSubstitution.substitutedTypes();
+    assertThat(substitutedTypes).hasSize(1);
+    assertThat(substitutedTypes.get(0).is("Qualifier")).isTrue();
+
+  }
+
+  @Test
   public void MethodReferencesNoArguments() throws Exception {
     Result result = Result.createFor("MethodReferencesNoArguments");
 
@@ -1391,6 +1415,9 @@ public class SymbolTableTest {
     Result result = Result.createFor("DoubleLambda");
     JavaSymbol my = result.symbol("my");
     assertThat(my.usages()).hasSize(2);
+    LambdaExpressionTree outerLambda = ((LambdaExpressionTree) result.symbol("l").declaration().parent());
+    Type nestedLambdaType = ((ExpressionTree) outerLambda.body()).symbolType();
+    assertThat(nestedLambdaType.is("Issue$Flow")).as("Issue$Flow was expected but got : " + nestedLambdaType.fullyQualifiedName()).isTrue();
   }
 
   @Test
@@ -1478,5 +1505,11 @@ public class SymbolTableTest {
   public void functionTypes_should_respect_JLS_in_regard_to_wildcards() throws Exception {
     Result result = Result.createFor("FunctionTypesComputation");
     assertThat(result.symbol("method").usages()).hasSize(1);
+  }
+
+  @Test
+  public void type_inference_should_be_triggered_on_cast_expression() throws Exception {
+    Result result = Result.createFor("CastTargetType");
+    assertThat(result.symbol("s").usages()).hasSize(1);
   }
 }

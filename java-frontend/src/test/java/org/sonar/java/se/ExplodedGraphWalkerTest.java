@@ -20,7 +20,9 @@
 package org.sonar.java.se;
 
 import com.google.common.reflect.ClassPath;
+
 import org.junit.Test;
+import org.sonar.java.resolve.SemanticModel;
 import org.sonar.java.se.checks.ConditionAlwaysTrueOrFalseCheck;
 import org.sonar.java.se.checks.CustomUnclosedResourcesCheck;
 import org.sonar.java.se.checks.DivisionByZeroCheck;
@@ -29,6 +31,10 @@ import org.sonar.java.se.checks.NonNullSetToNullCheck;
 import org.sonar.java.se.checks.NullDereferenceCheck;
 import org.sonar.java.se.checks.SECheck;
 import org.sonar.java.se.checks.UnclosedResourcesCheck;
+import org.sonar.java.se.symbolicvalues.SymbolicValue;
+import org.sonar.java.se.xproc.MethodBehavior;
+import org.sonar.java.se.xproc.MethodYield;
+import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
@@ -36,7 +42,9 @@ import org.sonar.plugins.java.api.tree.Tree;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -55,7 +63,7 @@ public class ExplodedGraphWalkerTest {
     JavaCheckVerifier.verifyNoIssue("src/test/files/se/SeEngineTestCleanupState.java", new SymbolicExecutionVisitor(Collections.emptyList()) {
       @Override
       public void visitNode(Tree tree) {
-        ExplodedGraphWalker explodedGraphWalker = new ExplodedGraphWalker(false);
+        ExplodedGraphWalker explodedGraphWalker = new ExplodedGraphWalker(this.behaviorCache, (SemanticModel) context.getSemanticModel(), false);
         explodedGraphWalker.visitMethod((MethodTree) tree, new MethodBehavior(((MethodTree) tree).symbol()));
         steps[0] += explodedGraphWalker.steps;
       }
@@ -63,8 +71,9 @@ public class ExplodedGraphWalkerTest {
     JavaCheckVerifier.verifyNoIssue("src/test/files/se/SeEngineTestCleanupState.java", new SymbolicExecutionVisitor(Collections.emptyList()) {
       @Override
       public void visitNode(Tree tree) {
-        ExplodedGraphWalker explodedGraphWalker = new ExplodedGraphWalker();
-        explodedGraphWalker.visitMethod((MethodTree) tree, new MethodBehavior(((MethodTree) tree).symbol()));
+        ExplodedGraphWalker explodedGraphWalker = new ExplodedGraphWalker(this.behaviorCache, (SemanticModel) context.getSemanticModel());
+        MethodTree methodTree = (MethodTree) tree;
+        explodedGraphWalker.visitMethod(methodTree, new MethodBehavior(methodTree.symbol()));
         steps[1] += explodedGraphWalker.steps;
       }
     });
@@ -78,36 +87,105 @@ public class ExplodedGraphWalkerTest {
   }
 
   @Test
-  public void use_false_branch_on_loop_when_reaching_max_exec_program_point() {
-    ExplodedGraph.ProgramPoint[] programPoints = new ExplodedGraph.ProgramPoint[2];
-    ExplodedGraphWalker explodedGraphWalker = new ExplodedGraphWalker() {
+  public void exception_catched_in_loop() throws Exception {
+    JavaCheckVerifier.verify("src/test/files/se/LoopExceptionField.java", seChecks());
+  }
 
-      boolean shouldEnqueueFalseBranch = false;
+  @Test
+  public void different_exceptions_lead_to_different_program_states_with_catch_exception_block() {
+    Set<Type> encounteredExceptions = new HashSet<>();
+    int[] tested = {0};
 
-      @Override
-      public void enqueue(ExplodedGraph.ProgramPoint programPoint, ProgramState programState, boolean exitPath) {
-        int nbOfExecution = programState.numberOfTimeVisited(programPoint);
-        if (nbOfExecution > MAX_EXEC_PROGRAM_POINT) {
-          shouldEnqueueFalseBranch = true;
-          programPoints[0] = programPoint;
-        } else {
-          shouldEnqueueFalseBranch = false;
-        }
-        int workListSize = workList.size();
+    JavaCheckVerifier.verifyNoIssue("src/test/files/se/ExceptionalSymbolicValueStacked.java", new SymbolicExecutionVisitor(Collections.emptyList()) {
 
-        super.enqueue(programPoint, programState, exitPath);
+      private ExplodedGraphWalker explodedGraphWalker;
 
-        assertThat(workList.size()).isEqualTo(workListSize + 1);
-        if (shouldEnqueueFalseBranch) {
-          assertThat(programPoints[1]).isNull();
-          programPoints[1] = workList.peekFirst().programPoint;
-        }
-      }
-    };
-    JavaCheckVerifier.verifyNoIssue("src/test/files/se/SeEngineTestMaxExecProgramPoint.java", new SymbolicExecutionVisitor(Collections.emptyList()) {
       @Override
       public void visitNode(Tree tree) {
-        explodedGraphWalker.visitMethod((MethodTree) tree, new MethodBehavior(((MethodTree) tree).symbol()));
+        if (explodedGraphWalker == null) {
+          explodedGraphWalker = new ExplodedGraphWalker(this.behaviorCache, (SemanticModel) context.getSemanticModel()) {
+
+            private ExplodedGraph.Node firstExceptionalNode = null;
+
+            @Override
+            public void enqueue(ProgramPoint newProgramPoint, ProgramState programState, boolean exitPath, MethodYield methodYield) {
+              SymbolicValue.ExceptionalSymbolicValue exceptionSV = null;
+              SymbolicValue peekValue = programState.peekValue();
+              boolean getNode = false;
+              if (peekValue instanceof SymbolicValue.ExceptionalSymbolicValue) {
+                exceptionSV = (SymbolicValue.ExceptionalSymbolicValue) peekValue;
+                Type exceptionType = exceptionSV.exceptionType();
+                if (exceptionType != null && (exceptionType.is("org.foo.MyException1") || exceptionType.is("org.foo.MyException2"))) {
+                  encounteredExceptions.add(exceptionType);
+                  getNode = true;
+                }
+              }
+              int workListSize = workList.size();
+              super.enqueue(newProgramPoint, programState, exitPath, methodYield);
+
+              if (getNode) {
+                if (firstExceptionalNode == null) {
+                  firstExceptionalNode = workList.peekFirst();
+                }
+                assertThat(workList.size()).as("Should have created a new node in the graph for each of the exceptions").isEqualTo(workListSize + 1);
+                assertThat(workList.peekFirst().programState.peekValue()).as("Exceptional Symbolic Value should stay on the stack").isEqualTo(exceptionSV);
+                tested[0]++;
+              }
+            };
+          };
+        }
+
+        MethodTree methodTree = (MethodTree) tree;
+        if ("foo".equals(methodTree.symbol().name())) {
+          explodedGraphWalker.visitMethod(methodTree, new MethodBehavior(methodTree.symbol()));
+        } else {
+          super.visitNode(methodTree);
+        }
+      };
+    });
+
+    assertThat(encounteredExceptions).hasSize(2);
+    assertThat(tested[0]).isEqualTo(2);
+  }
+
+  @Test
+  public void use_false_branch_on_loop_when_reaching_max_exec_program_point() {
+    ProgramPoint[] programPoints = new ProgramPoint[2];
+    JavaCheckVerifier.verifyNoIssue("src/test/files/se/SeEngineTestMaxExecProgramPoint.java", new SymbolicExecutionVisitor(Collections.emptyList()) {
+
+      private ExplodedGraphWalker explodedGraphWalker = null;
+
+      @Override
+      public void visitNode(Tree tree) {
+        if (explodedGraphWalker == null) {
+          explodedGraphWalker = new ExplodedGraphWalker(this.behaviorCache, (SemanticModel) context.getSemanticModel()) {
+
+            boolean shouldEnqueueFalseBranch = false;
+
+            @Override
+            public void enqueue(ProgramPoint programPoint, ProgramState programState, boolean exitPath) {
+              int nbOfExecution = programState.numberOfTimeVisited(programPoint);
+              if (nbOfExecution > MAX_EXEC_PROGRAM_POINT) {
+                shouldEnqueueFalseBranch = true;
+                programPoints[0] = programPoint;
+              } else {
+                shouldEnqueueFalseBranch = false;
+              }
+              int workListSize = workList.size();
+
+              super.enqueue(programPoint, programState, exitPath);
+
+              assertThat(workList.size()).isEqualTo(workListSize + 1);
+              if (shouldEnqueueFalseBranch) {
+                assertThat(programPoints[1]).isNull();
+                programPoints[1] = workList.peekFirst().programPoint;
+              }
+            }
+          };
+        }
+
+        MethodTree methodTree = (MethodTree) tree;
+        explodedGraphWalker.visitMethod(methodTree, new MethodBehavior(methodTree.symbol()));
       }
     });
 
@@ -128,7 +206,8 @@ public class ExplodedGraphWalkerTest {
       @Override
       public void visitNode(Tree tree) {
         try {
-          new ExplodedGraphWalker().visitMethod((MethodTree) tree, new MethodBehavior(((MethodTree) tree).symbol()));
+          MethodTree methodTree = (MethodTree) tree;
+          new ExplodedGraphWalker(this.behaviorCache, (SemanticModel) context.getSemanticModel()).visitMethod(methodTree, new MethodBehavior(methodTree.symbol()));
         } catch (ExplodedGraphWalker.MaximumStepsReachedException exception) {
           fail("loop execution should be limited");
         }
@@ -142,7 +221,8 @@ public class ExplodedGraphWalkerTest {
       @Override
       public void visitNode(Tree tree) {
         try {
-          new ExplodedGraphWalker().visitMethod((MethodTree) tree, new MethodBehavior(((MethodTree) tree).symbol()));
+          MethodTree methodTree = (MethodTree) tree;
+          new ExplodedGraphWalker(this.behaviorCache, (SemanticModel) context.getSemanticModel()).visitMethod(methodTree, new MethodBehavior(methodTree.symbol()));
           fail("Too many states were processed !");
         } catch (ExplodedGraphWalker.MaximumStepsReachedException exception) {
           assertThat(exception.getMessage()).startsWith("reached limit of 16000 steps for method");
@@ -162,7 +242,8 @@ public class ExplodedGraphWalkerTest {
       @Override
       public void visitNode(Tree tree) {
         try {
-          new ExplodedGraphWalker().visitMethod((MethodTree) tree, new MethodBehavior(((MethodTree) tree).symbol()));
+          MethodTree methodTree = (MethodTree) tree;
+          new ExplodedGraphWalker(this.behaviorCache, (SemanticModel) context.getSemanticModel()).visitMethod(methodTree, new MethodBehavior(methodTree.symbol()));
           fail("Too many states were processed !");
         } catch (ExplodedGraphWalker.MaximumStepsReachedException exception) {
           assertThat(exception.getMessage()).startsWith("reached maximum number of 10000 branched states");
@@ -200,6 +281,31 @@ public class ExplodedGraphWalkerTest {
   @Test
   public void xproc_usage_of_exceptional_path_and_branching() throws Exception {
     JavaCheckVerifier.verify("src/test/files/se/XProcExceptionalBranching.java", seChecks());
+  }
+
+  @Test
+  public void xproc_usage_of_exceptional_path_and_branching_with_reporting() throws Exception {
+    JavaCheckVerifier.verify("src/test/files/se/XProcExceptionalBranchingReporting.java", seChecks());
+  }
+
+  @Test
+  public void xproc_keep_yield_for_reporting() throws Exception {
+    JavaCheckVerifier.verifyNoIssue("src/test/files/se/YieldReporting.java", new SymbolicExecutionVisitor(Collections.emptyList()) {
+      @Override
+      public void visitNode(Tree tree) {
+        MethodTree methodTree = (MethodTree) tree;
+        if ("test".equals(methodTree.symbol().name())) {
+          ExplodedGraphWalker egw = new ExplodedGraphWalker(this.behaviorCache, (SemanticModel) context.getSemanticModel());
+          egw.visitMethod(methodTree, null);
+          assertThat(egw.checkerDispatcher.methodYield).isNull();
+        }
+      }
+    });
+  }
+
+  @Test
+  public void test_this_super_not_null() throws Exception {
+    JavaCheckVerifier.verify("src/test/files/se/ThisSuperNotNull.java", seChecks());
   }
 
   static class MethodAsInstruction extends SECheck {

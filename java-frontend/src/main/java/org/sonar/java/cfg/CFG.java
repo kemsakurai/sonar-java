@@ -29,6 +29,7 @@ import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.ArrayAccessExpressionTree;
 import org.sonar.plugins.java.api.tree.ArrayDimensionTree;
+import org.sonar.plugins.java.api.tree.AssertStatementTree;
 import org.sonar.plugins.java.api.tree.AssignmentExpressionTree;
 import org.sonar.plugins.java.api.tree.BinaryExpressionTree;
 import org.sonar.plugins.java.api.tree.BlockTree;
@@ -103,7 +104,10 @@ public class CFG {
     Block successorBlock;
 
     public void addCatch(Type type, Block catchBlock) {
-      if (type.is("java.lang.Exception") || type.is("java.lang.Throwable") || type.isSubtypeOf("java.lang.RuntimeException")) {
+      if (type.is("java.lang.Exception")
+        || type.is("java.lang.Throwable")
+        || type.is("java.lang.Error")
+        || type.isSubtypeOf("java.lang.RuntimeException")) {
         runtimeCatches.add(catchBlock);
       }
       catches.put(type, catchBlock);
@@ -128,7 +132,7 @@ public class CFG {
     computePredecessors(blocks);
   }
 
-  private Block exitBlock() {
+  public Block exitBlock() {
     return exitBlocks.peek();
   }
 
@@ -482,7 +486,7 @@ public class CFG {
         break;
       // assert can be ignored by VM so skip them for now.
       case ASSERT_STATEMENT:
-        // Ignore assert statement as they are disabled by default in JVM
+        buildAssertStatement((AssertStatementTree) tree);
         break;
       // store declarations as complete blocks.
       case EMPTY_STATEMENT:
@@ -932,6 +936,12 @@ public class CFG {
     currentBlock.elements.add(tree);
     build(tree.dimensions());
     build(tree.initializers());
+  }
+
+  private void buildAssertStatement(AssertStatementTree assertStatementTree) {
+    currentBlock.elements.add(assertStatementTree);
+    // Ignore detail expression as it is only evaluated when assertion is false.
+    build(assertStatementTree.condition());
   }
 
   private Block createUnconditionalJump(Tree terminator, @Nullable Block target) {

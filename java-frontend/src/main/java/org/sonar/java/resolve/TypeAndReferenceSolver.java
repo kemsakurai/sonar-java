@@ -23,6 +23,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Maps;
+
 import org.sonar.java.ast.api.JavaKeyword;
 import org.sonar.java.model.AbstractTypedTree;
 import org.sonar.java.model.declaration.VariableTreeImpl;
@@ -565,16 +566,18 @@ public class TypeAndReferenceSolver extends BaseTreeVisitor {
     if (refinedReturnType != capturedReturnType) {
       // found a lambda return type different from the one infered : update infered type
       if (expressionType.isTagged(JavaType.PARAMETERIZED)) {
+        ParametrizedTypeJavaType functionType = (ParametrizedTypeJavaType) resolve.functionType((ParametrizedTypeJavaType) expressionType);
         TypeSubstitution typeSubstitution = ((ParametrizedTypeJavaType) expressionType).typeSubstitution;
         typeSubstitution.substitutionEntries().stream()
           .filter(e -> e.getValue() == capturedReturnType)
+          .map(Map.Entry::getKey)
           .findFirst()
-          .ifPresent(e -> {
-            TypeSubstitution refinedSubstitution = new TypeSubstitution(typeSubstitution).add(e.getKey(), refinedReturnType);
-            JavaType refinedType = parametrizedTypeCache.getParametrizedTypeType(expressionType.symbol, refinedSubstitution);
+          .ifPresent(t -> {
             if(refinedReturnType instanceof DeferredType) {
-              setInferedType(refinedType, (DeferredType) refinedReturnType);
+              setInferedType(functionType.typeSubstitution.substitutedType(t), (DeferredType) refinedReturnType);
             } else  {
+              TypeSubstitution refinedSubstitution = new TypeSubstitution(typeSubstitution).add(t, refinedReturnType);
+              JavaType refinedType = parametrizedTypeCache.getParametrizedTypeType(expressionType.symbol, refinedSubstitution);
               expression.setType(refinedType);
             }
           });
@@ -858,7 +861,12 @@ public class TypeAndReferenceSolver extends BaseTreeVisitor {
   public void visitTypeCast(TypeCastTree tree) {
     resolveAs(tree.type(), JavaSymbol.TYP);
     resolveAs(tree.expression(), JavaSymbol.VAR);
-    registerType(tree, getType(tree.type()));
+    JavaType castType = getType(tree.type());
+    Type expressionType = tree.expression().symbolType();
+    if(expressionType instanceof DeferredType) {
+      setInferedType(castType, (DeferredType) expressionType);
+    }
+    registerType(tree, castType);
   }
 
   @Override
@@ -935,32 +943,37 @@ public class TypeAndReferenceSolver extends BaseTreeVisitor {
   public void visitMethodReference(MethodReferenceTree methodReferenceTree) {
     MethodReferenceTreeImpl methodRefTree = (MethodReferenceTreeImpl) methodReferenceTree;
     if (methodRefTree.isTypeSet() && methodReferenceTree.typeArguments() == null) {
-      JavaType methodRefType = (JavaType) methodRefTree.symbolType();
-      resolve.getSamMethod(methodRefType).ifPresent(samMethod -> {
-        JavaType samReturnType = (JavaType) samMethod.returnType().type();
-        List<JavaType> samMethodArgs = resolve.findSamMethodArgs(methodRefType);
-        Resolution resolution = resolve.findMethodReference(semanticModel.getEnv(methodReferenceTree), samMethodArgs, methodRefTree);
-        JavaSymbol methodSymbol = resolution.symbol();
-        if (methodSymbol.isMethodSymbol()) {
-          IdentifierTree methodIdentifier = methodRefTree.method();
-          addMethodRefReference(methodIdentifier, methodSymbol);
-          setMethodRefType(methodRefTree, methodRefType, resolution.type());
-
-          JavaType capturedReturnType = resolve.resolveTypeSubstitution(samReturnType, methodRefType);
-          JavaType refinedReturnType = ((MethodJavaType) methodIdentifier.symbolType()).resultType();
-          if ("<init>".equals(methodSymbol.name)) {
-            refinedReturnType = refinedTypeForConstructor(capturedReturnType, refinedReturnType);
-          }
-          refineType(methodRefTree, methodRefType, capturedReturnType, refinedReturnType);
-        } else {
-          handleNewArray(methodRefTree, methodRefType, samReturnType);
-        }
-      });
+      resolve.getSamMethod((JavaType) methodRefTree.symbolType()).ifPresent(samMethod -> resolveMethodReference(samMethod, methodRefTree));
     } else {
       // TODO : SONARJAVA-1663 : consider type arguments for method resolution and substitution
       scan(methodReferenceTree.typeArguments());
       resolveAs(methodReferenceTree.expression(), JavaSymbol.VAR | JavaSymbol.TYP);
       registerType(methodRefTree, symbols.deferedType(methodRefTree));
+    }
+  }
+
+  private void resolveMethodReference(JavaSymbol.MethodJavaSymbol samMethod, MethodReferenceTreeImpl methodRefTree) {
+    JavaType methodRefType = (JavaType) methodRefTree.symbolType();
+    JavaType samReturnType = (JavaType) samMethod.returnType().type();
+    List<JavaType> samMethodArgs = resolve.findSamMethodArgs(methodRefType);
+    Resolution resolution = resolve.findMethodReference(semanticModel.getEnv(methodRefTree), samMethodArgs, methodRefTree);
+    JavaSymbol methodSymbol = resolution.symbol();
+    if (methodSymbol.isMethodSymbol()) {
+      IdentifierTree methodIdentifier = methodRefTree.method();
+      addMethodRefReference(methodIdentifier, methodSymbol);
+      setMethodRefType(methodRefTree, methodRefType, resolution.type());
+
+      JavaType capturedReturnType = resolve.resolveTypeSubstitution(samReturnType, methodRefType);
+      JavaType refinedReturnType = ((MethodJavaType) methodIdentifier.symbolType()).resultType();
+      if ("<init>".equals(methodSymbol.name)) {
+        refinedReturnType = refinedTypeForConstructor(capturedReturnType, refinedReturnType);
+      }
+      if (refinedReturnType instanceof DeferredType) {
+        ((DeferredType) refinedReturnType).setTree((AbstractTypedTree) methodRefTree.method());
+      }
+      refineType(methodRefTree, methodRefType, capturedReturnType, refinedReturnType);
+    } else {
+      handleNewArray(methodRefTree, methodRefType, samReturnType);
     }
   }
 

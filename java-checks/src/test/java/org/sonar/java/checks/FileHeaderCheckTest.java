@@ -78,7 +78,7 @@ public class FileHeaderCheckTest {
   @Test
   public void regex() {
     FileHeaderCheck check = new FileHeaderCheck();
-    check.headerFormat = "// copyright \\d\\d\\d";
+    check.headerFormat = "^// copyright \\d\\d\\d";
     check.isRegularExpression = true;
     JavaCheckVerifier.verifyIssueOnFile("src/test/files/checks/FileHeaderCheck/Regex1.java", "Add or update the header of this file.", check);
     // Check that the regular expression is compiled once
@@ -107,7 +107,7 @@ public class FileHeaderCheckTest {
     thrown.expectMessage("[" + FileHeaderCheck.class.getSimpleName() + "] Unable to compile the regular expression: *");
 
     FileHeaderCheck check = new FileHeaderCheck();
-    check.headerFormat = "*";
+    check.headerFormat = "**";
     check.isRegularExpression = true;
     check.scanFile(mock(JavaFileScannerContext.class));
   }

@@ -20,7 +20,9 @@
 package org.sonar.java.se.checks;
 
 import org.junit.Test;
+
 import org.sonar.java.model.expression.MethodInvocationTreeImpl;
+import org.sonar.java.se.FlowComputation;
 import org.sonar.java.se.JavaCheckVerifier;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
 
@@ -33,13 +35,18 @@ import static org.mockito.Mockito.mock;
 public class FlowComputationTest {
 
   @Test
-  public void learned_symbol() throws Exception {
+  public void test() throws Exception {
     JavaCheckVerifier.verify("src/test/files/se/FlowComputation.java", new NullDereferenceCheck(), new ConditionAlwaysTrueOrFalseCheck());
   }
 
   @Test
-  public void catof() throws Exception {
+  public void test_catof() throws Exception {
     JavaCheckVerifier.verify("src/test/files/se/FlowComputationCATOF.java", new NullDereferenceCheck(), new ConditionAlwaysTrueOrFalseCheck());
+  }
+
+  @Test
+  public void test_messages_on_method_invocation() throws Exception {
+    JavaCheckVerifier.verify("src/test/files/se/FlowComputationMIT.java", new NullDereferenceCheck(), new ConditionAlwaysTrueOrFalseCheck());
   }
 
   @Test
@@ -50,5 +57,21 @@ public class FlowComputationTest {
     List<JavaFileScannerContext.Location> flow = singleton.iterator().next();
     assertThat(flow).hasSize(1);
     assertThat(flow.get(0).msg).isEqualTo("singleton msg");
+  }
+
+  @Test
+  public void test_relational_sv_operands() throws Exception {
+    JavaCheckVerifier.verify("src/test/files/se/FlowComputationRelSV.java", new NullDereferenceCheck(), new ConditionAlwaysTrueOrFalseCheck());
+  }
+
+  @Test
+  public void test_multiple_paths() {
+    JavaCheckVerifier.verify("src/test/files/se/FlowComputationMultiplePath.java", new NullDereferenceCheck(), new ConditionAlwaysTrueOrFalseCheck());
+  }
+
+  @Test
+  public void test_multiple_paths_xproc() {
+    JavaCheckVerifier.verify("src/test/files/se/FlowComputationMultiplePathXProc.java", new NullDereferenceCheck(), new ConditionAlwaysTrueOrFalseCheck());
+
   }
 }

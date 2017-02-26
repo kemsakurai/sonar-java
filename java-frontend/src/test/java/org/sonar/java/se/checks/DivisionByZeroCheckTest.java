@@ -28,4 +28,9 @@ public class DivisionByZeroCheckTest {
   public void test() {
     JavaCheckVerifier.verify("src/test/files/se/DivisionByZeroCheck.java", new DivisionByZeroCheck());
   }
+
+  @Test
+  public void invocation_leading_to_ArithmeticException() {
+    JavaCheckVerifier.verify("src/test/files/se/MethodInvocationLeadingToArithmeticException.java", new DivisionByZeroCheck());
+  }
 }

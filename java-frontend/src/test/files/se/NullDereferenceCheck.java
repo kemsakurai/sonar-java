@@ -15,9 +15,9 @@ class NullPointerTest {
   // tests constructs that can generate an issue. namely, syntax constructs that performs a potential null dereference.
   public void testIssues() {
     //Not tested right away : those are invalid construction anyway.
-//    null[0]; //  {{null is dereferenced}}
-//    null.field; //  {{null is dereferenced}}
-//    null.method(); //  {{null is dereferenced}}
+//    null[0]; //  {{null is dereferenced.}}
+//    null.field; //  {{null is dereferenced.}}
+//    null.method(); //  {{null is dereferenced.}}
   }
 
   public Object[] field;
@@ -76,7 +76,7 @@ class NullPointerTest {
 
     i = checkForNullField.length; // False negative, instance and static fields are not checked
 
-    Object[] array2 = checkForNullMethod(); // flow@array {{'checkForNullMethod' returns null}} flow@array {{'array2' is assigned null}}
+    Object[] array2 = checkForNullMethod(); // flow@array {{'checkForNullMethod()' returns null.}} flow@array {{'array2' is assigned null.}}
     i = array2.length; // Noncompliant [[flows=array]] {{NullPointerException might be thrown as 'array2' is nullable here}} flow@array
   }
   public void testCheckNotNull(@CheckForNull Object parameter) {
@@ -534,7 +534,7 @@ class NullPointerTest {
   }
 
   public void testAssignSelfMember() {
-    LinkedListEntry entry2;
+    LinkedListEntry entry2 = null;
     entry2 = entry2.parent(); // Noncompliant
   }
 
@@ -568,7 +568,7 @@ class NullPointerTest {
     a.length();
     b.length(); // Noncompliant {{NullPointerException might be thrown as 'b' is nullable here}}
   }
-  
+
   public void test(@CheckForNull A a, @CheckForNull A b) {
     a.hashCode(); // Noncompliant
     b.hashCode(); // Noncompliant
@@ -588,14 +588,14 @@ class NullPointerTest {
   void foo(Object qix, @Nullable Object bar) {
     foo(bar, NullPointerTest.class);
   }
-  
+
 
   public void maybePropagateCancellation(@Nullable Object related) {
     if (related != null & isCancelled()) {
       related.toString();
     }
   }
-  
+
     void while_loop() {
     Object currentParent = new Object();
     while (currentParent != null) {
@@ -609,7 +609,7 @@ class NullPointerTest {
   public boolean equals(Object obj) {
     return getValue() == ((MyClass) obj).getValue(); // Noncompliant {{NullPointerException might be thrown as 'obj' is nullable here}}
   }
-  
+
   private void equalsToCheckForNull(Integer a) {
     Objeect b = checkForNullMethod();
     if (a.equals(b)) {
@@ -618,12 +618,12 @@ class NullPointerTest {
     a.toString(); // Compliant: a cannot be null hereafter
     this.checkForNullMethod().toString(); // Noncompliant {{NullPointerException might be thrown as 'checkForNullMethod' is nullable here}}
   }
-  
+
   @Nonnull
   public static String getNonNullString() {
     return "Rachmaninov";
   }
-  
+
   public static void useNonNullString() {
     String nonNullString = getNonNullString();
     if (nonNullString != null) {

@@ -21,29 +21,34 @@ package org.sonar.java.se;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
+
 import org.sonar.api.utils.log.Logger;
 import org.sonar.api.utils.log.Loggers;
 import org.sonar.java.ast.visitors.SubscriptionVisitor;
+import org.sonar.java.resolve.Flags;
+import org.sonar.java.resolve.JavaSymbol;
+import org.sonar.java.resolve.SemanticModel;
 import org.sonar.java.se.symbolicvalues.BinaryRelation;
+import org.sonar.java.se.xproc.BehaviorCache;
+import org.sonar.java.se.xproc.MethodBehavior;
 import org.sonar.plugins.java.api.JavaFileScanner;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
 import javax.annotation.CheckForNull;
-import java.util.LinkedHashMap;
+
 import java.util.List;
-import java.util.Map;
 
 public class SymbolicExecutionVisitor extends SubscriptionVisitor {
   private static final Logger LOG = Loggers.get(SymbolicExecutionVisitor.class);
 
   @VisibleForTesting
-  final Map<Symbol.MethodSymbol, MethodBehavior> behaviorCache = new LinkedHashMap<>();
-
+  public final BehaviorCache behaviorCache;
   private final ExplodedGraphWalker.ExplodedGraphWalkerFactory egwFactory;
 
   public SymbolicExecutionVisitor(List<JavaFileScanner> executableScanners) {
+    behaviorCache = new BehaviorCache(this);
     egwFactory = new ExplodedGraphWalker.ExplodedGraphWalkerFactory(executableScanners);
   }
 
@@ -60,20 +65,28 @@ public class SymbolicExecutionVisitor extends SubscriptionVisitor {
   @CheckForNull
   public MethodBehavior execute(MethodTree methodTree) {
     try {
-      MethodBehavior methodBehavior = behaviorCache.get(methodTree.symbol());
-      if(methodBehavior == null) {
-        methodBehavior = new MethodBehavior(methodTree.symbol());
-        behaviorCache.put(methodTree.symbol(), methodBehavior);
-        ExplodedGraphWalker walker = egwFactory.createWalker(this);
+      Symbol.MethodSymbol methodSymbol = methodTree.symbol();
+      ExplodedGraphWalker walker = egwFactory.createWalker(behaviorCache, (SemanticModel) context.getSemanticModel());
+      if (methodCanNotBeOverriden(methodSymbol)) {
+        MethodBehavior methodBehavior = new MethodBehavior(methodSymbol);
+        behaviorCache.add(methodSymbol, methodBehavior);
         methodBehavior = walker.visitMethod(methodTree, methodBehavior);
         methodBehavior.completed();
+        return methodBehavior;
+      } else {
+        return walker.visitMethod(methodTree);
       }
-      return methodBehavior;
     } catch (ExplodedGraphWalker.MaximumStepsReachedException | ExplodedGraphWalker.ExplodedGraphTooBigException | BinaryRelation.TransitiveRelationExceededException exception) {
       LOG.debug("Could not complete symbolic execution: ", exception);
     }
     return null;
   }
 
-
+  public static boolean methodCanNotBeOverriden(Symbol.MethodSymbol methodSymbol) {
+    if ((((JavaSymbol.MethodJavaSymbol) methodSymbol).flags() & Flags.NATIVE) != 0) {
+      return false;
+    }
+    return !methodSymbol.isAbstract() &&
+      (methodSymbol.isPrivate() || methodSymbol.isFinal() || methodSymbol.isStatic() || methodSymbol.owner().isFinal());
+  }
 }
