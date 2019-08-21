@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,177 +20,165 @@
 package org.sonar.java.se.xproc;
 
 import com.google.common.annotations.VisibleForTesting;
-import org.sonar.java.collections.PCollections;
-import org.sonar.java.collections.PMap;
-import org.sonar.java.se.SymbolicExecutionVisitor;
-import org.sonar.java.se.constraint.BooleanConstraint;
-import org.sonar.java.se.constraint.Constraint;
-import org.sonar.java.se.constraint.ObjectConstraint;
-import org.sonar.plugins.java.api.semantic.Symbol;
-import org.sonar.plugins.java.api.semantic.Type;
-import org.sonar.plugins.java.api.tree.MethodTree;
-
-import javax.annotation.CheckForNull;
+import com.google.common.collect.ImmutableSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
+import org.sonar.java.bytecode.loader.SquidClassLoader;
+import org.sonar.java.bytecode.se.BytecodeEGWalker;
+import org.sonar.java.resolve.JavaSymbol;
+import org.sonar.java.resolve.SemanticModel;
+import org.sonar.java.se.SymbolicExecutionVisitor;
+import org.sonar.plugins.java.api.semantic.Symbol;
+import org.sonar.plugins.java.api.tree.MethodTree;
 
 public class BehaviorCache {
 
-  private final SymbolicExecutionVisitor sev;
+  private final SquidClassLoader classLoader;
+  private final boolean crossFileEnabled;
+  private  SymbolicExecutionVisitor sev;
+  private  SemanticModel semanticModel;
   @VisibleForTesting
-  public final Map<Symbol.MethodSymbol, MethodBehavior> behaviors = new LinkedHashMap<>();
+  public final Map<String, MethodBehavior> behaviors = new LinkedHashMap<>();
+  private final Map<String, MethodBehavior> bytecodeBehaviors = new LinkedHashMap<>();
 
-  public BehaviorCache(SymbolicExecutionVisitor sev) {
-    this.sev = sev;
+  // methods known to be well covered using bytecode-generated behavior
+  private static final Set<String> WHITELIST = ImmutableSet.of(
+    "java.lang.Math#max",
+    "java.lang.Math#min",
+
+    "java.util.Objects#requireNonNull",
+    "java.util.Objects#nonNull",
+    "java.util.Objects#isNull",
+
+    "org.apache.commons.collections.CollectionUtils#isEmpty",
+    "org.apache.commons.collections.CollectionUtils#isNotEmpty",
+    "org.apache.commons.collections4.CollectionUtils#isEmpty",
+    "org.apache.commons.collections4.CollectionUtils#isNotEmpty",
+
+    "org.apache.commons.lang.StringUtils#isEmpty",
+    "org.apache.commons.lang.StringUtils#isNotEmpty",
+    "org.apache.commons.lang.StringUtils#isBlank",
+    "org.apache.commons.lang.StringUtils#isNotBlank",
+    "org.apache.commons.lang.Validate#notEmpty",
+    "org.apache.commons.lang.Validate#notNull",
+    "org.apache.commons.lang3.StringUtils#isEmpty",
+    "org.apache.commons.lang3.StringUtils#isNotEmpty",
+    "org.apache.commons.lang3.StringUtils#isBlank",
+    "org.apache.commons.lang3.StringUtils#isNotBlank",
+    "org.apache.commons.lang3.Validate#notEmpty",
+    "org.apache.commons.lang3.Validate#notNull",
+
+    "org.apache.logging.log4j.core.util.Assert#requireNonNull",
+
+    "org.springframework.util.CollectionUtils#isEmpty",
+    "org.springframework.util.Assert#hasLength",
+    "org.springframework.util.Assert#hasText",
+    "org.springframework.util.Assert#isAssignable",
+    "org.springframework.util.Assert#isInstanceOf",
+    "org.springframework.util.Assert#isNull",
+    "org.springframework.util.Assert#isTrue",
+    "org.springframework.util.Assert#notEmpty",
+    "org.springframework.util.Assert#notNull",
+    "org.springframework.util.Assert#state",
+    "org.springframework.util.ObjectUtils#isEmpty",
+    "org.springframework.util.StringUtils#hasLength",
+    "org.springframework.util.StringUtils#hasText",
+
+    "com.google.common.base.Preconditions#checkNotNull",
+    "com.google.common.base.Preconditions#checkArgument",
+    "com.google.common.base.Preconditions#checkState",
+
+    "com.google.common.base.Verify#verify",
+
+    "com.google.common.base.Strings#isNullOrEmpty",
+    "com.google.common.base.Platform#stringIsNullOrEmpty",
+
+    "org.eclipse.core.runtime.Assert#");
+
+  public BehaviorCache(SquidClassLoader classLoader) {
+    this(classLoader, true);
   }
 
-  public void add(Symbol.MethodSymbol symbol, MethodBehavior behavior) {
-    behaviors.put(symbol, behavior);
+  public BehaviorCache(SquidClassLoader classLoader, boolean crossFileEnabled) {
+    this.classLoader = classLoader;
+    this.crossFileEnabled = crossFileEnabled;
+  }
+
+  public void setFileContext(@Nullable SymbolicExecutionVisitor sev,@Nullable SemanticModel semanticModel) {
+    this.sev = sev;
+    this.semanticModel = semanticModel;
+  }
+
+  public void cleanup() {
+    behaviors.clear();
+  }
+
+  public MethodBehavior methodBehaviorForSymbol(Symbol.MethodSymbol symbol) {
+    String signature = symbol.signature();
+    boolean varArgs = ((JavaSymbol.MethodJavaSymbol) symbol).isVarArgs();
+    return behaviors.computeIfAbsent(signature, k -> new MethodBehavior(signature, varArgs));
+  }
+
+  public MethodBehavior methodBehaviorForSymbol(String signature) {
+    return bytecodeBehaviors.computeIfAbsent(signature, k -> new MethodBehavior(signature));
   }
 
   @CheckForNull
   public MethodBehavior get(Symbol.MethodSymbol symbol) {
-    if (!behaviors.containsKey(symbol)) {
-      if (isObjectsRequireNonNullMethod(symbol)) {
-        behaviors.put(symbol, createRequireNonNullBehavior(symbol));
-      } else if (isObjectsNullMethod(symbol)) {
-        behaviors.put(symbol, createIsNullBehavior(symbol));
-      } else if (isStringUtilsMethod(symbol)) {
-        MethodBehavior stringUtilsMethod = createStringUtilMethodBehavior(symbol);
-        if (stringUtilsMethod != null) {
-          behaviors.put(symbol, stringUtilsMethod);
-        }
-      } else if (isGuavaPrecondition(symbol)) {
-        behaviors.put(symbol, createGuavaPreconditionsBehavior(symbol, "checkNotNull".equals(symbol.name())));
-      } else {
-        MethodTree declaration = symbol.declaration();
-        if (declaration != null && SymbolicExecutionVisitor.methodCanNotBeOverriden(symbol)) {
-          sev.execute(declaration);
-        }
-      }
-    }
-    return behaviors.get(symbol);
-  }
-
-  private static boolean isGuavaPrecondition(Symbol.MethodSymbol symbol) {
-    String name = symbol.name();
-    return symbol.owner().type().is("com.google.common.base.Preconditions")
-      && ("checkNotNull".equals(name) || "checkArgument".equals(name) || "checkState".equals(name));
-  }
-
-  private static boolean isStringUtilsMethod(Symbol.MethodSymbol symbol) {
-    Type ownerType = symbol.owner().type();
-    return ownerType.is("org.apache.commons.lang3.StringUtils") || ownerType.is("org.apache.commons.lang.StringUtils");
-  }
-
-  private static boolean isObjectsNullMethod(Symbol.MethodSymbol symbol) {
-    return symbol.owner().type().is("java.util.Objects") && ("nonNull".equals(symbol.name()) || "isNull".equals(symbol.name()));
-  }
-
-  private static boolean isObjectsRequireNonNullMethod(Symbol symbol) {
-    return symbol.owner().type().is("java.util.Objects") && "requireNonNull".equals(symbol.name());
+    return get(symbol.signature(), symbol);
   }
 
   @CheckForNull
-  private static MethodBehavior createStringUtilMethodBehavior(Symbol.MethodSymbol symbol) {
-    MethodBehavior behavior;
-    switch (symbol.name()) {
-      case "isNotEmpty" :
-      case "isNotBlank" :
-        behavior = createIsEmptyOrBlankMethodBehavior(symbol, BooleanConstraint.FALSE);
-        break;
-      case "isEmpty" :
-      case "isBlank" :
-        behavior = createIsEmptyOrBlankMethodBehavior(symbol, BooleanConstraint.TRUE);
-        break;
-      default:
-        behavior = null;
+  public MethodBehavior get(String signature) {
+    return get(signature, null);
+  }
+
+  @CheckForNull
+  private MethodBehavior get(String signature, @Nullable Symbol.MethodSymbol symbol) {
+    MethodBehavior mb = behaviors.get(signature);
+    if(mb != null) {
+      return mb;
     }
-    return behavior;
-  }
+    if (symbol != null) {
+      MethodTree declaration = symbol.declaration();
+      if (SymbolicExecutionVisitor.methodCanNotBeOverriden(symbol) && declaration != null) {
+        sev.execute(declaration);
+        return behaviors.get(signature);
+      }
+    }
 
-  private static MethodBehavior createIsEmptyOrBlankMethodBehavior(Symbol.MethodSymbol symbol, Constraint constraint) {
-    MethodBehavior behavior = new MethodBehavior(symbol);
-    HappyPathYield nullYield = new HappyPathYield(behavior);
-    nullYield.parametersConstraints.add(pmapForConstraint(ObjectConstraint.NULL));
-    nullYield.setResult(-1, pmapForConstraint(constraint));
-    behavior.addYield(nullYield);
-    MethodYield notNullYield = new HappyPathYield(behavior);
-    notNullYield.parametersConstraints.add(pmapForConstraint(ObjectConstraint.NOT_NULL));
-    behavior.addYield(notNullYield);
-    behavior.completed();
-    return behavior;
-  }
+    // disabled x-file analysis, behavior based on source code can still be used
+    if (!crossFileEnabled && !isKnownSignature(signature)) {
+      return null;
+    }
 
-  private static PMap<Class<? extends Constraint>, Constraint> pmapForConstraint(Constraint constraint) {
-    return PCollections.<Class<? extends Constraint>, Constraint>emptyMap().put(constraint.getClass(), constraint);
+    if (!bytecodeBehaviors.containsKey(signature)) {
+      new BytecodeEGWalker(this, semanticModel).getMethodBehavior(signature, classLoader);
+    }
+    return bytecodeBehaviors.get(signature);
   }
 
   /**
-   * Creates method behavior for the three requireNonNull methods define in java.util.Objects
-   * @param symbol the proper method symbol.
-   * @return the behavior corresponding to that symbol.
+   * Do not trigger any new computation of method behavior, just check if there is a known method behavior for the symbol.
+   *
+   * @param symbol The targeted method.
+   * @return null for methods having no computed method behavior yet, or its method behavior, based on bytecode or source
    */
-  private static MethodBehavior createRequireNonNullBehavior(Symbol.MethodSymbol symbol) {
-    MethodBehavior behavior = new MethodBehavior(symbol);
-    HappyPathYield happyYield = new HappyPathYield(behavior);
-    happyYield.parametersConstraints.add(pmapForConstraint(ObjectConstraint.NOT_NULL));
-    for (int i = 1; i < symbol.parameterTypes().size(); i++) {
-      happyYield.parametersConstraints.add(PCollections.emptyMap());
+  @CheckForNull
+  public MethodBehavior peek(String signature) {
+    // directly query the cache, to not trigger computation of new method behaviors
+    MethodBehavior mb = behaviors.get(signature);
+    if (mb != null) {
+      return mb;
     }
-    happyYield.setResult(0, happyYield.parametersConstraints.get(0));
-    behavior.addYield(happyYield);
-
-    ExceptionalYield exceptionalYield = new ExceptionalYield(behavior);
-    exceptionalYield.parametersConstraints.add(pmapForConstraint(ObjectConstraint.NULL));
-    for (int i = 1; i < symbol.parameterTypes().size(); i++) {
-      exceptionalYield.parametersConstraints.add(PCollections.emptyMap());
-    }
-    behavior.addYield(exceptionalYield);
-
-    behavior.completed();
-    return behavior;
+    // check for bytecode signatures
+    return bytecodeBehaviors.get(signature);
   }
 
-  /**
-   * Create behavior for java.util.Objects.isNull and nonNull methods
-   * @param symbol the symbol of the associated method.
-   * @return the behavior corresponding to the symbol passed as parameter.
-   */
-  private static MethodBehavior createIsNullBehavior(Symbol.MethodSymbol symbol) {
-    boolean isNull = "isNull".equals(symbol.name());
-
-    ObjectConstraint trueConstraint = isNull ? ObjectConstraint.NULL : ObjectConstraint.NOT_NULL;
-    ObjectConstraint falseConstraint = isNull ? ObjectConstraint.NOT_NULL : ObjectConstraint.NULL;
-
-    MethodBehavior behavior = new MethodBehavior(symbol);
-
-    HappyPathYield trueYield = new HappyPathYield(behavior);
-    trueYield.parametersConstraints.add(pmapForConstraint(trueConstraint));
-    trueYield.setResult(-1, pmapForConstraint(BooleanConstraint.TRUE));
-    behavior.addYield(trueYield);
-
-    HappyPathYield falseYield = new HappyPathYield(behavior);
-    falseYield.parametersConstraints.add(pmapForConstraint(falseConstraint));
-    falseYield.setResult(-1, pmapForConstraint(BooleanConstraint.FALSE));
-    behavior.addYield(falseYield);
-
-    behavior.completed();
-    return behavior;
-  }
-
-  private static MethodBehavior createGuavaPreconditionsBehavior(Symbol.MethodSymbol symbol, boolean isCheckNotNull) {
-    MethodBehavior behavior = new MethodBehavior(symbol);
-    HappyPathYield happyPathYield = new HappyPathYield(behavior);
-    happyPathYield.parametersConstraints.add(pmapForConstraint(isCheckNotNull ? ObjectConstraint.NOT_NULL : BooleanConstraint.TRUE));
-    for (int i = 1; i < symbol.parameterTypes().size(); i++) {
-      happyPathYield.parametersConstraints.add(PCollections.emptyMap());
-    }
-    PMap<Class<? extends Constraint>, Constraint> constraints = isCheckNotNull ? happyPathYield.parametersConstraints.get(0) : null;
-    happyPathYield.setResult(isCheckNotNull ? 0 : -1, constraints);
-    behavior.addYield(happyPathYield);
-
-    behavior.completed();
-    return behavior;
+  private static boolean isKnownSignature(String signature) {
+    return WHITELIST.stream().anyMatch(signature::startsWith);
   }
 }

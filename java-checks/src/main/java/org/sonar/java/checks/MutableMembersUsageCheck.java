@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,8 +20,14 @@
 package org.sonar.java.checks;
 
 import com.google.common.collect.ImmutableList;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.LinkedList;
+import java.util.List;
+import javax.annotation.Nullable;
 import org.sonar.check.Rule;
 import org.sonar.java.matcher.MethodMatcher;
+import org.sonar.java.matcher.MethodMatcherCollection;
 import org.sonar.java.matcher.NameCriteria;
 import org.sonar.java.model.LiteralUtils;
 import org.sonar.plugins.java.api.JavaFileScanner;
@@ -40,13 +46,6 @@ import org.sonar.plugins.java.api.tree.ReturnStatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
-import javax.annotation.Nullable;
-
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.LinkedList;
-import java.util.List;
-
 @Rule(key = "S2384")
 public class MutableMembersUsageCheck extends BaseTreeVisitor implements JavaFileScanner {
 
@@ -59,8 +58,12 @@ public class MutableMembersUsageCheck extends BaseTreeVisitor implements JavaFil
     "java.util.Collections.UnmodifiableMap",
     "com.google.common.collect.ImmutableCollection");
 
-  private static final MethodMatcher UNMODIFIABLE_COLLECTION_CALL = MethodMatcher.create().typeDefinition("java.util.Collections").name(NameCriteria.startsWith("unmodifiable"))
-    .withAnyParameters();
+  private static final MethodMatcherCollection UNMODIFIABLE_COLLECTION_CALL = MethodMatcherCollection.create(
+    MethodMatcher.create().typeDefinition("java.util.Collections").name(NameCriteria.startsWith("unmodifiable")).withAnyParameters(),
+    MethodMatcher.create().typeDefinition("java.util.Collections").name(NameCriteria.startsWith("singleton")).withAnyParameters(),
+    MethodMatcher.create().typeDefinition("java.util.Set").name("of").withAnyParameters(),
+    MethodMatcher.create().typeDefinition("java.util.List").name("of").withAnyParameters()
+  );
 
   private JavaFileScannerContext context;
   private Deque<List<Symbol>> parametersStack = new LinkedList<>();
@@ -128,16 +131,30 @@ public class MutableMembersUsageCheck extends BaseTreeVisitor implements JavaFil
     if (expressionTree == null || !isMutableType(expressionTree)) {
       return;
     }
-    if (expressionTree.is(Tree.Kind.IDENTIFIER)) {
-      IdentifierTree identifierTree = (IdentifierTree) expressionTree;
-      if (identifierTree.symbol().isPrivate() && !isImmutableConstant((Symbol.VariableSymbol) identifierTree.symbol())) {
+    checkReturnedExpression(expressionTree);
+  }
+
+  private void checkReturnedExpression(ExpressionTree expression) {
+    if (expression.is(Tree.Kind.MEMBER_SELECT)) {
+      MemberSelectExpressionTree mse = (MemberSelectExpressionTree) expression;
+      if (isThis(mse.expression())) {
+        checkReturnedExpression(mse.identifier());
+      }
+    }
+    if (expression.is(Tree.Kind.IDENTIFIER)) {
+      IdentifierTree identifierTree = (IdentifierTree) expression;
+      if (identifierTree.symbol().isPrivate() && !isImmutableFinalVariable((Symbol.VariableSymbol) identifierTree.symbol())) {
         context.reportIssue(this, identifierTree, "Return a copy of \"" + identifierTree.name() + "\".");
       }
     }
   }
 
-  private static boolean isImmutableConstant(Symbol.VariableSymbol symbol) {
-    if (symbol.isStatic() && symbol.isFinal()) {
+  private static boolean isThis(ExpressionTree expression) {
+    return expression.is(Tree.Kind.IDENTIFIER) && ((IdentifierTree) expression).name().equals("this");
+  }
+
+  private static boolean isImmutableFinalVariable(Symbol.VariableSymbol symbol) {
+    if (symbol.isFinal()) {
       VariableTree declaration = symbol.declaration();
       // symbol is private, so declaration can only be null if assignment is done in static block
       ExpressionTree initializer = declaration.initializer();
@@ -186,7 +203,7 @@ public class MutableMembersUsageCheck extends BaseTreeVisitor implements JavaFil
   }
 
   private static boolean isMutableType(ExpressionTree expressionTree) {
-    if (expressionTree.is(Tree.Kind.METHOD_INVOCATION) && UNMODIFIABLE_COLLECTION_CALL.matches((MethodInvocationTree) expressionTree)) {
+    if (expressionTree.is(Tree.Kind.METHOD_INVOCATION) && UNMODIFIABLE_COLLECTION_CALL.anyMatch((MethodInvocationTree) expressionTree)) {
       return false;
     }
     return isMutableType(expressionTree.symbolType());

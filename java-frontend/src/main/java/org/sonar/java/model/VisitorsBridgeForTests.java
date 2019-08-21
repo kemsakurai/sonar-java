@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,25 +20,27 @@
 package org.sonar.java.model;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterables;
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+import javax.annotation.Nullable;
+import org.sonar.api.batch.fs.InputFile;
 import org.sonar.java.AnalyzerMessage;
 import org.sonar.java.SonarComponents;
 import org.sonar.java.resolve.SemanticModel;
+import org.sonar.java.se.SymbolicExecutionMode;
 import org.sonar.plugins.java.api.JavaCheck;
 import org.sonar.plugins.java.api.JavaFileScanner;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.JavaVersion;
 import org.sonar.plugins.java.api.tree.CompilationUnitTree;
 import org.sonar.plugins.java.api.tree.Tree;
-
-import javax.annotation.Nullable;
-import java.io.File;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 public class VisitorsBridgeForTests extends VisitorsBridge {
 
@@ -47,21 +49,17 @@ public class VisitorsBridgeForTests extends VisitorsBridge {
 
 
   @VisibleForTesting
-  public VisitorsBridgeForTests(JavaFileScanner visitor) {
-    this(Collections.singletonList(visitor), new ArrayList<File>(), null);
+  public VisitorsBridgeForTests(JavaFileScanner visitor, SonarComponents sonarComponents) {
+    this(Collections.singletonList(visitor), new ArrayList<>(), sonarComponents);
   }
 
-  public VisitorsBridgeForTests(Iterable visitors) {
-    this(visitors, new ArrayList<File>(), null, false);
+  public VisitorsBridgeForTests(Iterable visitors, @Nullable SonarComponents sonarComponents) {
+    super(visitors, new ArrayList<>(), sonarComponents, SymbolicExecutionMode.DISABLED);
     enableSemantic = false;
   }
 
   public VisitorsBridgeForTests(Iterable visitors, List<File> projectClasspath, @Nullable SonarComponents sonarComponents) {
-    this(visitors, projectClasspath, sonarComponents, true);
-  }
-
-  public VisitorsBridgeForTests(Iterable visitors, List<File> projectClasspath, @Nullable SonarComponents sonarComponents, boolean symbolicExecutionEnabled) {
-    super(visitors, projectClasspath, sonarComponents, symbolicExecutionEnabled);
+    super(visitors, projectClasspath, sonarComponents, SymbolicExecutionMode.getMode(Iterables.<JavaCheck>toArray(visitors, JavaCheck.class), true));
   }
 
   @Override
@@ -79,30 +77,46 @@ public class VisitorsBridgeForTests extends VisitorsBridge {
   public static class TestJavaFileScannerContext extends DefaultJavaFileScannerContext {
 
     private final Set<AnalyzerMessage> issues = new HashSet<>();
+    private final SonarComponents sonarComponents;
 
-    public TestJavaFileScannerContext(CompilationUnitTree tree, File file, SemanticModel semanticModel,
+    public TestJavaFileScannerContext(CompilationUnitTree tree, InputFile inputFile, SemanticModel semanticModel,
                                       @Nullable SonarComponents sonarComponents, JavaVersion javaVersion, boolean failedParsing) {
-      super(tree, file, semanticModel, sonarComponents, javaVersion, failedParsing);
+      super(tree, inputFile, semanticModel, sonarComponents, javaVersion, failedParsing);
+      this.sonarComponents = sonarComponents;
     }
 
     public Set<AnalyzerMessage> getIssues() {
       return issues;
     }
 
+    /**
+     * @deprecated since SonarJava 5.12 - Should only report on InputComponent
+     */
+    @Deprecated
+    @Override
+    public void addIssue(File file, JavaCheck javaCheck, int line, String message) {
+      issues.add(new AnalyzerMessage(javaCheck, sonarComponents.inputFromIOFileOrDirectory(file), line, message, 0));
+    }
+
+    @Override
+    public void addIssueOnProject(JavaCheck javaCheck, String message) {
+      issues.add(new AnalyzerMessage(javaCheck, sonarComponents.project(), null, message, 0));
+    }
+
     @Override
     public void addIssue(int line, JavaCheck javaCheck, String message, @Nullable Integer cost) {
-      issues.add(new AnalyzerMessage(javaCheck, getFile(), line, message, cost != null ? cost.intValue() : 0));
+      issues.add(new AnalyzerMessage(javaCheck, getInputFile(), line, message, cost != null ? cost.intValue() : 0));
     }
 
     @Override
     public void reportIssue(JavaCheck javaCheck, Tree syntaxNode, String message, List<Location> secondary, @Nullable Integer cost) {
       List<List<Location>> flows = secondary.stream().map(Collections::singletonList).collect(Collectors.toList());
-      issues.add(createAnalyzerMessage(getFile(), javaCheck, syntaxNode, null, message, flows, cost));
+      issues.add(createAnalyzerMessage(getInputFile(), javaCheck, syntaxNode, null, message, flows, cost));
     }
 
     @Override
     public void reportIssue(JavaCheck javaCheck, Tree startTree, Tree endTree, String message) {
-      issues.add(createAnalyzerMessage(javaCheck, startTree, endTree, message, ImmutableList.of(), null));
+      issues.add(createAnalyzerMessage(javaCheck, startTree, endTree, message, Collections.emptyList(), null));
     }
 
     @Override
@@ -112,11 +126,22 @@ public class VisitorsBridgeForTests extends VisitorsBridge {
 
     @Override
     public void reportIssueWithFlow(JavaCheck javaCheck, Tree syntaxNode, String message, Iterable<List<Location>> flows, @Nullable Integer cost) {
-      issues.add(createAnalyzerMessage(getFile(), javaCheck, syntaxNode, null, message, flows, cost));
+      issues.add(createAnalyzerMessage(getInputFile(), javaCheck, syntaxNode, null, message, flows, cost));
+    }
+
+    @Override
+    public void reportIssue(AnalyzerMessage message) {
+      issues.add(message);
+    }
+
+    @Override
+    public AnalyzerMessage createAnalyzerMessage(JavaCheck javaCheck, Tree startTree, String message) {
+      return createAnalyzerMessage(getInputFile(), javaCheck, startTree, null, message, Arrays.asList(), null);
     }
 
     private AnalyzerMessage createAnalyzerMessage(JavaCheck javaCheck, Tree startTree, @Nullable Tree endTree, String message, List<Location> secondary, @Nullable Integer cost) {
-      return createAnalyzerMessage(getFile(), javaCheck, startTree, endTree, message, Collections.singletonList(secondary), cost);
+      List<List<Location>> flows = secondary.stream().map(Collections::singletonList).collect(Collectors.toList());  
+      return createAnalyzerMessage(getInputFile(), javaCheck, startTree, endTree, message, flows, cost);
     }
   }
 }

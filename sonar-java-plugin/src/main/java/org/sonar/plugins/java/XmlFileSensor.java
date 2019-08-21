@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,53 +19,108 @@
  */
 package org.sonar.plugins.java;
 
+import com.google.common.annotations.VisibleForTesting;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import org.sonar.api.batch.fs.FilePredicate;
 import org.sonar.api.batch.fs.FileSystem;
+import org.sonar.api.batch.fs.InputFile;
+import org.sonar.api.batch.rule.CheckFactory;
+import org.sonar.api.batch.rule.Checks;
 import org.sonar.api.batch.sensor.Sensor;
 import org.sonar.api.batch.sensor.SensorContext;
 import org.sonar.api.batch.sensor.SensorDescriptor;
-import org.sonar.java.SonarComponents;
+import org.sonar.api.rule.RuleKey;
+import org.sonar.api.utils.log.Logger;
+import org.sonar.api.utils.log.Loggers;
 import org.sonar.java.checks.CheckList;
-import org.sonar.java.xml.XmlAnalyzer;
-
-import java.io.File;
+import org.sonarsource.analyzer.commons.ProgressReport;
+import org.sonarsource.analyzer.commons.xml.ParseException;
+import org.sonarsource.analyzer.commons.xml.XmlFile;
+import org.sonarsource.analyzer.commons.xml.checks.SonarXmlCheck;
 
 public class XmlFileSensor implements Sensor {
 
-  private final FileSystem fs;
-  private final FilePredicate xmlFilePredicate;
-  private final SonarComponents sonarComponents;
+  private static final Logger LOG = Loggers.get(XmlFileSensor.class);
 
-  public XmlFileSensor(SonarComponents sonarComponents, FileSystem fs) {
-    this.fs = fs;
-    this.xmlFilePredicate = fs.predicates().matchesPathPattern("**/*.xml");
-    this.sonarComponents = sonarComponents;
+  private final Checks<SonarXmlCheck> checks;
+
+  public XmlFileSensor(CheckFactory checkFactory) {
+    this.checks = checkFactory.<SonarXmlCheck>create(CheckList.REPOSITORY_KEY).addAnnotatedChecks((Iterable) CheckList.getXmlChecks());
   }
 
   @Override
   public void describe(SensorDescriptor descriptor) {
-    descriptor.name(this.toString());
+    descriptor.name("JavaXmlSensor").onlyWhenConfiguration(configuration -> !checks.all().isEmpty());
   }
 
   @Override
   public void execute(SensorContext context) {
-    if (hasXmlFiles()) {
-      sonarComponents.registerCheckClasses(CheckList.REPOSITORY_KEY, CheckList.getXmlChecks());
-      sonarComponents.setSensorContext(context);
-      new XmlAnalyzer(sonarComponents, sonarComponents.checkClasses()).scan(getXmlFiles());
+    FileSystem fs = context.fileSystem();
+    FilePredicate xmlFilesPredicate = fs.predicates().matchesPathPattern("**/*.xml");
+
+    List<InputFile> inputFiles = new ArrayList<>();
+    fs.inputFiles(xmlFilesPredicate).forEach(inputFile1 -> {
+      context.markForPublishing(inputFile1);
+      inputFiles.add(inputFile1);
+    });
+
+    if (inputFiles.isEmpty()) {
+      return;
+    }
+
+    ProgressReport progressReport = new ProgressReport("Report about progress of Java XML analyzer", TimeUnit.SECONDS.toMillis(10));
+    progressReport.start(inputFiles.stream().map(InputFile::toString).collect(Collectors.toList()));
+
+    boolean successfullyCompleted = false;
+    boolean cancelled = false;
+    try {
+      for (InputFile inputFile : inputFiles) {
+        if (context.isCancelled()) {
+          cancelled = true;
+          break;
+        }
+        scanFile(context, inputFile);
+        progressReport.nextFile();
+      }
+      successfullyCompleted = !cancelled;
+    } finally {
+      if (successfullyCompleted) {
+        progressReport.stop();
+      } else {
+        progressReport.cancel();
+      }
     }
   }
 
-  private boolean hasXmlFiles() {
-    return fs.hasFiles(xmlFilePredicate);
+  private void scanFile(SensorContext context, InputFile inputFile) {
+    XmlFile xmlFile;
+    try {
+      xmlFile = XmlFile.create(inputFile);
+    } catch (ParseException | IOException e) {
+      LOG.debug("Skipped '{}' due to parsing error", inputFile);
+      return;
+    } catch (Exception e) {
+      // Our own XML parsing may have failed somewhere, so logging as warning to appear in logs
+      LOG.warn(String.format("Unable to analyse file '%s'.", inputFile), e);
+      return;
+    }
+
+    checks.all().forEach(check -> {
+      RuleKey ruleKey = checks.ruleKey(check);
+      scanFile(context, xmlFile, check, ruleKey);
+    });
   }
 
-  private Iterable<File> getXmlFiles() {
-    return fs.files(xmlFilePredicate);
-  }
-
-  @Override
-  public String toString() {
-    return XmlFileSensor.class.getSimpleName();
+  @VisibleForTesting
+  void scanFile(SensorContext context, XmlFile xmlFile, SonarXmlCheck check, RuleKey ruleKey) {
+    try {
+      check.scanFile(context, ruleKey, xmlFile);
+    } catch (Exception e) {
+      LOG.error(String.format("Failed to analyze '%s' with rule %s", xmlFile.getInputFile().toString(), ruleKey), e);
+    }
   }
 }

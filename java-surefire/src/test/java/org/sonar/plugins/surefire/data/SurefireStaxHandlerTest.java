@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,12 +21,13 @@ package org.sonar.plugins.surefire.data;
 
 import org.junit.Before;
 import org.junit.Test;
+
 import org.sonar.plugins.surefire.StaxParser;
-import org.sonar.test.TestUtils;
 
 import javax.xml.stream.XMLStreamException;
 
 import java.io.File;
+import java.net.URISyntaxException;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.Matchers.startsWith;
@@ -124,9 +125,21 @@ public class SurefireStaxHandlerTest {
     assertThat(publicClass.getTests(), is(4));
   }
 
+  @Test
+  public void output_of_junit_5_2_test_without_display_name() throws XMLStreamException {
+    parse("TEST-#29.xml");
+    assertThat(index.get(")").getTests(), is(1));
+  }
+
+
   private void parse(String path) throws XMLStreamException {
-    File xml = TestUtils.getResource(getClass(), path);
     StaxParser parser = new StaxParser(index);
-    parser.parse(xml);
+    File xmlFile;
+    try {
+      xmlFile = new File(getClass().getResource(getClass().getSimpleName() + "/" + path).toURI());
+    } catch (URISyntaxException e) {
+      throw new IllegalStateException(e);
+    }
+    parser.parse(xmlFile);
   }
 }

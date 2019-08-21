@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,8 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Collections;
+import java.util.List;
 import org.sonar.check.Rule;
 import org.sonar.java.checks.helpers.ExpressionsHelper;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
@@ -28,23 +29,22 @@ import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 
-import java.util.List;
-
 @Rule(key = "S2257")
 public class CustomCryptographicAlgorithmCheck extends IssuableSubscriptionVisitor {
 
   private static final String MESSAGE_DIGEST_QUALIFIED_NAME = "java.security.MessageDigest";
+  private static final String MESSAGE = "Make sure using a non-standard cryptographic algorithm is safe here.";
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.CLASS);
+    return Collections.singletonList(Tree.Kind.CLASS);
   }
 
   @Override
   public void visitNode(Tree tree) {
     ClassTree classTree = (ClassTree) tree;
     if (hasSemantic() && isJavaSecurityMessageDigestSubClass(classTree)) {
-      reportIssue(ExpressionsHelper.reportOnClassTree(classTree), "Use a standard algorithm instead of creating a custom one.");
+      reportIssue(ExpressionsHelper.reportOnClassTree(classTree), MESSAGE);
     }
   }
 

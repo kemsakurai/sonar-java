@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,9 +19,6 @@
  */
 package org.sonar.java.model;
 
-import com.google.common.base.Objects;
-import org.sonar.plugins.java.api.tree.IdentifierTree;
-import org.sonar.plugins.java.api.tree.PrimitiveTypeTree;
 import org.sonar.plugins.java.api.tree.SyntaxToken;
 import org.sonar.plugins.java.api.tree.Tree;
 
@@ -29,6 +26,7 @@ import javax.annotation.Nullable;
 
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 
 public final class SyntacticEquivalence {
 
@@ -87,12 +85,8 @@ public final class SyntacticEquivalence {
    * Caller must guarantee that nodes of the same kind.
    */
   private static boolean areLeafsEquivalent(JavaTree leftNode, JavaTree rightNode) {
-    if (leftNode instanceof IdentifierTree) {
-      return Objects.equal(((IdentifierTree) leftNode).name(), ((IdentifierTree) rightNode).name());
-    } else if (leftNode instanceof PrimitiveTypeTree) {
-      return Objects.equal(((PrimitiveTypeTree) leftNode).keyword().text(), ((PrimitiveTypeTree) rightNode).keyword().text());
-    } else if (leftNode instanceof SyntaxToken) {
-      return Objects.equal(((SyntaxToken) leftNode).text(), ((SyntaxToken) rightNode).text());
+    if (leftNode instanceof SyntaxToken) {
+      return Objects.equals(((SyntaxToken) leftNode).text(), ((SyntaxToken) rightNode).text());
     } else if (leftNode.is(Tree.Kind.INFERED_TYPE)) {
       return rightNode.is(Tree.Kind.INFERED_TYPE);
     } else {

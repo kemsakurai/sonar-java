@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2013-2017 SonarSource SA
+ * Copyright (C) 2013-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -22,10 +22,9 @@ package com.sonar.it.java.suite;
 import com.sonar.orchestrator.Orchestrator;
 import com.sonar.orchestrator.build.MavenBuild;
 import java.util.Map;
-import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Test;
-import org.sonarqube.ws.WsMeasures.Measure;
+import org.sonarqube.ws.Measures.Measure;
 
 import static com.sonar.it.java.suite.JavaTestSuite.getMeasures;
 import static java.lang.Double.parseDouble;
@@ -37,11 +36,6 @@ public class UnitTestsTest {
   @ClassRule
   public static Orchestrator orchestrator = JavaTestSuite.ORCHESTRATOR;
 
-  @Before
-  public void deleteData() {
-    orchestrator.resetData();
-  }
-
   @Test
   public void tests_without_main_code() {
     MavenBuild build = MavenBuild.create()
@@ -49,7 +43,7 @@ public class UnitTestsTest {
       .setGoals("clean test-compile surefire:test", "sonar:sonar");
     orchestrator.executeBuild(build);
 
-    Map<String, Measure> measures = getMeasures("com.sonarsource.it.samples:tests-without-main-code",
+    Map<String, Measure> measures = getMeasures("org.sonarsource.it.projects:tests-without-main-code",
       "tests", "test_errors", "test_failures", "skipped_tests", "test_execution_time", "test_success_density");
 
     assertThat(parseInt(measures.get("tests").getValue())).isEqualTo(1);
@@ -67,7 +61,7 @@ public class UnitTestsTest {
       .setGoals("clean test-compile surefire:test -Dsurefire.reportNameSuffix=Run1", "test-compile surefire:test -Dsurefire.reportNameSuffix=Run2", "sonar:sonar");
     orchestrator.executeBuild(build);
 
-    Map<String, Measure> measures = getMeasures("com.sonarsource.it.samples:tests-surefire-suffix",
+    Map<String, Measure> measures = getMeasures("org.sonarsource.it.projects:tests-surefire-suffix",
       "tests", "test_errors", "test_failures", "skipped_tests", "test_execution_time", "test_success_density");
 
     assertThat(parseInt(measures.get("tests").getValue())).isEqualTo(2);

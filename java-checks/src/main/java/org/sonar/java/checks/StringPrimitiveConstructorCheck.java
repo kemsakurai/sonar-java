@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,23 +19,29 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.math.BigInteger;
+import java.util.Arrays;
+import java.util.List;
 import org.sonar.check.Rule;
 import org.sonar.java.checks.methods.AbstractMethodDetection;
 import org.sonar.java.matcher.MethodMatcher;
+import org.sonar.java.model.LiteralUtils;
+import org.sonar.plugins.java.api.tree.ExpressionTree;
+import org.sonar.plugins.java.api.tree.LiteralTree;
 import org.sonar.plugins.java.api.tree.NewClassTree;
-
-import java.util.List;
+import org.sonar.plugins.java.api.tree.Tree;
 
 @Rule(key = "S2129")
 public class StringPrimitiveConstructorCheck extends AbstractMethodDetection {
 
   private static final String STRING = "java.lang.String";
   private static final String INIT = "<init>";
+  private static final BigInteger MIN_BIG_INTEGER_VALUE = BigInteger.valueOf(Long.MIN_VALUE);
+  private static final BigInteger MAX_BIG_INTEGER_VALUE = BigInteger.valueOf(Long.MAX_VALUE);
 
   @Override
   protected List<MethodMatcher> getMethodInvocationMatchers() {
-    return ImmutableList.of(
+    return Arrays.asList(
       MethodMatcher.create().typeDefinition(STRING).name(INIT).withoutParameter(),
       MethodMatcher.create().typeDefinition(STRING).name(INIT).addParameter(STRING),
       MethodMatcher.create().typeDefinition("java.lang.Byte").name(INIT).addParameter("byte"),
@@ -45,12 +51,32 @@ public class StringPrimitiveConstructorCheck extends AbstractMethodDetection {
       MethodMatcher.create().typeDefinition("java.lang.Long").name(INIT).addParameter("long"),
       MethodMatcher.create().typeDefinition("java.lang.Float").name(INIT).addParameter("float"),
       MethodMatcher.create().typeDefinition("java.lang.Double").name(INIT).addParameter("double"),
-      MethodMatcher.create().typeDefinition("java.lang.Boolean").name(INIT).addParameter("boolean")
+      MethodMatcher.create().typeDefinition("java.lang.Boolean").name(INIT).addParameter("boolean"),
+      MethodMatcher.create().typeDefinition("java.math.BigInteger").name(INIT).addParameter(STRING)
     );
   }
 
   @Override
   protected void onConstructorFound(NewClassTree newClassTree) {
-    reportIssue(newClassTree.identifier(), "Remove this \""+newClassTree.symbolType().name()+"\" constructor");
+    if(isBigIntegerPotentiallyBiggerThanLong(newClassTree)) {
+      return;
+    }
+    reportIssue(newClassTree.identifier(), "Remove this \"" + newClassTree.symbolType().name() + "\" constructor");
+  }
+
+  private static boolean isBigIntegerPotentiallyBiggerThanLong(NewClassTree newClassTree) {
+    if (!newClassTree.symbolType().is("java.math.BigInteger")) {
+      return false;
+    }
+    ExpressionTree argument = newClassTree.arguments().get(0);
+    if (!argument.is(Tree.Kind.STRING_LITERAL)) {
+      return true;
+    }
+    try {
+      BigInteger value = new BigInteger(LiteralUtils.trimQuotes(((LiteralTree)argument).value()));
+      return value.compareTo(MIN_BIG_INTEGER_VALUE) < 0 || value.compareTo(MAX_BIG_INTEGER_VALUE) > 0;
+    } catch (NumberFormatException e) {
+      return true;
+    }
   }
 }

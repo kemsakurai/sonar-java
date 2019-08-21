@@ -1,5 +1,5 @@
 {
-  "title": "Thread.run() should not be called directly",
+  "title": "\"Thread.run()\" should not be called directly",
   "type": "BUG",
   "status": "ready",
   "remediation": {
@@ -9,12 +9,15 @@
   "tags": [
     "cwe",
     "multi-threading",
-    "bug",
     "cert"
   ],
-  "standards": [
-    "CWE",
-    "CERT"
-  ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-1217",
+  "sqKey": "S1217",
+  "scope": "All",
+  "securityStandards": {
+    "CWE": [
+      572
+    ]
+  }
 }

@@ -2,7 +2,7 @@ import java.util.stream.IntStream;
 
 class Foo {
   int a;                          // Compliant
-   int b;                         // Noncompliant {{Make this line start at column 3.}}
+   int b;                         // Noncompliant {{Make this line start after 2 spaces to indent the code consistently.}}
  int c;                           // Compliant - already reported
 
   public void foo1() {            // Compliant
@@ -19,11 +19,11 @@ System.out.println();             // Noncompliant
 System.out.println();             // Compliant - already reported
 System.out.println();             // Compliant - already reported
 
-if (0) {                          // Compliant - already reported
+if (true) {                       // Compliant - already reported
   System.out.println();           // Noncompliant
-  if (0) {                        // Compliant - already reported
+  if (true) {                     // Compliant - already reported
         System.out.println();     // Compliant
-    System.out.println();         // Noncompliant {{Make this line start at column 9.}}
+    System.out.println();         // Noncompliant {{Make this line start after 8 spaces to indent the code consistently.}}
   }
 
       ; System.out.println();     // Compliant
@@ -115,7 +115,7 @@ if (0) {                          // Compliant - already reported
         if (a == 5) {
           a--;
         }
-         a += 1; // Noncompliant {{Make this line start at column 9.}}
+         a += 1; // Noncompliant {{Make this line start after 8 spaces to indent the code consistently.}}
         return a + 1;
       });
     IntStream.range(1, 5).map(a -> {
@@ -157,7 +157,7 @@ interface Qix {
 
 }
 
-static class Baz {
+class Baz {
 
   void foo() {
     new MyInterface() {
@@ -177,7 +177,7 @@ static class Baz {
 
 }
 
- static class Qiz {                      // Noncompliant
+ class Qiz {                      // Noncompliant
   public void foo() {
     switch (0) {
       case 0:
@@ -186,7 +186,7 @@ static class Baz {
     }
 
     System.out.println( // Compliant
-        ); Sysout.out.println(); // Compliant
+        ); System.out.println(); // Compliant
 
     switch (foo) { // Compliant
     }
@@ -200,7 +200,7 @@ static class Baz {
       case 1:
       case 2: {
         new Object().toString();
-         new Object().toString(); // Noncompliant {{Make this line start at column 9.}}
+         new Object().toString(); // Noncompliant {{Make this line start after 8 spaces to indent the code consistently.}}
         break;
       }
       case 3: {
@@ -209,7 +209,7 @@ static class Baz {
       new Object().toString();
       break;
       case 4:
-      { // Noncompliant {{Make this line start at column 15.}}
+      { // Noncompliant {{Make this line start after 14 spaces to indent the code consistently.}}
         new Object().toString();
         break;
       }
@@ -229,7 +229,7 @@ static class Baz {
   };
   static {
     try{
-       while (keys.hasMoreElements()) { // Noncompliant {{Make this line start at column 7.}}
+       while (keys.hasMoreElements()) { // Noncompliant {{Make this line start after 6 spaces to indent the code consistently.}}
         s = keys.nextElement();
         rId = (String) s;
         cName = (String) exceptionClassNames.get(rId);
@@ -238,7 +238,7 @@ static class Baz {
     } catch (NoSuchElementException e) { }
   }
 }
-public @interface Example {
+@interface Example {
   public static class Inner {
     public static final String FOO = "foo";
   }
@@ -276,7 +276,7 @@ class IndentFoo {
 
 }
 
-public interface plop {
+interface plop {
    @Foo
    public static class Inner { // Noncompliant
     public static final String FOO = "foo";
@@ -290,7 +290,7 @@ public interface plop {
     this.inclusionPredicates = new Predicate[] {s -> true};
   }
 
-  void plop() {
+  default void bar() {
     map(p -> {
       String s;
     }).foo().bar();

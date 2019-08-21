@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -22,9 +22,12 @@ package org.sonar.java.checks.naming;
 import org.sonar.check.Rule;
 import org.sonar.check.RuleProperty;
 import org.sonar.java.RspecKey;
+import org.sonar.java.resolve.JavaType;
 import org.sonar.plugins.java.api.JavaFileScanner;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
+import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
+import org.sonar.plugins.java.api.tree.CatchTree;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.ForEachStatement;
 import org.sonar.plugins.java.api.tree.ForStatementTree;
@@ -80,11 +83,28 @@ public class BadLocalVariableNameCheck  extends BaseTreeVisitor implements JavaF
   }
 
   @Override
+  public void visitCatch(CatchTree tree) {
+    VariableTree parameter = tree.parameter();
+    if (parameter.simpleName().name().length() > 1) {
+      scan(parameter);
+    }
+    scan(tree.block());
+  }
+
+  @Override
   public void visitVariable(VariableTree tree) {
-    if (!pattern.matcher(tree.simpleName().name()).matches()) {
-      context.reportIssue(this, tree.simpleName(), "Rename this local variable name to match the regular expression '" + format + "'.");
+    if (!pattern.matcher(tree.simpleName().name()).matches() && !isLocalConstant(tree)) {
+      context.reportIssue(this, tree.simpleName(), "Rename this local variable to match the regular expression '" + format + "'.");
     }
     super.visitVariable(tree);
+  }
+
+  private boolean isLocalConstant(VariableTree tree) {
+    return context.getSemanticModel() != null && isConstantType(tree.symbol().type()) && tree.symbol().isFinal();
+  }
+
+  private static boolean isConstantType(Type symbolType) {
+    return symbolType.isPrimitive() || symbolType.is("java.lang.String") || ((JavaType) symbolType).isPrimitiveWrapper();
   }
 
 }

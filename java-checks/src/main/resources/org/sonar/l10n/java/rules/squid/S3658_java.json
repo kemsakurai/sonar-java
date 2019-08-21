@@ -7,8 +7,12 @@
     "constantCost": "2min"
   },
   "tags": [
+    "error-handling",
     "tests",
     "clumsy"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-3658",
+  "sqKey": "S3658",
+  "scope": "Tests"
 }

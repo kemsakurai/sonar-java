@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,15 +19,14 @@
  */
 package org.sonar.java.model;
 
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
 import org.apache.commons.lang.StringUtils;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.LiteralTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 import org.sonar.plugins.java.api.tree.UnaryExpressionTree;
-
-import javax.annotation.CheckForNull;
-import javax.annotation.Nullable;
 
 public class LiteralUtils {
 
@@ -48,13 +47,13 @@ public class LiteralUtils {
     return null;
   }
 
-  @CheckForNull
   private static Integer intLiteralValue(LiteralTree literal) {
     String literalValue = literal.value().replaceAll("_", "");
-    if (literalValue.startsWith("0x") || literalValue.startsWith("0b")) {
-      return null;
+    if (literalValue.startsWith("0b") || literalValue.startsWith("0B")) {
+      // assume it is used as bit mask
+      return Integer.parseUnsignedInt(literalValue.substring(2), 2);
     }
-    return Integer.valueOf(literalValue);
+    return Long.decode(literalValue).intValue();
   }
 
   @CheckForNull
@@ -71,6 +70,9 @@ public class LiteralUtils {
       // long as hexadecimal can be written using underscore to separate groups
       value = value.replaceAll("\\_", "");
       try {
+        if (value.startsWith("0b") || value.startsWith("0B")) {
+          return sign * Long.valueOf(value.substring(2), 2);
+        }
         return sign * Long.decode(value);
       } catch (NumberFormatException e) {
         // Long.decode() may fail in case of very large long number written in hexadecimal. In such situation, we ignore the number.
@@ -89,6 +91,14 @@ public class LiteralUtils {
     return nullableInteger == null ? null : -nullableInteger;
   }
 
+  public static boolean isEmptyString(Tree tree) {
+    return tree.is(Tree.Kind.STRING_LITERAL) && trimQuotes(((LiteralTree) tree).value()).isEmpty();
+  }
+
+  public static boolean is0xff(ExpressionTree expression) {
+    return expression.is(Tree.Kind.INT_LITERAL) && "0xff".equalsIgnoreCase(((LiteralTree) expression).value());
+  }
+
   public static String trimQuotes(String value) {
     return value.substring(1, value.length() - 1);
   }
@@ -104,5 +114,21 @@ public class LiteralUtils {
       value = longString.substring(0, lastCharPosition);
     }
     return value;
+  }
+
+  public static boolean hasValue(Tree tree, String expectedValue) {
+    if (!tree.is(Kind.STRING_LITERAL)) {
+      return false;
+    }
+    String actualValue = trimQuotes(((LiteralTree) tree).value());
+    return expectedValue.equals(actualValue);
+  }
+
+  public static boolean isTrue(Tree tree) {
+    return tree.is(Kind.BOOLEAN_LITERAL) && "true".equals(((LiteralTree) tree).value());
+  }
+
+  public static boolean isFalse(Tree tree) {
+    return tree.is(Kind.BOOLEAN_LITERAL) && "false".equals(((LiteralTree) tree).value());
   }
 }

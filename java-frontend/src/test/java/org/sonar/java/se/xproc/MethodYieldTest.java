@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,86 +19,94 @@
  */
 package org.sonar.java.se.xproc;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
-import org.junit.Test;
-import org.sonar.java.collections.PCollections;
-import org.sonar.java.collections.PMap;
-
-import org.sonar.java.resolve.JavaSymbol;
-import org.sonar.java.se.ExplodedGraph;
-import org.sonar.java.se.ProgramPoint;
-import org.sonar.java.se.ProgramState;
-import org.sonar.java.se.SymbolicExecutionVisitor;
-import org.sonar.java.se.constraint.BooleanConstraint;
-import org.sonar.java.se.constraint.Constraint;
-import org.sonar.java.se.constraint.ObjectConstraint;
-import org.sonar.java.se.symbolicvalues.SymbolicValue;
-import org.sonar.plugins.java.api.JavaFileScannerContext;
-import org.sonar.plugins.java.api.semantic.Symbol;
-import org.sonar.plugins.java.api.semantic.Symbol.MethodSymbol;
-import org.sonar.plugins.java.api.semantic.Type;
-import org.sonar.plugins.java.api.tree.ExpressionTree;
-import org.sonar.plugins.java.api.tree.IdentifierTree;
-import org.sonar.plugins.java.api.tree.MethodInvocationTree;
-import org.sonar.plugins.java.api.tree.Tree;
-
-import javax.annotation.Nullable;
-
+import com.sonar.sslr.api.typed.ActionParser;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import javax.annotation.Nullable;
+import org.junit.Test;
+import org.sonar.java.ast.parser.JavaParser;
+import org.sonar.java.bytecode.loader.SquidClassLoader;
+import org.sonar.java.collections.PCollections;
+import org.sonar.java.collections.PMap;
+import org.sonar.java.resolve.JavaSymbol;
+import org.sonar.java.resolve.SemanticModel;
+import org.sonar.java.se.ExplodedGraph;
+import org.sonar.java.se.Flow;
+import org.sonar.java.se.ProgramPoint;
+import org.sonar.java.se.ProgramState;
+import org.sonar.java.se.SymbolicExecutionVisitor;
+import org.sonar.java.se.checks.SECheck;
+import org.sonar.java.se.constraint.BooleanConstraint;
+import org.sonar.java.se.constraint.Constraint;
+import org.sonar.java.se.constraint.ConstraintsByDomain;
+import org.sonar.java.se.constraint.ObjectConstraint;
+import org.sonar.java.se.symbolicvalues.SymbolicValue;
+import org.sonar.plugins.java.api.JavaFileScannerContext;
+import org.sonar.plugins.java.api.semantic.Symbol;
+import org.sonar.plugins.java.api.semantic.Symbol.MethodSymbol;
+import org.sonar.plugins.java.api.semantic.Type;
+import org.sonar.plugins.java.api.tree.ClassTree;
+import org.sonar.plugins.java.api.tree.CompilationUnitTree;
+import org.sonar.plugins.java.api.tree.ExpressionTree;
+import org.sonar.plugins.java.api.tree.IdentifierTree;
+import org.sonar.plugins.java.api.tree.MethodInvocationTree;
+import org.sonar.plugins.java.api.tree.MethodTree;
+import org.sonar.plugins.java.api.tree.Tree;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.sonar.java.se.SETestUtils.createSymbolicExecutionVisitor;
-import static org.sonar.java.se.SETestUtils.getSymbolWithMethodBehavior;
+import static org.sonar.java.se.SETestUtils.getMethodBehavior;
 import static org.sonar.java.se.SETestUtils.mockMethodBehavior;
 
 public class MethodYieldTest {
   @Test
   public void test_creation_of_states() throws Exception {
     SymbolicExecutionVisitor sev = createSymbolicExecutionVisitor("src/test/files/se/XProcYields.java");
-    Map.Entry<MethodSymbol, MethodBehavior> entry = getSymbolWithMethodBehavior(sev, "foo");
-    Symbol.MethodSymbol methodSymbol = entry.getKey();
+    MethodBehavior mb = getMethodBehavior(sev, "foo");
 
     ProgramState ps = ProgramState.EMPTY_STATE;
-    SymbolicValue sv1 = new SymbolicValue(41);
-    SymbolicValue sv2 = new SymbolicValue(42);
-    SymbolicValue sv3 = new SymbolicValue(43);
-    Symbol sym = new JavaSymbol.VariableJavaSymbol(0, "myVar", (JavaSymbol) methodSymbol);
+    SymbolicValue sv1 = new SymbolicValue();
+    SymbolicValue sv2 = new SymbolicValue();
+    SymbolicValue sv3 = new SymbolicValue();
+    Symbol sym = new JavaSymbol.VariableJavaSymbol(0, "myVar", new JavaSymbol.MethodJavaSymbol(0, "dummy", null));
     ps = ps.put(sym, sv1);
 
-    MethodYield methodYield = entry.getValue().happyPathYields().findFirst().get();
-    Stream<ProgramState> generatedStatesFromFirstYield = methodYield.statesAfterInvocation(Lists.newArrayList(sv1, sv2), Lists.newArrayList(), ps, () -> sv3);
+    MethodYield methodYield = mb.happyPathYields().findFirst().get();
+    Stream<ProgramState> generatedStatesFromFirstYield = methodYield.statesAfterInvocation(Lists.newArrayList(sv1, sv2), new ArrayList<>(), ps, () -> sv3);
     assertThat(generatedStatesFromFirstYield).hasSize(1);
   }
 
   @Test
   public void test_creation_of_flows() throws Exception {
     SymbolicExecutionVisitor sev = createSymbolicExecutionVisitor("src/test/files/se/XProcYieldsFlows.java");
-    MethodBehavior mb = getSymbolWithMethodBehavior(sev, "foo").getValue();
+    MethodBehavior mb = getMethodBehavior(sev, "foo");
 
     MethodYield methodYield = mb.happyPathYields()
       .filter(y -> y.resultConstraint() != null && y.resultConstraint().get(ObjectConstraint.class) != ObjectConstraint.NULL).findFirst().get();
 
-    Set<List<JavaFileScannerContext.Location>> flowReturnValue = methodYield.flow(ImmutableList.of(-1), Lists.newArrayList(ObjectConstraint.class));
-    assertThat(flowReturnValue.iterator().next()).isNotEmpty();
+    Set<Flow> flowReturnValue = methodYield.flow(Collections.singletonList(-1), Lists.newArrayList(ObjectConstraint.class));
+    assertThat(flowReturnValue.iterator().next().isEmpty()).isFalse();
 
-    Set<List<JavaFileScannerContext.Location>> flowFirstParam = methodYield.flow(ImmutableList.of(0), Lists.newArrayList(ObjectConstraint.class, BooleanConstraint.class));
-    assertThat(flowFirstParam.iterator().next()).isNotEmpty();
+    Set<Flow> flowFirstParam = methodYield.flow(Collections.singletonList(0), Lists.newArrayList(ObjectConstraint.class, BooleanConstraint.class));
+    assertThat(flowFirstParam.iterator().next().isEmpty()).isFalse();
   }
 
   @Test
   public void test_yield_on_reassignments() throws Exception {
     SymbolicExecutionVisitor sev = createSymbolicExecutionVisitor("src/test/files/se/XProcYieldsReassignments.java");
-    Map.Entry<MethodSymbol, MethodBehavior> entry = getSymbolWithMethodBehavior(sev, "foo");
-    MethodBehavior mb = entry.getValue();
+    MethodBehavior mb = getMethodBehavior(sev, "foo");
     assertThat(mb.happyPathYields())
       .allMatch(y -> y.parametersConstraints.get(0) != null && !ObjectConstraint.NULL.equals(y.parametersConstraints.get(0).get(ObjectConstraint.class)));
   }
@@ -106,18 +114,37 @@ public class MethodYieldTest {
   @Test
   public void flow_is_empty_when_yield_has_no_node() {
     MethodYield methodYield = new HappyPathYield(null, mockMethodBehavior(1, false));
-    assertThat(methodYield.flow(ImmutableList.of(0), Lists.newArrayList(ObjectConstraint.class, BooleanConstraint.class))).isEmpty();
+    assertThat(methodYield.flow(Collections.singletonList(0), Lists.newArrayList(ObjectConstraint.class, BooleanConstraint.class))).isEmpty();
+  }
+
+  @Test
+  public void flow_should_fail_if_no_parameters_are_passed() throws Exception {
+    MethodYield methodYield = new HappyPathYield(null, mockMethodBehavior(1, false));
+    try {
+      methodYield.flow(Collections.emptyList(), Collections.singletonList(ObjectConstraint.class));
+      fail("calling flow with empty list should have failed");
+    } catch (IllegalArgumentException iae) {
+      assertThat(iae).hasMessage("computing flow on empty symbolic value list should never happen");
+    }
   }
 
   private static ExplodedGraph.Node mockNode() {
     return new ExplodedGraph().node(mock(ProgramPoint.class), null);
   }
 
+  @Test
+  public void yields_are_not_generated_by_check() {
+    MethodYield yield = newMethodYield(mockMethodBehavior(1, false));
+
+    assertThat(yield.generatedByCheck(null)).isFalse();
+    assertThat(yield.generatedByCheck(new SECheck() {
+    })).isFalse();
+  }
 
   @Test
   public void test_yield_equality() {
     MethodBehavior methodBehavior = mockMethodBehavior(1, false);
-    MethodYield yield = new HappyPathYield(methodBehavior);
+    MethodYield yield = newMethodYield(methodBehavior);
     MethodYield otherYield;
 
     assertThat(yield).isNotEqualTo(null);
@@ -125,52 +152,89 @@ public class MethodYieldTest {
 
     // same instance
     assertThat(yield).isEqualTo(yield);
-    MethodYield myYield = new MethodYield(null) {
-      @Override
-      public Stream<ProgramState> statesAfterInvocation(List<SymbolicValue> invocationArguments, List<Type> invocationTypes, ProgramState programState, Supplier<SymbolicValue> svSupplier) {
-        return null;
-      }
 
-      @Override
-      public String toString() {
-        return null;
-      }
-    };
-    assertThat(myYield).isEqualTo(myYield);
+    // method behavior not taken into account
+    MethodYield myYield = newMethodYield(null);
+    assertThat(yield).isEqualTo(myYield);
 
-    // same constraints, same number of parameters, same exceptional aspect
-    assertThat(yield).isEqualTo(new HappyPathYield(methodBehavior));
-
-    // node and behavior are not taken into account
-    otherYield = new HappyPathYield(mockNode(), methodBehavior);
+    // node not taken into account
+    otherYield = newMethodYield(mockNode(), methodBehavior);
     assertThat(yield).isEqualTo(otherYield);
 
     // same arity and constraints on parameters but exceptional path
     otherYield = new ExceptionalYield(methodBehavior);
     assertThat(yield).isNotEqualTo(otherYield);
 
-    PMap<Class<? extends Constraint>, Constraint> nullConstraint = PCollections.<Class<? extends Constraint>, Constraint>emptyMap().put(ObjectConstraint.class, ObjectConstraint.NULL);
-    HappyPathYield yield1 = new HappyPathYield(methodBehavior);
+    // same arity and constraints on parameters but happy path path
+    otherYield = new HappyPathYield(methodBehavior);
+    assertThat(yield).isNotEqualTo(otherYield);
+
+    ConstraintsByDomain nullConstraint = ConstraintsByDomain.empty().put(ObjectConstraint.NULL);
+    MethodYield yield1 = newMethodYield(methodBehavior);
     yield1.parametersConstraints.add(nullConstraint);
-    yield1.parametersConstraints.add(PCollections.emptyMap());
+    yield1.parametersConstraints.add(ConstraintsByDomain.empty());
     yield1.parametersConstraints.add(nullConstraint);
-    HappyPathYield yield2 = new HappyPathYield(methodBehavior);
+    MethodYield yield2 = newMethodYield(methodBehavior);
     yield2.parametersConstraints.add(nullConstraint);
     yield2.parametersConstraints.add(nullConstraint);
-    yield2.parametersConstraints.add(PCollections.emptyMap());
+    yield2.parametersConstraints.add(ConstraintsByDomain.empty());
 
     assertThat(yield1).isNotEqualTo(yield2);
+  }
 
+  private static MethodYield newMethodYield(MethodBehavior methodBehavior) {
+    return newMethodYield(null, methodBehavior);
+  }
 
+  private static MethodYield newMethodYield(ExplodedGraph.Node node, MethodBehavior methodBehavior) {
+    return new MethodYield(node, methodBehavior) {
+
+      @Override
+      public String toString() {
+        return null;
+      }
+
+      @Override
+      public Stream<ProgramState> statesAfterInvocation(List<SymbolicValue> invocationArguments, List<Type> invocationTypes, ProgramState programState,
+        Supplier<SymbolicValue> svSupplier) {
+        return null;
+      }
+    };
+  }
+
+  @Test
+  public void test_pmapToStream() {
+    assertThat(MethodYield.pmapToStream(null)).isEmpty();
+
+    PMap<Class<? extends Constraint>, Constraint> pmap = PCollections.emptyMap();
+    assertThat(MethodYield.pmapToStream(pmap)).isEmpty();
+
+    pmap = pmap.put(ObjectConstraint.class, ObjectConstraint.NOT_NULL);
+    assertThat(MethodYield.pmapToStream(pmap)).containsOnly(ObjectConstraint.NOT_NULL);
+  }
+
+  @Test
+  public void calling_varargs_method_with_no_arg() throws Exception {
+    SymbolicExecutionVisitor sev = createSymbolicExecutionVisitor("src/test/files/se/VarArgsWithNoArgYield.java");
+    MethodBehavior mb = getMethodBehavior(sev, "toArr");
+    List<MethodYield> yields = mb.yields();
+    assertThat(yields).hasSize(1);
+    assertThat(mb.isMethodVarArgs()).isTrue();
   }
 
   @Test
   public void constraints_on_varargs() throws Exception {
-    SymbolicExecutionVisitor sev = createSymbolicExecutionVisitor("src/test/files/se/VarArgsYields.java");
+    ActionParser<Tree> p = JavaParser.createParser();
+    CompilationUnitTree cut = (CompilationUnitTree) p.parse(new File("src/test/files/se/VarArgsYields.java"));
+    SemanticModel semanticModel = SemanticModel.createFor(cut, new SquidClassLoader(new ArrayList<>()));
+    SymbolicExecutionVisitor sev = new SymbolicExecutionVisitor(Lists.newArrayList(new SECheck[]{}), new BehaviorCache(new SquidClassLoader(new ArrayList<>())));
+    JavaFileScannerContext context = mock(JavaFileScannerContext.class);
+    when(context.getTree()).thenReturn(cut);
+    when(context.getSemanticModel()).thenReturn(semanticModel);
+    sev.scanFile(context);
 
-    Map.Entry<MethodSymbol, MethodBehavior> entry = getSymbolWithMethodBehavior(sev, "varArgMethod");
-    Symbol.MethodSymbol methodSymbol = entry.getKey();
-    MethodBehavior mb = entry.getValue();
+    MethodSymbol methodSymbol = ((MethodTree) ((ClassTree) cut.types().get(0)).members().get(0)).symbol();
+    MethodBehavior mb = getMethodBehavior(sev, "varArgMethod");
     List<MethodYield> yields = mb.yields();
     assertThat(yields).hasSize(5);
     assertThat(mb.exceptionalPathYields()).hasSize(4);
@@ -191,10 +255,10 @@ public class MethodYieldTest {
 
     ProgramState ps = ProgramState.EMPTY_STATE;
     ProgramState psResult;
-    SymbolicValue svFirstArg = new SymbolicValue(41);
-    SymbolicValue svVarArg1 = new SymbolicValue(42);
-    SymbolicValue svVarArg2 = new SymbolicValue(43);
-    SymbolicValue svResult = new SymbolicValue(43);
+    SymbolicValue svFirstArg = new SymbolicValue();
+    SymbolicValue svVarArg1 = new SymbolicValue();
+    SymbolicValue svVarArg2 = new SymbolicValue();
+    SymbolicValue svResult = new SymbolicValue();
 
     // apply constraint NotNull to parameter
     Collection<ProgramState> arrayOfA = yield.statesAfterInvocation(Lists.newArrayList(svFirstArg, svVarArg1), arguments.get(0), ps, () -> svResult).collect(Collectors.toList());
@@ -245,26 +309,26 @@ public class MethodYieldTest {
 
   @Test
   public void native_methods_behavior_should_not_be_used() throws Exception {
-    Map<Symbol.MethodSymbol, MethodBehavior> behaviorCache = createSymbolicExecutionVisitor("src/test/files/se/XProcNativeMethods.java").behaviorCache.behaviors;
-    behaviorCache.entrySet().stream().filter(e -> e.getKey().name().equals("foo")).forEach(e -> assertThat(e.getValue().yields()).hasSize(2));
+    Map<String, MethodBehavior> behaviorCache = createSymbolicExecutionVisitor("src/test/files/se/XProcNativeMethods.java").behaviorCache.behaviors;
+    behaviorCache.entrySet().stream().filter(e -> "foo".contains(e.getKey())).forEach(e -> assertThat(e.getValue().yields()).hasSize(2));
   }
 
   @Test
   public void catch_class_cast_exception() throws Exception {
-    Map<Symbol.MethodSymbol, MethodBehavior> behaviorCache = createSymbolicExecutionVisitor("src/test/files/se/XProcCatchClassCastException.java").behaviorCache.behaviors;
+    Map<String, MethodBehavior> behaviorCache = createSymbolicExecutionVisitor("src/test/files/se/XProcCatchClassCastException.java").behaviorCache.behaviors;
     assertThat(behaviorCache.values()).hasSize(1);
     MethodBehavior methodBehavior = behaviorCache.values().iterator().next();
     assertThat(methodBehavior.yields()).hasSize(2);
     MethodYield[] expected = new MethodYield[] {
       buildMethodYield(0, null),
-      buildMethodYield(-1, PCollections.<Class<? extends Constraint>, Constraint>emptyMap().put(ObjectConstraint.class, ObjectConstraint.NULL))};
+      buildMethodYield(-1, ConstraintsByDomain.empty().put(ObjectConstraint.NULL))};
     assertThat(methodBehavior.yields()).contains(expected);
   }
 
-  private static MethodYield buildMethodYield(int resultIndex, @Nullable PMap<Class<? extends Constraint>, Constraint> resultConstraint) {
+  private static MethodYield buildMethodYield(int resultIndex, @Nullable ConstraintsByDomain resultConstraint) {
     HappyPathYield methodYield = new HappyPathYield(mockMethodBehavior(1, false));
     methodYield.parametersConstraints = new ArrayList<>();
-    methodYield.parametersConstraints.add(PCollections.emptyMap());
+    methodYield.parametersConstraints.add(ConstraintsByDomain.empty());
     methodYield.setResult(resultIndex, resultConstraint);
     return methodYield;
   }

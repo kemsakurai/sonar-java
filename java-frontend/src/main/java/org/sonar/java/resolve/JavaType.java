@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -22,7 +22,10 @@ package org.sonar.java.resolve;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
 
+import javax.annotation.CheckForNull;
 import javax.annotation.Nullable;
+
+import java.util.Set;
 
 public class JavaType implements Type {
 
@@ -44,6 +47,7 @@ public class JavaType implements Type {
   public static final int WILDCARD = 16;
   public static final int DEFERRED = 17;
   public static final int PARAMETERIZED = 18;
+  public static final int INTERSECTION = 19;
 
   int tag;
 
@@ -76,44 +80,31 @@ public class JavaType implements Type {
     return symbol;
   }
 
+  @CheckForNull
+  public JavaType getSuperType() {
+    return getSymbol().getSuperclass();
+  }
+
+  public Set<ClassJavaType> directSuperTypes() {
+    return getSymbol().directSuperTypes();
+  }
+
   @Override
   public boolean is(String fullyQualifiedName) {
     if (tag < CLASS) {
       // primitive type
       return fullyQualifiedName.equals(symbol.name);
-    } else if (isTagged(ARRAY)) {
-      return fullyQualifiedName.endsWith("[]") && ((ArrayJavaType) this).elementType.is(fullyQualifiedName.substring(0, fullyQualifiedName.length() - 2));
-    } else if (isTagged(TYPEVAR)) {
-      return false;
     }
     return false;
   }
 
   @Override
   public boolean isSubtypeOf(String fullyQualifiedName) {
-    if (isTagged(ARRAY)) {
-      return "java.lang.Object".equals(fullyQualifiedName) ||
-          (fullyQualifiedName.endsWith("[]") && ((ArrayJavaType) this).elementType.isSubtypeOf(fullyQualifiedName.substring(0, fullyQualifiedName.length() - 2)));
-    } else if (isTagged(TYPEVAR)) {
-      return erasure().isSubtypeOf(fullyQualifiedName);
-    }
     return false;
   }
 
   @Override
   public boolean isSubtypeOf(Type superType) {
-    JavaType supType = (JavaType) superType;
-    if (isTagged(ARRAY)) {
-      //Handle covariance of arrays.
-      if(supType.isTagged(ARRAY)) {
-        return ((ArrayType) this).elementType().isSubtypeOf(((ArrayType) supType).elementType());
-      }
-      if(supType.isTagged(WILDCARD)) {
-        return ((WildCardType) superType).isSubtypeOfBound(this);
-      }
-      //Only possibility to be supertype of array without being an array is to be Object.
-      return "java.lang.Object".equals(supType.fullyQualifiedName());
-    }
     return false;
   }
 

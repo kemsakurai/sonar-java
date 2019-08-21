@@ -9,13 +9,13 @@ package javax.annotation;
 class A {
  public void testCheckNotNull2(@CheckForNull Object parameter) {
     long remainingNanos = 0;
-    final long endNanos = remainingNanos > 0 ? System.nanoTime() + remainingNanos : 0;
+    final long endNanos = remainingNanos > 0 ? System.nanoTime() + remainingNanos : 0; // Noncompliant {{Change this condition so that it does not always evaluate to "false"}}
     label :
     do{
-      if(remainingNanos <0 ){
+      if(remainingNanos <0 ){ // Noncompliant {{Change this condition so that it does not always evaluate to "false"}}
         break label;
       }
-    } while ( remainingNanos >0);
+    } while ( remainingNanos >0); // Noncompliant {{Remove this expression which always evaluates to "false"}}
   }
   public void testCheckNotNull(@CheckForNull Object parameter) {
     int i;
@@ -27,7 +27,7 @@ class A {
     i = checkForNullField.length; // False negative, instance and static fields are not checked
 
     Object[] array2 = checkForNullMethod();
-    i = array2.length; // Noncompliant {{NullPointerException might be thrown as 'array2' is nullable here}}
+    i = array2.length; // Noncompliant {{A "NullPointerException" could be thrown; "array2" is nullable here.}}
   }
 
   void testArrayAccess() {
@@ -175,7 +175,7 @@ class A {
 
   boolean foo(boolean foo) {
     boolean identifier = true;
-    return (boolean) !identifier && foo; // Noncompliant {{Change this condition so that it does not always evaluate to "false"}}
+    return (boolean) !identifier && foo; // Noncompliant {{Remove this expression which always evaluates to "false"}}
   }
 }
 
@@ -207,4 +207,59 @@ final class C {
     return component;
   }
 
+}
+
+abstract class S3655noInterruption {
+
+  public void foo(boolean b) {
+    if (bar(b)) {
+      doSomething(42);
+    }
+  }
+
+  private boolean bar(boolean b) {
+    if (b) {
+      java.util.Optional<Object> value = getValue();
+      doSomething(value.get()); // Noncompliant {{Call "value.isPresent()" before accessing the value.}}
+      return true;
+    }
+    return false;
+  }
+
+  public abstract void doSomething(Object o);
+  public abstract java.util.Optional<Object> getValue();
+}
+
+abstract class FilteringOptionalImpactSymbolicValues {
+
+
+  private boolean bar() {
+    if (java.util.Optional.of("abc").isPresent()) { // Noncompliant {{Change this condition so that it does not always evaluate to "true"}}
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  private boolean foo(String x) {
+    if (!java.util.Optional.of(x).filter(s -> s.startsWith("a")).isPresent()) { // Ok - not always true
+      return true;
+    }
+
+    java.util.Optional op = java.util.Optional.empty();
+    if (op.isPresent()) { // Noncompliant {{Change this condition so that it does not always evaluate to "false"}}
+      return true;
+    }
+
+    return false;
+  }
+
+  public void foobar(@Nullable String x) {
+    java.util.Optional<String> op = java.util.Optional.ofNullable(x).filter(s -> s.startsWith("a"));
+    if (!op.isPresent()) {
+      doSomething("");
+    }
+  }
+
+  public abstract void doSomething(Object o);
 }

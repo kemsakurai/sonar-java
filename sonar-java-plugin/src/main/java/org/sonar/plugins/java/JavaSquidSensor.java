@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,6 +19,8 @@
  */
 package org.sonar.plugins.java;
 
+import com.google.common.collect.ImmutableList;
+import java.util.List;
 import org.sonar.api.batch.DependedUpon;
 import org.sonar.api.batch.DependsUpon;
 import org.sonar.api.batch.Phase;
@@ -27,24 +29,19 @@ import org.sonar.api.batch.fs.InputFile;
 import org.sonar.api.batch.sensor.Sensor;
 import org.sonar.api.batch.sensor.SensorContext;
 import org.sonar.api.batch.sensor.SensorDescriptor;
-import org.sonar.api.config.Settings;
+import org.sonar.api.config.Configuration;
 import org.sonar.api.issue.NoSonarFilter;
 import org.sonar.api.utils.log.Logger;
 import org.sonar.api.utils.log.Loggers;
-import org.sonar.java.DefaultJavaResourceLocator;
-import org.sonar.java.JavaConfiguration;
 import org.sonar.java.JavaSquid;
 import org.sonar.java.Measurer;
 import org.sonar.java.SonarComponents;
 import org.sonar.java.checks.CheckList;
 import org.sonar.java.filters.PostAnalysisIssueFilter;
 import org.sonar.java.model.JavaVersionImpl;
+import org.sonar.plugins.java.api.JavaCheck;
+import org.sonar.plugins.java.api.JavaResourceLocator;
 import org.sonar.plugins.java.api.JavaVersion;
-
-import java.io.File;
-import java.nio.charset.Charset;
-import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
 
 @Phase(name = Phase.Name.PRE)
 @DependsUpon("BEFORE_SQUID")
@@ -55,19 +52,17 @@ public class JavaSquidSensor implements Sensor {
 
   private final SonarComponents sonarComponents;
   private final FileSystem fs;
-  private final DefaultJavaResourceLocator javaResourceLocator;
-  private final Settings settings;
+  private final JavaResourceLocator javaResourceLocator;
+  private final Configuration settings;
   private final NoSonarFilter noSonarFilter;
-  private final PostAnalysisIssueFilter postAnalysisIssueFilter;
 
   public JavaSquidSensor(SonarComponents sonarComponents, FileSystem fs,
-    DefaultJavaResourceLocator javaResourceLocator, Settings settings, NoSonarFilter noSonarFilter, PostAnalysisIssueFilter postAnalysisIssueFilter) {
+    JavaResourceLocator javaResourceLocator, Configuration settings, NoSonarFilter noSonarFilter) {
     this.noSonarFilter = noSonarFilter;
     this.sonarComponents = sonarComponents;
     this.fs = fs;
     this.javaResourceLocator = javaResourceLocator;
     this.settings = settings;
-    this.postAnalysisIssueFilter = postAnalysisIssueFilter;
   }
 
   @Override
@@ -77,39 +72,43 @@ public class JavaSquidSensor implements Sensor {
 
   @Override
   public void execute(SensorContext context) {
-    javaResourceLocator.setSensorContext(context);
     sonarComponents.setSensorContext(context);
-    sonarComponents.registerCheckClasses(CheckList.REPOSITORY_KEY, CheckList.getJavaChecks());
+
+    List<Class<? extends JavaCheck>> checks = ImmutableList.<Class<? extends JavaCheck>>builder()
+      .addAll(CheckList.getJavaChecks())
+      .addAll(CheckList.getDebugChecks())
+      .build();
+    sonarComponents.registerCheckClasses(CheckList.REPOSITORY_KEY, checks);
     sonarComponents.registerTestCheckClasses(CheckList.REPOSITORY_KEY, CheckList.getJavaTestChecks());
-    JavaConfiguration configuration = createConfiguration();
-    Measurer measurer = new Measurer(fs, context, noSonarFilter);
-    JavaSquid squid = new JavaSquid(configuration, sonarComponents, measurer, javaResourceLocator, postAnalysisIssueFilter, sonarComponents.checkClasses());
+
+    Measurer measurer = new Measurer(context, noSonarFilter);
+    PostAnalysisIssueFilter postAnalysisIssueFilter = new PostAnalysisIssueFilter();
+
+    JavaSquid squid = new JavaSquid(getJavaVersion(), isXFileEnabled(), sonarComponents, measurer, javaResourceLocator, postAnalysisIssueFilter, sonarComponents.checkClasses());
     squid.scan(getSourceFiles(), getTestFiles());
+    sonarComponents.saveAnalysisErrors();
   }
 
-  private Iterable<File> getSourceFiles() {
-    return toFile(fs.inputFiles(fs.predicates().and(fs.predicates().hasLanguage(Java.KEY), fs.predicates().hasType(InputFile.Type.MAIN))));
+  private Iterable<InputFile> getSourceFiles() {
+    return javaFiles(InputFile.Type.MAIN);
   }
 
-  private Iterable<File> getTestFiles() {
-    return toFile(fs.inputFiles(fs.predicates().and(fs.predicates().hasLanguage(Java.KEY), fs.predicates().hasType(InputFile.Type.TEST))));
+  private Iterable<InputFile> getTestFiles() {
+    return javaFiles(InputFile.Type.TEST);
   }
 
-  private static Iterable<File> toFile(Iterable<InputFile> inputFiles) {
-    return StreamSupport.stream(inputFiles.spliterator(), false).map(InputFile::file).collect(Collectors.toList());
-  }
-
-  private JavaConfiguration createConfiguration() {
-    Charset charset = fs.encoding();
-    JavaConfiguration conf = new JavaConfiguration(charset);
-    JavaVersion javaVersion = getJavaVersion();
-    LOG.info("Configured Java source version (" + Java.SOURCE_VERSION + "): " + javaVersion);
-    conf.setJavaVersion(javaVersion);
-    return conf;
+  private Iterable<InputFile> javaFiles(InputFile.Type type) {
+    return fs.inputFiles(fs.predicates().and(fs.predicates().hasLanguage(Java.KEY), fs.predicates().hasType(type)));
   }
 
   private JavaVersion getJavaVersion() {
-    return JavaVersionImpl.fromString(settings.getString(Java.SOURCE_VERSION));
+    JavaVersion javaVersion = JavaVersionImpl.fromString(settings.get(Java.SOURCE_VERSION).orElse(null));
+    LOG.info("Configured Java source version (" + Java.SOURCE_VERSION + "): " + javaVersion);
+    return javaVersion;
+  }
+
+  private boolean isXFileEnabled() {
+    return settings.getBoolean("sonar.java.xfile").orElse(false);
   }
 
   @Override

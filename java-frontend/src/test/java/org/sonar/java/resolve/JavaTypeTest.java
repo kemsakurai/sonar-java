@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,26 +19,27 @@
  */
 package org.sonar.java.resolve;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
-
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
 import org.junit.Test;
+import org.sonar.java.TestUtils;
 import org.sonar.java.ast.JavaAstScanner;
 import org.sonar.java.ast.visitors.SubscriptionVisitor;
+import org.sonar.java.bytecode.loader.SquidClassLoader;
 import org.sonar.java.model.JavaTree;
 import org.sonar.java.model.VisitorsBridge;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import java.io.File;
-import java.util.Collections;
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class JavaTypeTest {
 
-  private Symbols symbols = new Symbols(new BytecodeCompleter(Lists.<File>newArrayList(), new ParametrizedTypeCache()));
+  private Symbols symbols = new Symbols(new BytecodeCompleter(new SquidClassLoader(Collections.emptyList()), new ParametrizedTypeCache()));
 
   @Test
   public void test_order_of_tags() {
@@ -74,24 +75,13 @@ public class JavaTypeTest {
   }
 
   @Test
-  public void to_string_on_type() throws Exception {
-    assertThat(new JavaType(JavaType.VOID, null).toString()).isEmpty();
-    String methodToString = new MethodJavaType(ImmutableList.<JavaType>of(), new Symbols(new BytecodeCompleter(Lists.<File>newArrayList(), new ParametrizedTypeCache())).intType,
-      ImmutableList.<JavaType>of(), null).toString();
-    assertThat(methodToString).isEqualTo("returns int");
-
-    String constructorToString = new MethodJavaType(ImmutableList.<JavaType>of(), null, ImmutableList.<JavaType>of(), null).toString();
-    assertThat(constructorToString).isEqualTo("constructor");
-  }
-
-  @Test
   public void type_is_fully_qualified_name() {
     JavaSymbol.PackageJavaSymbol packageSymbol = new JavaSymbol.PackageJavaSymbol("org.foo.bar", null);
     JavaSymbol.TypeJavaSymbol typeSymbol = new JavaSymbol.TypeJavaSymbol(Flags.PUBLIC, "MyType", packageSymbol);
-    JavaSymbol.TypeJavaSymbol typeSymbol2 = new JavaSymbol.TypeJavaSymbol(Flags.PUBLIC, "MyType", symbols.rootPackage);
+    JavaSymbol.TypeJavaSymbol typeSymbol2 = new JavaSymbol.TypeJavaSymbol(Flags.PUBLIC, "MyType", Symbols.rootPackage);
     ArrayJavaType arrayType = new ArrayJavaType(typeSymbol.type, symbols.arrayClass);
     ClassJavaType classType = (ClassJavaType) typeSymbol.type;
-    classType.interfaces = Lists.newArrayList();
+    classType.interfaces = new ArrayList<>();
     assertThat(symbols.byteType.is("byte")).isTrue();
     assertThat(symbols.byteType.is("int")).isFalse();
     assertThat(classType.is("org.foo.bar.MyType")).isTrue();
@@ -101,7 +91,7 @@ public class JavaTypeTest {
     assertThat(arrayType.is("org.foo.bar.MyType")).isFalse();
     assertThat(arrayType.is("org.foo.bar.SomeClass[]")).isFalse();
     assertThat(symbols.nullType.is("org.foo.bar.SomeClass")).isTrue();
-    assertThat(symbols.unknownType.is("org.foo.bar.SomeClass")).isFalse();
+    assertThat(Symbols.unknownType.is("org.foo.bar.SomeClass")).isFalse();
   }
 
   @Test
@@ -131,10 +121,10 @@ public class JavaTypeTest {
     JavaSymbol.TypeJavaSymbol typeSymbol = new JavaSymbol.TypeJavaSymbol(Flags.PUBLIC, "MyType", new JavaSymbol.PackageJavaSymbol("org.foo.bar", null));
     TypeSubstitution typeSubstitution = new TypeSubstitution();
     typeSubstitution.add((TypeVariableJavaType) new JavaSymbol.TypeVariableJavaSymbol("T", typeSymbol).type, typeSymbol.type);
-    ParametrizedTypeJavaType parametrizedType = new ParametrizedTypeJavaType(typeSymbol, typeSubstitution);
+    ParametrizedTypeJavaType parametrizedType = new ParametrizedTypeJavaType(typeSymbol, typeSubstitution, null);
 
     TypeVariableJavaType typeVariableType = (TypeVariableJavaType) new JavaSymbol.TypeVariableJavaSymbol("X", typeSymbol).type;
-    typeVariableType.bounds = ImmutableList.<JavaType>of(parametrizedType);
+    typeVariableType.bounds = Collections.singletonList(parametrizedType);
 
     assertThat(typeVariableType.erasure()).isNotEqualTo(parametrizedType);
     assertThat(typeVariableType.erasure()).isEqualTo(parametrizedType.erasure());
@@ -197,6 +187,21 @@ public class JavaTypeTest {
   }
 
   @Test
+  public void direct_super_types() {
+    Set<ClassJavaType> objectDirectSuperTypes = symbols.objectType.directSuperTypes();
+    assertThat(objectDirectSuperTypes).isEmpty();
+
+    Set<ClassJavaType> integerDirectSuperTypes = symbols.intType.primitiveWrapperType.directSuperTypes();
+    assertThat(integerDirectSuperTypes).hasSize(2);
+    assertThat(integerDirectSuperTypes.stream().map(st -> st.fullyQualifiedName())).contains("java.lang.Number", "java.lang.Comparable");
+
+    ArrayJavaType arrayType = new ArrayJavaType(symbols.intType, symbols.arrayClass);
+    Set<ClassJavaType> arrayDirectSuperTypes = arrayType.directSuperTypes();
+    assertThat(arrayDirectSuperTypes).hasSize(3);
+    assertThat(arrayDirectSuperTypes.stream().map(st -> st.fullyQualifiedName())).contains("java.lang.Object", "java.lang.Cloneable", "java.io.Serializable");
+  }
+
+  @Test
   public void is_primitive_wrapper() {
     for (JavaType wrapper : symbols.boxedTypes.values()) {
       assertThat(wrapper.isPrimitiveWrapper()).isTrue();
@@ -229,13 +234,13 @@ public class JavaTypeTest {
     TypeSubstitution typeSubstitution = new TypeSubstitution();
     typeSubstitution.add(typeVariableType, classType);
 
-    ParametrizedTypeJavaType ptt = new ParametrizedTypeJavaType(typeSymbol, typeSubstitution);
+    ParametrizedTypeJavaType ptt = new ParametrizedTypeJavaType(typeSymbol, typeSubstitution, null);
     assertThat(ptt.substitution(typeVariableType)).isEqualTo(classType);
     assertThat(ptt.substitution(new TypeVariableJavaType(new JavaSymbol.TypeVariableJavaSymbol("F", typeSymbol)))).isNull();
     assertThat(ptt.typeParameters()).hasSize(1);
     assertThat(ptt.typeParameters()).contains(typeVariableType);
 
-    ptt = new ParametrizedTypeJavaType(typeSymbol, null);
+    ptt = new ParametrizedTypeJavaType(typeSymbol, null, null);
     assertThat(ptt.substitution(typeVariableType)).isNull();
     assertThat(ptt.typeParameters()).isEmpty();
 
@@ -243,17 +248,6 @@ public class JavaTypeTest {
     assertThat(ptt.isParameterized()).isTrue();
     assertThat(ptt.rawType.isClass()).isTrue();
     assertThat(ptt.rawType.isParameterized()).isFalse();
-  }
-
-  @Test
-  public void methodJavaType_return_type() {
-    JavaType intType = new Symbols(new BytecodeCompleter(Lists.<File>newArrayList(), new ParametrizedTypeCache())).intType;
-
-    MethodJavaType methodJavaType = new MethodJavaType(ImmutableList.<JavaType>of(), intType, ImmutableList.<JavaType>of(), null);
-    assertThat(methodJavaType.resultType()).isSameAs(intType);
-
-    MethodJavaType constructor = new MethodJavaType(ImmutableList.<JavaType>of(), null, ImmutableList.<JavaType>of(), null);
-    assertThat(constructor.resultType()).isNull();
   }
 
   @Test
@@ -277,7 +271,11 @@ public class JavaTypeTest {
     File bytecodeDir = new File("target/test-classes");
     ClassFullQualifiedNameVerifierVisitor visitor = new ClassFullQualifiedNameVerifierVisitor(bytecodeDir);
     JavaAstScanner.scanSingleFileForTests(
-      new File("src/test/java/org/sonar/java/resolve/targets/FullyQualifiedName.java"), new VisitorsBridge(Collections.singletonList(visitor), Lists.newArrayList(bytecodeDir), null));
+      TestUtils.inputFile("src/test/java/org/sonar/java/resolve/targets/FullyQualifiedName.java"),
+      new VisitorsBridge(
+        Collections.singletonList(visitor),
+        Collections.singletonList(bytecodeDir),
+        null));
   }
 
   private static class ClassFullQualifiedNameVerifierVisitor extends SubscriptionVisitor {
@@ -289,7 +287,7 @@ public class JavaTypeTest {
 
     @Override
     public List<Tree.Kind> nodesToVisit() {
-      return ImmutableList.of(Tree.Kind.CLASS);
+      return Collections.singletonList(Tree.Kind.CLASS);
     }
 
     @Override

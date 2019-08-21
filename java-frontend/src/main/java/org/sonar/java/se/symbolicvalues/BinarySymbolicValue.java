@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -22,20 +22,23 @@ package org.sonar.java.se.symbolicvalues;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 
-import org.sonar.java.se.constraint.BooleanConstraint;
+import org.sonar.java.se.ProgramState;
+import org.sonar.plugins.java.api.semantic.Symbol;
 
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
+
+import java.util.ArrayList;
 import java.util.List;
 
 public abstract class BinarySymbolicValue extends SymbolicValue {
 
   SymbolicValue leftOp;
+  @Nullable
+  Symbol leftSymbol;
   SymbolicValue rightOp;
-
-  public BinarySymbolicValue(int id) {
-    super(id);
-  }
-
-  public abstract BooleanConstraint shouldNotInverse();
+  @Nullable
+  Symbol rightSymbol;
 
   @Override
   public boolean references(SymbolicValue other) {
@@ -43,10 +46,39 @@ public abstract class BinarySymbolicValue extends SymbolicValue {
   }
 
   @Override
-  public void computedFrom(List<SymbolicValue> symbolicValues) {
+  public void computedFrom(List<ProgramState.SymbolicValueSymbol> symbolicValues) {
     Preconditions.checkArgument(symbolicValues.size() == 2);
-    rightOp = symbolicValues.get(0);
-    leftOp = symbolicValues.get(1);
+    Preconditions.checkState(leftOp == null && rightOp == null, "Operands already set!");
+    rightOp = symbolicValues.get(0).symbolicValue();
+    rightSymbol = symbolicValues.get(0).symbol();
+    leftOp = symbolicValues.get(1).symbolicValue();
+    leftSymbol = symbolicValues.get(1).symbol();
+  }
+
+  @Override
+  public List<Symbol> computedFromSymbols() {
+    List<Symbol> result = new ArrayList<>();
+    if (leftSymbol == null) {
+      result.addAll(leftOp.computedFromSymbols());
+    } else {
+      result.add(leftSymbol);
+    }
+    if (rightSymbol == null) {
+      result.addAll(rightOp.computedFromSymbols());
+    } else {
+      result.add(rightSymbol);
+    }
+    return result;
+  }
+
+  @CheckForNull
+  public Symbol leftSymbol() {
+    return leftSymbol;
+  }
+
+  @CheckForNull
+  public Symbol rightSymbol() {
+    return rightSymbol;
   }
 
   @Override

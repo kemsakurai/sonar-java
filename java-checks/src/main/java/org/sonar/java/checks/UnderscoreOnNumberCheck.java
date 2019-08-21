@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,8 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
-
 import org.sonar.check.Rule;
 import org.sonar.java.JavaVersionAwareVisitor;
 import org.sonar.java.model.LiteralUtils;
@@ -31,15 +29,18 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 @Rule(key = "S2148")
 public class UnderscoreOnNumberCheck extends IssuableSubscriptionVisitor implements JavaVersionAwareVisitor {
 
   private enum Base {
     BINARY("0b", 9),
+    OCTAL("0", 9),
     HEXADECIMAL("0x", 9),
-    DECIMAL("", 5);
+    DECIMAL("", 6);
 
     private final String prefix;
     private final int minimalLength;
@@ -50,12 +51,18 @@ public class UnderscoreOnNumberCheck extends IssuableSubscriptionVisitor impleme
     }
 
     private static final Base ofLiteralValue(String literalValue) {
-      if (literalValue.startsWith(BINARY.prefix)) {
+      if (BINARY.isFromBase(literalValue)) {
         return BINARY;
-      } else if (literalValue.startsWith(HEXADECIMAL.prefix)) {
-        return Base.HEXADECIMAL;
+      } else if (HEXADECIMAL.isFromBase(literalValue)) {
+        return HEXADECIMAL;
+      } else if (OCTAL.isFromBase(literalValue)) {
+        return OCTAL;
       }
-      return Base.DECIMAL;
+      return DECIMAL;
+    }
+
+    private boolean isFromBase(String value) {
+      return value.toLowerCase(Locale.ENGLISH).startsWith(prefix);
     }
   }
 
@@ -66,7 +73,7 @@ public class UnderscoreOnNumberCheck extends IssuableSubscriptionVisitor impleme
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.INT_LITERAL, Tree.Kind.LONG_LITERAL);
+    return Arrays.asList(Tree.Kind.INT_LITERAL, Tree.Kind.LONG_LITERAL);
   }
 
   @Override

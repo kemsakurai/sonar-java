@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,14 +19,11 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
-
-import org.apache.commons.lang.BooleanUtils;
+import java.util.Collections;
+import java.util.List;
 import org.sonar.check.Rule;
 import org.sonar.java.model.ModifiersUtils;
-import org.sonar.java.model.declaration.MethodTreeImpl;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
-import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Modifier;
@@ -36,17 +33,14 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
-import java.util.List;
-
 @Rule(key = "S2156")
 public class ProtectedMemberInFinalClassCheck extends IssuableSubscriptionVisitor {
 
-  private static final String GUAVA_FQCN = "com.google.common.annotations.VisibleForTesting";
   private static final String MESSAGE = "Remove this \"protected\" modifier.";
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.CLASS);
+    return Collections.singletonList(Tree.Kind.CLASS);
   }
 
   @Override
@@ -65,30 +59,31 @@ public class ProtectedMemberInFinalClassCheck extends IssuableSubscriptionVisito
       VariableTree variableTree = (VariableTree) member;
       checkVariableCompliance(variableTree);
     } else if (member.is(Kind.METHOD)) {
-      MethodTreeImpl methodTree = (MethodTreeImpl) member;
-      if (BooleanUtils.isFalse(methodTree.isOverriding())) {
+      MethodTree methodTree = (MethodTree) member;
+      if (Boolean.FALSE.equals(methodTree.isOverriding())) {
         checkMethodCompliance(methodTree);
       }
     }
   }
 
   private void checkMethodCompliance(MethodTree methodTree) {
-    checkComplianceOnModifiersAndSymbol(methodTree.modifiers(), methodTree.symbol());
+    checkComplianceOnModifiersAndSymbol(methodTree.modifiers());
   }
 
   private void checkVariableCompliance(VariableTree variableTree) {
-    checkComplianceOnModifiersAndSymbol(variableTree.modifiers(), variableTree.symbol());
+    checkComplianceOnModifiersAndSymbol(variableTree.modifiers());
   }
 
-  private void checkComplianceOnModifiersAndSymbol(ModifiersTree modifiers, Symbol symbol) {
+  private void checkComplianceOnModifiersAndSymbol(ModifiersTree modifiers) {
     ModifierKeywordTree modifier = ModifiersUtils.getModifier(modifiers, Modifier.PROTECTED);
-    if (modifier != null && !isVisibleForTesting(symbol)) {
+    if (modifier != null && !isVisibleForTesting(modifiers)) {
       reportIssue(modifier.keyword(), MESSAGE);
     }
   }
 
-  private static boolean isVisibleForTesting(Symbol symbol) {
-    return symbol.metadata().isAnnotatedWith(GUAVA_FQCN);
+  private static boolean isVisibleForTesting(ModifiersTree modifiers) {
+    return modifiers.annotations().stream()
+      .anyMatch(annotation -> "VisibleForTesting".equals(annotation.annotationType().lastToken().text()));
   }
 
 }

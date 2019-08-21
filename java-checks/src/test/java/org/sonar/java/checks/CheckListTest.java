@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,27 +20,29 @@
 package org.sonar.java.checks;
 
 import com.google.common.base.Throwables;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import com.google.common.reflect.ClassPath;
+import com.google.gson.Gson;
+import java.io.File;
+import java.io.FileReader;
+import java.lang.reflect.Constructor;
+import java.net.URL;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.apache.commons.io.FileUtils;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.sonar.api.server.rule.RulesDefinition;
 import org.sonar.api.server.rule.RulesDefinitionAnnotationLoader;
 import org.sonar.api.utils.AnnotationUtils;
-import org.sonar.java.ast.JavaAstScanner;
-import org.sonar.java.model.VisitorsBridgeForTests;
+import org.sonar.check.Rule;
+import org.sonar.java.RspecKey;
 import org.sonar.java.se.checks.SECheck;
-import org.sonar.plugins.java.api.JavaFileScanner;
-import org.sonar.squidbridge.api.CodeVisitor;
-
-import java.io.File;
-import java.lang.reflect.Constructor;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Fail.fail;
@@ -50,6 +52,9 @@ public class CheckListTest {
   private static final String ARTIFICIAL_DESCRIPTION = "-1";
 
   private static List<String> SE_CHEKS;
+  private final Gson gson = new Gson();
+
+  private static final Set<String> BLACK_LIST = ImmutableSet.of("AbstractXPathBasedCheck.java", "AbstractWebXmlXPathBasedCheck.java");
 
   @BeforeClass
   public static void before() throws Exception {
@@ -69,13 +74,12 @@ public class CheckListTest {
     int count = 0;
     List<File> files = (List<File>) FileUtils.listFiles(new File("src/main/java/org/sonar/java/checks/"), new String[] {"java"}, true);
     for (File file : files) {
-      if (file.getName().endsWith("Check.java")) {
+      if (file.getName().endsWith("Check.java") && !BLACK_LIST.contains(file.getName())) {
         count++;
       }
     }
     assertThat(CheckList.getChecks().size()).isEqualTo(count + SE_CHEKS.size());
   }
-
 
   private static class CustomRulesDefinition implements RulesDefinition {
 
@@ -102,6 +106,11 @@ public class CheckListTest {
     }
   }
 
+  @Test
+  public void debugTests() {
+    assertThat(CheckList.getDebugChecks()).hasSize(3);
+  }
+
   /**
    * Enforces that each check has test, name and description.
    */
@@ -113,12 +122,8 @@ public class CheckListTest {
       String testName = '/' + cls.getName().replace('.', '/') + "Test.class";
       String simpleName = cls.getSimpleName();
       // Handle legacy keys.
-      org.sonar.java.RspecKey rspecKeyAnnotation = AnnotationUtils.getAnnotation(cls, org.sonar.java.RspecKey.class);
-      org.sonar.check.Rule ruleAnnotation = AnnotationUtils.getAnnotation(cls, org.sonar.check.Rule.class);
-      String key = ruleAnnotation.key();
-      if (rspecKeyAnnotation != null) {
-        key = rspecKeyAnnotation.value();
-      }
+      Rule ruleAnnotation = AnnotationUtils.getAnnotation(cls, Rule.class);
+      String key = getKey(cls, ruleAnnotation);
       keyMap.put(ruleAnnotation.key(), key);
       if (SE_CHEKS.contains(simpleName)) {
         continue;
@@ -128,7 +133,7 @@ public class CheckListTest {
         .isNotNull();
     }
 
-    Set<String> keys = Sets.newHashSet();
+    Set<String> keys = new HashSet<>();
     Set<String> names = Sets.newHashSet();
     CustomRulesDefinition definition = new CustomRulesDefinition();
     RulesDefinition.Context context = new RulesDefinition.Context();
@@ -154,6 +159,15 @@ public class CheckListTest {
     }
   }
 
+  private static String getKey(Class cls, Rule ruleAnnotation) {
+    String key = ruleAnnotation.key();
+    RspecKey rspecKeyAnnotation = AnnotationUtils.getAnnotation(cls, RspecKey.class);
+    if (rspecKeyAnnotation != null) {
+      return rspecKeyAnnotation.value();
+    }
+    return key;
+  }
+
   @Test
   public void enforce_CheckList_registration() {
     List<File> files = (List<File>) FileUtils.listFiles(new File("src/main/java/org/sonar/java/checks/"), new String[]{"java"}, false);
@@ -172,18 +186,29 @@ public class CheckListTest {
     }
   }
 
-  /**
-   * Ensures that all checks are able to deal with unparsable files
-   */
   @Test
-  public void should_not_fail_on_invalid_file() throws Exception {
+  public void rules_targeting_tests_should_have_tests_tag() throws Exception {
+    Set<Class> testChecks = new HashSet<>(CheckList.getJavaTestChecks());
 
-    for (Class check : CheckList.getChecks()) {
-      CodeVisitor visitor = (CodeVisitor) check.newInstance();
-      if (visitor instanceof JavaFileScanner) {
-        JavaAstScanner.scanSingleFileForTests(new File("src/test/files/CheckListParseErrorTest.java"), new VisitorsBridgeForTests((JavaFileScanner) visitor));
+    for (Class cls : CheckList.getChecks()) {
+      String key = getKey(cls, AnnotationUtils.getAnnotation(cls, Rule.class));
+      URL metadataURL = getClass().getResource("/org/sonar/l10n/java/rules/" + CheckList.REPOSITORY_KEY + "/" + key + "_java.json");
+      File metadataFile = new File(metadataURL.toURI());
+      assertThat(metadataFile).exists();
+      try (FileReader jsonReader = new FileReader(metadataFile)) {
+        DummyMetatada metatada = gson.fromJson(jsonReader, DummyMetatada.class);
+        if (testChecks.contains(cls)) {
+          assertThat(metatada.tags).as("Rule " + key + " is targeting tests sources and should contain the 'tests' tag.").contains("tests");
+        } else {
+          assertThat(metatada.tags).as("Rule " + key + " is targeting main sources and should not contain the 'tests' tag.").doesNotContain("tests");
+        }
       }
     }
+  }
+
+  private static class DummyMetatada {
+    // ignore all the other fields
+    String[] tags;
   }
 
   @Test

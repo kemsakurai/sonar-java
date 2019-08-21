@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,11 +20,16 @@
 package org.sonar.java.model.expression;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+import javax.annotation.Nullable;
 import org.sonar.java.model.AbstractTypedTree;
 import org.sonar.java.model.InternalSyntaxToken;
+import org.sonar.java.model.JavaTree;
 import org.sonar.plugins.java.api.tree.AnnotationTree;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
@@ -34,10 +39,7 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.TreeVisitor;
 import org.sonar.plugins.java.api.tree.TypeTree;
 
-import javax.annotation.Nullable;
-import java.util.List;
-
-public class MemberSelectExpressionTreeImpl extends AbstractTypedTree implements MemberSelectExpressionTree {
+public class MemberSelectExpressionTreeImpl extends AbstractTypedTree implements MemberSelectExpressionTree, JavaTree.AnnotatedTypeTree {
 
   private ExpressionTree expression;
 
@@ -53,17 +55,17 @@ public class MemberSelectExpressionTreeImpl extends AbstractTypedTree implements
     this.nestedDimensions = nestedDimensions;
     this.dotToken = dotToken;
     this.identifier = identifier;
-    this.annotations = ImmutableList.<AnnotationTree>of();
+    this.annotations = Collections.emptyList();
   }
 
   public MemberSelectExpressionTreeImpl(ExpressionTree expression, InternalSyntaxToken dotToken, IdentifierTree identifier) {
     super(Kind.MEMBER_SELECT);
 
     this.nestedDimensions = null;
-    this.expression = Preconditions.checkNotNull(expression);
+    this.expression = Objects.requireNonNull(expression);
     this.dotToken = dotToken;
-    this.identifier = Preconditions.checkNotNull(identifier);
-    this.annotations = ImmutableList.<AnnotationTree>of();
+    this.identifier = Objects.requireNonNull(identifier);
+    this.annotations = Collections.emptyList();
   }
 
   public MemberSelectExpressionTreeImpl completeWithExpression(ExpressionTree expression) {
@@ -80,9 +82,9 @@ public class MemberSelectExpressionTreeImpl extends AbstractTypedTree implements
     return this;
   }
 
-  public MemberSelectExpressionTreeImpl complete(List<AnnotationTree> annotations) {
+  @Override
+  public void complete(List<AnnotationTree> annotations) {
     this.annotations = annotations;
-    return this;
   }
 
   @Override

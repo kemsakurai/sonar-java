@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,6 +21,11 @@ package org.sonar.java.ast.visitors;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import org.sonar.api.batch.fs.InputFile;
 import org.sonar.api.measures.CoreMetrics;
 import org.sonar.api.measures.FileLinesContext;
 import org.sonar.java.SonarComponents;
@@ -34,16 +39,9 @@ import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Modifier;
 import org.sonar.plugins.java.api.tree.NewClassTree;
 import org.sonar.plugins.java.api.tree.SyntaxToken;
-import org.sonar.plugins.java.api.tree.SyntaxTrivia;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.TypeTree;
 import org.sonar.plugins.java.api.tree.VariableTree;
-
-import java.io.File;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
 
 import static org.sonar.plugins.java.api.tree.Tree.Kind.BLOCK;
 import static org.sonar.plugins.java.api.tree.Tree.Kind.BOOLEAN_LITERAL;
@@ -76,7 +74,6 @@ public class FileLinesVisitor extends SubscriptionVisitor {
 
   private final SonarComponents sonarComponents;
   private final Set<Integer> linesOfCode = new HashSet<>();
-  private final Set<Integer> linesOfComments = new HashSet<>();
   private final Set<Integer> executableLines = new HashSet<>();
 
   public FileLinesVisitor(SonarComponents sonarComponents) {
@@ -85,34 +82,27 @@ public class FileLinesVisitor extends SubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    if(sonarComponents.isSQGreaterThan62()) {
-      return ImmutableList.of(TOKEN,
-        METHOD, CONSTRUCTOR,
-        INITIALIZER, STATIC_INITIALIZER,
-        VARIABLE,
-        FOR_EACH_STATEMENT, FOR_STATEMENT, WHILE_STATEMENT, DO_STATEMENT,
-        LAMBDA_EXPRESSION);
-    }
-    return ImmutableList.of(TOKEN);
+    return ImmutableList.of(TOKEN,
+      METHOD, CONSTRUCTOR,
+      INITIALIZER, STATIC_INITIALIZER,
+      VARIABLE,
+      FOR_EACH_STATEMENT, FOR_STATEMENT, WHILE_STATEMENT, DO_STATEMENT,
+      LAMBDA_EXPRESSION);
+
   }
 
   @Override
   public void scanFile(JavaFileScannerContext context) {
     super.scanFile(context);
-    File currentFile = context.getFile();
+    InputFile currentFile = context.getInputFile();
     FileLinesContext fileLinesContext = sonarComponents.fileLinesContextFor(currentFile);
-    int fileLength = sonarComponents.fileLength(currentFile);
-    for (int line = 1; line <= fileLength; line++) {
+    for (int line = 1; line <= currentFile.lines(); line++) {
       fileLinesContext.setIntValue(CoreMetrics.NCLOC_DATA_KEY, line, linesOfCode.contains(line) ? 1 : 0);
-      fileLinesContext.setIntValue(CoreMetrics.COMMENT_LINES_DATA_KEY, line, linesOfComments.contains(line) ? 1 : 0);
-      if(sonarComponents.isSQGreaterThan62()) {
-        fileLinesContext.setIntValue(CoreMetrics.EXECUTABLE_LINES_DATA_KEY, line, executableLines.contains(line) ? 1 : 0);
-      }
+      fileLinesContext.setIntValue(CoreMetrics.EXECUTABLE_LINES_DATA_KEY, line, executableLines.contains(line) ? 1 : 0);
     }
     fileLinesContext.save();
 
     linesOfCode.clear();
-    linesOfComments.clear();
     executableLines.clear();
   }
 
@@ -207,13 +197,6 @@ public class FileLinesVisitor extends SubscriptionVisitor {
   @Override
   public void visitToken(SyntaxToken syntaxToken) {
     linesOfCode.add(syntaxToken.line());
-    for (SyntaxTrivia trivia : syntaxToken.trivias()) {
-      int baseLine = trivia.startLine();
-      String[] lines = trivia.comment().split("(\r)?\n|\r", -1);
-      for (int i = 0; i < lines.length; i++) {
-        linesOfComments.add(baseLine + i);
-      }
-    }
   }
 
   private static boolean isConstant(VariableTree variableTree) {
@@ -231,7 +214,7 @@ public class FileLinesVisitor extends SubscriptionVisitor {
 
     @Override
     public List<Tree.Kind> nodesToVisit() {
-      return ImmutableList.of(TOKEN);
+      return Collections.singletonList(TOKEN);
     }
 
     @Override

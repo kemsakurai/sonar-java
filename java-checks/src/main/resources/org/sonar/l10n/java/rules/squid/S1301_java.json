@@ -7,8 +7,10 @@
     "constantCost": "5min"
   },
   "tags": [
-    "misra",
     "bad-practice"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-1301",
+  "sqKey": "S1301",
+  "scope": "All"
 }

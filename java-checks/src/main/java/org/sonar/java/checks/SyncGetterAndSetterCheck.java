@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,21 +19,21 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import org.sonar.check.Rule;
+import org.sonar.java.model.ExpressionUtils;
 import org.sonar.java.model.ModifiersUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.tree.BlockTree;
-import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Modifier;
 import org.sonar.plugins.java.api.tree.SynchronizedStatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 @Rule(key = "S2886")
@@ -75,7 +75,7 @@ public class SyncGetterAndSetterCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD);
+    return Collections.singletonList(Tree.Kind.METHOD);
   }
 
   @Override
@@ -112,7 +112,7 @@ public class SyncGetterAndSetterCheck extends IssuableSubscriptionVisitor {
     BlockTree blockTree = methodTree.block();
     if (blockTree != null && blockTree.body().size() == 1 && blockTree.body().get(0).is(Tree.Kind.SYNCHRONIZED_STATEMENT)) {
       SynchronizedStatementTree sync = (SynchronizedStatementTree) blockTree.body().get(0);
-      return sync.expression().is(Tree.Kind.IDENTIFIER) && "this".equals(((IdentifierTree) sync.expression()).name());
+      return ExpressionUtils.isThis(sync.expression());
     }
     return false;
   }

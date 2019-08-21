@@ -17,6 +17,8 @@ class BadConstantName {
   interface Interface {
     int GOOD_CONSTANT = 1,
         bad_constant = 2; // Noncompliant
+
+    void foo();
   }
 
   @interface AnnotationType {

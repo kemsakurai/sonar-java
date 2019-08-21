@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -93,13 +93,18 @@ public class ExpressionTest {
       .matches("(Callable[] & Serializable) foo")
       .matches("(Callable<Integer[]>[] & Serializable) foo")
       .matches("(Comparator<Map.Entry<K, V>>[] & Serializable) foo")
-      .matches("(a & b) - c");
+      .matches("(a & b) - c")
 
+      // Java 9 - §15.9 : Diamond operator on anonymous classes
+      .matches("new MyClass<>() {}")
+      .matches("new MyClass<>(param1, param2) {}")
+      .matches("new @Foo MyClass<>(\"literal\")")
+      .matches("outerClass.new innerClass<>(42)");
   }
 
   @Test
   public void test_SONARJAVA_793() {
-    String bigInput = Strings.repeat("(", 64) + "1" + Strings.repeat(")", 64);
+    String bigInput = Strings.repeat("(", 60) + "1" + Strings.repeat(")", 60);
     assertThat(JavaLexer.EXPRESSION)
       .matches(bigInput);
   }

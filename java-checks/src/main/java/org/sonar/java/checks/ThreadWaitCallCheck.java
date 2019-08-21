@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,32 +19,31 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Arrays;
+import java.util.List;
 import org.sonar.check.Rule;
-import org.sonar.java.checks.helpers.MethodsHelper;
 import org.sonar.java.checks.methods.AbstractMethodDetection;
 import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.java.matcher.TypeCriteria;
+import org.sonar.java.model.ExpressionUtils;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
-
-import java.util.List;
 
 @Rule(key = "S2236")
 public class ThreadWaitCallCheck extends AbstractMethodDetection {
 
   @Override
   protected void onMethodInvocationFound(MethodInvocationTree mit) {
-    reportIssue(MethodsHelper.methodName(mit), "Refactor the synchronisation mechanism to not use a Thread instance as a monitor");
+    reportIssue(ExpressionUtils.methodName(mit), "Refactor the synchronisation mechanism to not use a Thread instance as a monitor");
   }
 
   @Override
   protected List<MethodMatcher> getMethodInvocationMatchers() {
     TypeCriteria subtypeOfThread = TypeCriteria.subtypeOf("java.lang.Thread");
-    return ImmutableList.<MethodMatcher>builder()
-      .add(MethodMatcher.create().callSite(subtypeOfThread).name("wait").withoutParameter())
-      .add(MethodMatcher.create().callSite(subtypeOfThread).name("wait").addParameter("long"))
-      .add(MethodMatcher.create().callSite(subtypeOfThread).name("wait").addParameter("long").addParameter("int"))
-      .add(MethodMatcher.create().callSite(subtypeOfThread).name("notify").withoutParameter())
-      .add(MethodMatcher.create().callSite(subtypeOfThread).name("notifyAll").withoutParameter()).build();
+    return Arrays.asList(
+      MethodMatcher.create().callSite(subtypeOfThread).name("wait").withoutParameter(),
+      MethodMatcher.create().callSite(subtypeOfThread).name("wait").addParameter("long"),
+      MethodMatcher.create().callSite(subtypeOfThread).name("wait").addParameter("long").addParameter("int"),
+      MethodMatcher.create().callSite(subtypeOfThread).name("notify").withoutParameter(),
+      MethodMatcher.create().callSite(subtypeOfThread).name("notifyAll").withoutParameter());
   }
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,24 +20,23 @@
 package org.sonar.java.resolve;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
-
 import org.sonar.plugins.java.api.semantic.Type;
 
 import javax.annotation.Nullable;
-
+import java.util.ArrayList;
 import java.util.List;
 
 public class ParametrizedTypeJavaType extends ClassJavaType {
 
-  public static TypeSubstitutionSolver typeSubstitutionSolver;
+  private final TypeSubstitutionSolver typeSubstitutionSolver;
   final TypeSubstitution typeSubstitution;
   final JavaType rawType;
 
-  ParametrizedTypeJavaType(JavaSymbol.TypeJavaSymbol symbol, TypeSubstitution typeSubstitution) {
+  public ParametrizedTypeJavaType(JavaSymbol.TypeJavaSymbol symbol, TypeSubstitution typeSubstitution, TypeSubstitutionSolver typeSubstitutionSolver) {
     super(PARAMETERIZED, symbol);
-    this.rawType = symbol.getType();
+    this.rawType = symbol.getType().erasure();
     this.typeSubstitution = typeSubstitution;
+    this.typeSubstitutionSolver = typeSubstitutionSolver;
   }
 
   @Override
@@ -58,7 +57,7 @@ public class ParametrizedTypeJavaType extends ClassJavaType {
     if (typeSubstitution != null) {
       return typeSubstitution.typeVariables();
     }
-    return Lists.newArrayList();
+    return new ArrayList<>();
   }
 
   @Override
@@ -76,14 +75,9 @@ public class ParametrizedTypeJavaType extends ClassJavaType {
   }
 
   private boolean verifySuperTypes(Type superType) {
-    JavaType superclass = symbol.getSuperclass();
-    if (superclass != null) {
-      superclass = typeSubstitutionSolver.applySubstitution(superclass, this.typeSubstitution);
-      if (superclass.isSubtypeOf(superType)) {
-        return true;
-      }
-    }
-    return symbol.getInterfaces().stream().map(si -> typeSubstitutionSolver.applySubstitution(si, this.typeSubstitution)).anyMatch(si -> si.isSubtypeOf(superType));
+    JavaType superclass = getSuperType();
+    return (superclass != null && superclass.isSubtypeOf(superType))
+      || symbol.getInterfaces().stream().map(si -> typeSubstitutionSolver.applySubstitution(si, this.typeSubstitution)).anyMatch(si -> si.isSubtypeOf(superType));
   }
 
   private boolean checkSubstitutedTypesCompatibility(ParametrizedTypeJavaType superType) {
@@ -105,5 +99,10 @@ public class ParametrizedTypeJavaType extends ClassJavaType {
       }
     }
     return true;
+  }
+
+  @Override
+  protected ClassJavaType substitutedType(ClassJavaType type) {
+    return (ClassJavaType) typeSubstitutionSolver.applySubstitution(type, typeSubstitution);
   }
 }

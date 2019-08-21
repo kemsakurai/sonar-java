@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,9 +20,8 @@
 package org.sonar.plugins.java.api.tree;
 
 import com.google.common.annotations.Beta;
-import org.sonar.sslr.grammar.GrammarRuleKey;
-
 import javax.annotation.Nullable;
+import org.sonar.sslr.grammar.GrammarRuleKey;
 
 /**
  * Common interface for all nodes in a syntax tree.
@@ -138,6 +137,12 @@ public interface Tree {
      * {@link SwitchStatementTree}
      */
     SWITCH_STATEMENT(SwitchStatementTree.class),
+
+    /**
+     * {@link SwitchExpressionTree}
+     * @since SonarJava 5.12: Support of Java 12
+     */
+    SWITCH_EXPRESSION(SwitchExpressionTree.class),
 
     /**
      * {@link CaseGroupTree}
@@ -538,6 +543,11 @@ public interface Tree {
     IDENTIFIER(IdentifierTree.class),
 
     /**
+     * {@link VarTypeTree}
+     */
+    VAR_TYPE(VarTypeTree.class),
+
+    /**
      * {@link VariableTree}
      */
     VARIABLE(VariableTree.class),
@@ -619,6 +629,48 @@ public interface Tree {
      * {@link PackageDeclarationTree}
      */
     PACKAGE(PackageDeclarationTree.class),
+
+    /**
+     * {@link ModuleDeclarationTree}
+     *
+     * @since Java 9
+     */
+    MODULE(ModuleDeclarationTree.class),
+
+    /**
+     * {@link RequiresDirectiveTree}
+     *
+     * @since Java 9
+     */
+    REQUIRES_DIRECTIVE(RequiresDirectiveTree.class),
+
+    /**
+     * {@link ExportsDirectiveTree}
+     *
+     * @since Java 9
+     */
+    EXPORTS_DIRECTIVE(ExportsDirectiveTree.class),
+
+    /**
+     * {@link OpensDirectiveTree}
+     *
+     * @since Java 9
+     */
+    OPENS_DIRECTIVE(OpensDirectiveTree.class),
+
+    /**
+     * {@link UsesDirectiveTree}
+     *
+     * @since Java 9
+     */
+    USES_DIRECTIVE(UsesDirectiveTree.class),
+
+    /**
+     * {@link ProvidesDirectiveTree}
+     *
+     * @since Java 9
+     */
+    PROVIDES_DIRECTIVE(ProvidesDirectiveTree.class),
 
     /**
      * {@link ArrayDimensionTree}

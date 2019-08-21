@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,15 +20,7 @@
 package org.sonar.java;
 
 import com.google.common.base.Splitter;
-import org.apache.commons.lang.StringUtils;
-import org.sonar.api.batch.BatchSide;
-import org.sonar.api.batch.fs.FileSystem;
-import org.sonar.api.batch.fs.InputFile;
-import org.sonar.api.config.Settings;
-import org.sonar.api.utils.log.Logger;
-import org.sonar.api.utils.log.Loggers;
-import org.sonarsource.api.sonarlint.SonarLintSide;
-
+import com.google.common.collect.Iterables;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
@@ -47,8 +39,16 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import org.apache.commons.lang.StringUtils;
+import org.sonar.api.batch.ScannerSide;
+import org.sonar.api.batch.fs.FileSystem;
+import org.sonar.api.batch.fs.InputFile;
+import org.sonar.api.config.Configuration;
+import org.sonar.api.utils.log.Logger;
+import org.sonar.api.utils.log.Loggers;
+import org.sonarsource.api.sonarlint.SonarLintSide;
 
-@BatchSide
+@ScannerSide
 @SonarLintSide
 public abstract class AbstractJavaClasspath {
 
@@ -56,7 +56,7 @@ public abstract class AbstractJavaClasspath {
   private static final char UNIX_SEPARATOR = '/';
   private static final char WINDOWS_SEPARATOR = '\\';
   private static final Logger LOG = Loggers.get(AbstractJavaClasspath.class);
-  protected final Settings settings;
+  protected final Configuration settings;
   protected final FileSystem fs;
   private final InputFile.Type fileType;
   private static final Path[] STANDARD_CLASSES_DIRS = {Paths.get("target", "classes"), Paths.get("target", "test-classes")};
@@ -66,7 +66,7 @@ public abstract class AbstractJavaClasspath {
   protected boolean validateLibraries;
   protected boolean initialized;
 
-  public AbstractJavaClasspath(Settings settings, FileSystem fs, InputFile.Type fileType) {
+  public AbstractJavaClasspath(Configuration settings, FileSystem fs, InputFile.Type fileType) {
     this.settings = settings;
     this.fs = fs;
     this.fileType = fileType;
@@ -77,7 +77,7 @@ public abstract class AbstractJavaClasspath {
 
   protected Set<File> getFilesFromProperty(String property) {
     Set<File> result = new LinkedHashSet<>();
-    String fileList = settings.getString(property);
+    String fileList = settings.get(property).orElse("");
     if (StringUtils.isNotEmpty(fileList)) {
       Iterable<String> fileNames = Splitter.on(SEPARATOR).omitEmptyStrings().split(fileList);
       File baseDir = fs.baseDir();
@@ -100,6 +100,10 @@ public abstract class AbstractJavaClasspath {
 
   protected boolean hasJavaSources() {
     return fs.hasFiles(fs.predicates().and(fs.predicates().hasLanguage("java"), fs.predicates().hasType(fileType)));
+  }
+
+  protected boolean hasMoreThanOneJavaFile() {
+    return Iterables.size(fs.inputFiles(fs.predicates().and(fs.predicates().hasLanguage("java"), fs.predicates().hasType(fileType)))) > 1;
   }
 
   private Set<File> getFilesForPattern(Path baseDir, String pathPattern, boolean libraryProperty) {

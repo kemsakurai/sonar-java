@@ -7,8 +7,10 @@
     "constantCost": "10min"
   },
   "tags": [
-    "misra",
     "pitfall"
   ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-127",
+  "sqKey": "S127",
+  "scope": "All"
 }

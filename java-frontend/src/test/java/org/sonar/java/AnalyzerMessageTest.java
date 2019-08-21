@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,14 +21,19 @@ package org.sonar.java;
 
 import org.assertj.core.api.Fail;
 import org.junit.Test;
+import org.sonar.api.batch.fs.InputFile;
 import org.sonar.java.AnalyzerMessage.TextSpan;
 import org.sonar.java.ast.parser.JavaParser;
 import org.sonar.plugins.java.api.JavaCheck;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.CompilationUnitTree;
-
-import java.io.File;
-import java.nio.charset.StandardCharsets;
+import org.sonar.plugins.java.api.tree.ExpressionStatementTree;
+import org.sonar.plugins.java.api.tree.InferedTypeTree;
+import org.sonar.plugins.java.api.tree.LambdaExpressionTree;
+import org.sonar.plugins.java.api.tree.MethodInvocationTree;
+import org.sonar.plugins.java.api.tree.MethodTree;
+import org.sonar.plugins.java.api.tree.TypeTree;
+import org.sonar.plugins.java.api.tree.VariableTree;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -38,13 +43,13 @@ public class AnalyzerMessageTest {
   @Test
   public void testAnalyzerMessage() {
     JavaCheck javaCheck = mock(JavaCheck.class);
-    File file = new File("a");
+    InputFile file = TestUtils.emptyInputFile("a");
     int line = 5;
     String message = "analyzer message";
     int cost = 3;
     AnalyzerMessage analyzerMessage = new AnalyzerMessage(javaCheck, file, line, message, cost);
     assertThat(analyzerMessage.getCheck()).isEqualTo(javaCheck);
-    assertThat(analyzerMessage.getFile()).isEqualTo(file);
+    assertThat(analyzerMessage.getInputComponent()).isEqualTo(file);
     assertThat(analyzerMessage.getLine()).isEqualTo(line);
     assertThat(analyzerMessage.getMessage()).isEqualTo(message);
     assertThat(analyzerMessage.getCost()).isEqualTo(cost);
@@ -61,12 +66,12 @@ public class AnalyzerMessageTest {
   @Test
   public void testAnalyzerMessageOnFile2() {
     JavaCheck javaCheck = mock(JavaCheck.class);
-    File file = new File("a");
+    InputFile file = TestUtils.emptyInputFile("a");
     String message = "analyzer message";
     int cost = 3;
     AnalyzerMessage analyzerMessage = new AnalyzerMessage(javaCheck, file, -5, message, cost);
     assertThat(analyzerMessage.getCheck()).isEqualTo(javaCheck);
-    assertThat(analyzerMessage.getFile()).isEqualTo(file);
+    assertThat(analyzerMessage.getInputComponent()).isEqualTo(file);
     assertThat(analyzerMessage.getLine()).isEqualTo(null);
     assertThat(analyzerMessage.getMessage()).isEqualTo(message);
     assertThat(analyzerMessage.getCost()).isEqualTo(cost);
@@ -94,7 +99,7 @@ public class AnalyzerMessageTest {
 
   @Test
   public void textSpanForTrees() {
-    CompilationUnitTree cut = (CompilationUnitTree) JavaParser.createParser(StandardCharsets.UTF_8).parse("class A {\n}\n");
+    CompilationUnitTree cut = (CompilationUnitTree) JavaParser.createParser().parse("class A {\n}\n");
     ClassTree classTree = (ClassTree) cut.types().get(0);
 
     TextSpan textSpan;
@@ -113,8 +118,8 @@ public class AnalyzerMessageTest {
   }
 
   @Test
-  public void shouldFailOnEmptyTrees() {
-    CompilationUnitTree cut = (CompilationUnitTree) JavaParser.createParser(StandardCharsets.UTF_8)
+  public void shouldFailOnEmptySpans() {
+    CompilationUnitTree cut = (CompilationUnitTree) JavaParser.createParser()
       .parse("class A {\n}\n");
 
     try {
@@ -127,14 +132,42 @@ public class AnalyzerMessageTest {
   }
 
   @Test
+  public void shouldNotFailOnEmptyTrees() {
+    CompilationUnitTree cut = (CompilationUnitTree) JavaParser.createParser()
+      .parse("class A {\n" +
+        "  void foo(java.util.List l) {\n" +
+        "    l.forEach(o -> {});\n" +
+        "  }\n" +
+        "}");
+
+    MethodTree methodTree = (MethodTree) ((ClassTree) cut.types().get(0)).members().get(0);
+    MethodInvocationTree mit = (MethodInvocationTree) ((ExpressionStatementTree) methodTree.block().body().get(0)).expression();
+    VariableTree variableTree = ((LambdaExpressionTree) mit.arguments().get(0)).parameters().get(0);
+    TypeTree type = variableTree.type();
+
+    assertThat(type).isInstanceOf(InferedTypeTree.class);
+    assertThat(AnalyzerMessage.textSpanFor(type))
+      .extracting("startLine", "startCharacter", "endLine", "endCharacter")
+      .contains(3, 14, 3, 15);
+
+    assertThat(AnalyzerMessage.textSpanBetween(type, methodTree))
+      .extracting("startLine", "startCharacter", "endLine", "endCharacter")
+      .contains(3, 14, 4, 3);
+
+    assertThat(AnalyzerMessage.textSpanBetween(methodTree, type))
+      .extracting("startLine", "startCharacter", "endLine", "endCharacter")
+      .contains(2, 2, 3, 15);
+  }
+
+  @Test
   public void testAnalyzerMessageOnFile() {
     JavaCheck javaCheck = mock(JavaCheck.class);
-    File file = new File("a");
+    InputFile file = TestUtils.emptyInputFile("a");
     String message = "analyzer message";
     int cost = 3;
     AnalyzerMessage analyzerMessage = new AnalyzerMessage(javaCheck, file, null, message, cost);
     assertThat(analyzerMessage.getCheck()).isEqualTo(javaCheck);
-    assertThat(analyzerMessage.getFile()).isEqualTo(file);
+    assertThat(analyzerMessage.getInputComponent()).isEqualTo(file);
     assertThat(analyzerMessage.getLine()).isEqualTo(null);
     assertThat(analyzerMessage.getMessage()).isEqualTo(message);
     assertThat(analyzerMessage.getCost()).isEqualTo(cost);
@@ -144,12 +177,12 @@ public class AnalyzerMessageTest {
   @Test
   public void testAnalyzerMessageWithoutCost() {
     JavaCheck javaCheck = mock(JavaCheck.class);
-    File file = new File("a");
+    InputFile file = TestUtils.emptyInputFile("a");
     String message = "analyzer message";
     int cost = 0;
     AnalyzerMessage analyzerMessage = new AnalyzerMessage(javaCheck, file, null, message, cost);
     assertThat(analyzerMessage.getCheck()).isEqualTo(javaCheck);
-    assertThat(analyzerMessage.getFile()).isEqualTo(file);
+    assertThat(analyzerMessage.getInputComponent()).isEqualTo(file);
     assertThat(analyzerMessage.getLine()).isEqualTo(null);
     assertThat(analyzerMessage.getMessage()).isEqualTo(message);
     assertThat(analyzerMessage.getCost()).isNull();
@@ -159,7 +192,7 @@ public class AnalyzerMessageTest {
   @Test
   public void toString_test() throws Exception {
     JavaCheck javaCheck = mock(JavaCheck.class);
-    File file = new File("file");
+    InputFile file = TestUtils.emptyInputFile("file");
     String message = "analyzer message";
     int cost = 0;
     AnalyzerMessage analyzerMessage = new AnalyzerMessage(javaCheck, file, 12, message, cost);

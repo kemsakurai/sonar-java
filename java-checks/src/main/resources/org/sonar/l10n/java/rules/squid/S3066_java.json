@@ -7,8 +7,10 @@
     "constantCost": "20min"
   },
   "tags": [
-    "security",
     "bad-practice"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-3066",
+  "sqKey": "S3066",
+  "scope": "Main"
 }

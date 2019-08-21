@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,17 +20,19 @@
 package org.sonar.java.checks;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import org.junit.Test;
+import org.sonar.java.CheckTestUtils;
 import org.sonar.java.ast.JavaAstScanner;
 import org.sonar.java.checks.methods.AbstractMethodDetection;
 import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.java.model.JavaTree;
 import org.sonar.java.model.VisitorsBridge;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
-
-import java.io.File;
-import java.util.List;
+import org.sonar.plugins.java.api.tree.MethodReferenceTree;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -38,42 +40,39 @@ public class AbstractMethodDetectionTest {
 
   @Test
   public void detected() {
-
     Visitor visitor = new Visitor(ImmutableList.of(
       MethodMatcher.create().typeDefinition("A").name("method").addParameter("int"),
       MethodMatcher.create().typeDefinition("A").name("method").addParameter("java.lang.String[]")
       ));
-    JavaAstScanner.scanSingleFileForTests(new File("src/test/files/checks/AbstractMethodDetection.java"), new VisitorsBridge(visitor));
+    JavaAstScanner.scanSingleFileForTests(CheckTestUtils.inputFile("src/test/files/checks/AbstractMethodDetection.java"), new VisitorsBridge(visitor));
 
-    assertThat(visitor.lines).hasSize(2);
-    assertThat(visitor.lines).containsExactly(15, 17);
+    assertThat(visitor.lines).hasSize(3);
+    assertThat(visitor.lines).containsExactly(15, 17, 19);
   }
 
   @Test
   public void withAnyParameters() throws Exception {
-    Visitor visitor = new Visitor(ImmutableList.of(
+    Visitor visitor = new Visitor(Collections.singletonList(
       MethodMatcher.create().typeDefinition("A").name("method").withAnyParameters()
       ));
-    JavaAstScanner.scanSingleFileForTests(new File("src/test/files/checks/AbstractMethodDetection.java"), new VisitorsBridge(visitor));
+    JavaAstScanner.scanSingleFileForTests(CheckTestUtils.inputFile("src/test/files/checks/AbstractMethodDetection.java"), new VisitorsBridge(visitor));
 
-    assertThat(visitor.lines).containsExactly(14, 15, 16, 17);
-
+    assertThat(visitor.lines).containsExactly(14, 15, 16, 17, 19);
   }
 
   @Test
   public void withoutParameter() throws Exception {
-    Visitor visitor = new Visitor(ImmutableList.of(
+    Visitor visitor = new Visitor(Collections.singletonList(
       MethodMatcher.create().typeDefinition("A").name("method").withoutParameter()
       ));
-    JavaAstScanner.scanSingleFileForTests(new File("src/test/files/checks/AbstractMethodDetection.java"), new VisitorsBridge(visitor));
+    JavaAstScanner.scanSingleFileForTests(CheckTestUtils.inputFile("src/test/files/checks/AbstractMethodDetection.java"), new VisitorsBridge(visitor));
 
     assertThat(visitor.lines).containsExactly(14);
-
   }
 
   class Visitor extends AbstractMethodDetection {
 
-    public List<Integer> lines = Lists.newArrayList();
+    public List<Integer> lines = new ArrayList<>();
     private List<MethodMatcher> methodInvocationMatchers;
 
     public Visitor(List<MethodMatcher> methodInvocationMatchers) {
@@ -90,6 +89,10 @@ public class AbstractMethodDetectionTest {
       lines.add(((JavaTree) tree).getLine());
     }
 
+    @Override
+    protected void onMethodReferenceFound(MethodReferenceTree methodReferenceTree) {
+      lines.add(((JavaTree) methodReferenceTree).getLine());
+    }
   }
 
 }

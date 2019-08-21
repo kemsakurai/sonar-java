@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import org.sonar.check.Rule;
 import org.sonar.java.JavaVersionAwareVisitor;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
@@ -30,6 +29,7 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.TryStatementTree;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
@@ -41,22 +41,21 @@ public class TryWithResourcesCheck extends IssuableSubscriptionVisitor implement
   private final Deque<List<Tree>> toReport = new LinkedList<>();
 
   @Override
-  protected void scanTree(Tree tree) {
-    super.scanTree(tree);
+  public void leaveFile(JavaFileScannerContext context) {
     withinTry.clear();
     toReport.clear();
   }
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.TRY_STATEMENT, Tree.Kind.NEW_CLASS);
+    return Arrays.asList(Tree.Kind.TRY_STATEMENT, Tree.Kind.NEW_CLASS);
   }
 
   @Override
   public void visitNode(Tree tree) {
     if (tree.is(Tree.Kind.TRY_STATEMENT)) {
       withinTry.push((TryStatementTree) tree);
-      toReport.push(new ArrayList<Tree>());
+      toReport.push(new ArrayList<>());
     } else if (withinStandardTryWithFinally() && ((NewClassTree) tree).symbolType().isSubtypeOf("java.lang.AutoCloseable")) {
       toReport.peek().add(tree);
     }
@@ -78,7 +77,7 @@ public class TryWithResourcesCheck extends IssuableSubscriptionVisitor implement
   }
 
   private boolean withinStandardTryWithFinally() {
-    return !withinTry.isEmpty() && withinTry.peek().resources().isEmpty() && withinTry.peek().finallyBlock() != null;
+    return !withinTry.isEmpty() && withinTry.peek().resourceList().isEmpty() && withinTry.peek().finallyBlock() != null;
   }
 
   @Override

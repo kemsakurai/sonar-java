@@ -9,5 +9,8 @@
   "tags": [
     "tests"
   ],
-  "defaultSeverity": "Blocker"
+  "defaultSeverity": "Blocker",
+  "ruleSpecification": "RSPEC-2970",
+  "sqKey": "S2970",
+  "scope": "Tests"
 }

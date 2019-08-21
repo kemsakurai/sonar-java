@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import org.sonar.check.Rule;
 import org.sonar.java.model.ModifiersUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
@@ -31,30 +30,47 @@ import org.sonar.plugins.java.api.tree.StatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Rule(key = "S1186")
 public class EmptyMethodsCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.CLASS, Tree.Kind.ENUM);
+    return Arrays.asList(Tree.Kind.CLASS, Tree.Kind.ENUM);
   }
 
   @Override
   public void visitNode(Tree tree) {
     ClassTree classTree = (ClassTree) tree;
     if (!ModifiersUtils.hasModifier(classTree.modifiers(), Modifier.ABSTRACT)) {
-      for (Tree member : classTree.members()) {
-        if (member.is(Kind.METHOD) || isPublicNoArgConstructor(member)) {
-          checkMethod((MethodTree) member);
-        }
-      }
+      List<Tree> members = classTree.members();
+      checkMethods(members);
+      checkSingleNoArgPublicConstructor(members);
     }
   }
 
-  private static boolean isPublicNoArgConstructor(Tree node) {
-    return node.is(Kind.CONSTRUCTOR) && ModifiersUtils.hasModifier(((MethodTree) node).modifiers(), Modifier.PUBLIC) && ((MethodTree) node).parameters().isEmpty();
+  private void checkMethods(List<Tree> members) {
+    members.stream()
+      .filter(member -> member.is(Tree.Kind.METHOD))
+      .map(MethodTree.class::cast)
+      .forEach(this::checkMethod);
+  }
+
+  private void checkSingleNoArgPublicConstructor(List<Tree> members) {
+    List<MethodTree> constructors = members.stream()
+      .filter(member -> member.is(Tree.Kind.CONSTRUCTOR))
+      .map(MethodTree.class::cast)
+      .collect(Collectors.toList());
+    if (constructors.size() == 1 && isPublicNoArgConstructor(constructors.get(0))) {
+      checkMethod(constructors.get(0));
+    }
+  }
+
+  private static boolean isPublicNoArgConstructor(MethodTree constructor) {
+    return ModifiersUtils.hasModifier(constructor.modifiers(), Modifier.PUBLIC) && constructor.parameters().isEmpty();
   }
 
   private void checkMethod(MethodTree methodTree) {

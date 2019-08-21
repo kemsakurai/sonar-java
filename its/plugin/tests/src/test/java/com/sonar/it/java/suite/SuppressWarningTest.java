@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2013-2017 SonarSource SA
+ * Copyright (C) 2013-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -28,8 +28,8 @@ import java.util.List;
 import javax.annotation.CheckForNull;
 import org.junit.ClassRule;
 import org.junit.Test;
-import org.sonarqube.ws.WsMeasures;
-import org.sonarqube.ws.client.measure.ComponentWsRequest;
+import org.sonarqube.ws.Measures;
+import org.sonarqube.ws.client.measures.ComponentRequest;
 
 import static java.lang.Integer.parseInt;
 import static java.util.Collections.singletonList;
@@ -39,13 +39,14 @@ public class SuppressWarningTest {
 
   @ClassRule
   public static final Orchestrator ORCHESTRATOR;
+  public static final String PROJECT_KEY = "org.sonarsource.it.projects:example";
 
   static {
     OrchestratorBuilder orchestratorBuilder = Orchestrator.builderEnv()
+      .setSonarVersion(System.getProperty("sonar.runtimeVersion", "LATEST_RELEASE[7.9]"))
       .addPlugin(FileLocation.byWildcardMavenFilename(new File("../../../sonar-java-plugin/target"), "sonar-java-plugin-*.jar"))
       .restoreProfileAtStartup(FileLocation.ofClasspath("/profile-suppress-warnings.xml"));
     orchestratorBuilder.addPlugin(FileLocation.of(TestUtils.pluginJar("java-extension-plugin")));
-    orchestratorBuilder.addPlugin(FileLocation.ofClasspath("/sonar-checkstyle-plugin-2.4.jar"));
     ORCHESTRATOR = orchestratorBuilder.build();
   }
 
@@ -56,18 +57,20 @@ public class SuppressWarningTest {
   public void suppressWarnings_nosonar() throws Exception {
     MavenBuild build = MavenBuild.create(TestUtils.projectPom("suppress-warnings"))
       .setCleanSonarGoals()
-      .setProperty("sonar.profile", "suppress-warnings");
+      .setProperty("sonar.java.binaries", "target");
+    TestUtils.provisionProject(ORCHESTRATOR, SuppressWarningTest.PROJECT_KEY,"suppress-warnings","java","suppress-warnings");
+
     ORCHESTRATOR.executeBuild(build);
 
-    assertThat(parseInt(getMeasure("org.example:example", "violations").getValue())).isEqualTo(3);
+    assertThat(parseInt(getMeasure(PROJECT_KEY, "violations").getValue())).isEqualTo(4);
   }
 
   @CheckForNull
-  static WsMeasures.Measure getMeasure(String componentKey, String metricKey) {
-    WsMeasures.ComponentWsResponse response = TestUtils.newWsClient(ORCHESTRATOR).measures().component(new ComponentWsRequest()
-      .setComponentKey(componentKey)
+  static Measures.Measure getMeasure(String componentKey, String metricKey) {
+    Measures.ComponentWsResponse response = TestUtils.newWsClient(ORCHESTRATOR).measures().component(new ComponentRequest()
+      .setComponent(componentKey)
       .setMetricKeys(singletonList(metricKey)));
-    List<WsMeasures.Measure> measures = response.getComponent().getMeasuresList();
+    List<Measures.Measure> measures = response.getComponent().getMeasuresList();
     return measures.size() == 1 ? measures.get(0) : null;
   }
 

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2013-2017 SonarSource SA
+ * Copyright (C) 2013-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,14 +21,12 @@ package com.sonar.it.java.suite;
 
 import com.sonar.orchestrator.Orchestrator;
 import com.sonar.orchestrator.build.MavenBuild;
+import java.util.List;
+import java.util.regex.Pattern;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
 import org.junit.Test;
-import org.sonar.wsclient.issue.Issue;
-import org.sonar.wsclient.issue.IssueClient;
-import org.sonar.wsclient.issue.IssueQuery;
-
-import java.util.List;
+import org.sonarqube.ws.Issues.Issue;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -39,24 +37,26 @@ public class SquidTest {
 
   @BeforeClass
   public static void init() {
-    orchestrator.resetData();
-
     MavenBuild build = MavenBuild.create(TestUtils.projectPom("squid"))
       .setCleanPackageSonarGoals()
-      .setProperty("sonar.scm.disabled", "true")
-      .setProperty("sonar.profile", "squid");
+      .setProperty("sonar.scm.disabled", "true");
+    TestUtils.provisionProject(orchestrator, "org.sonarsource.it.projects:squid", "squid", "java", "squid");
     orchestrator.executeBuild(build);
   }
 
   @Test
   public void should_detect_missing_package_info() throws Exception {
-    IssueClient issueClient = orchestrator.getServer().wsClient().issueClient();
-    List<Issue> issues = issueClient.find(IssueQuery.create().components(JavaTestSuite.keyFor("com.sonarsource.it.samples:squid", "package1", ""))).list();
-    assertThat(issues).hasSize(1);
-    assertThat(issues.get(0).ruleKey()).isEqualTo("squid:S1228");
-    assertThat(issues.get(0).line()).isNull();
-    issues = issueClient.find(IssueQuery.create().components("com.sonarsource.it.samples:squid:src/test/java/package1")).list();
-    assertThat(issues).isEmpty();
+    List<Issue> issues = TestUtils.issuesForComponent(orchestrator, "org.sonarsource.it.projects:squid");
+
+    assertThat(issues).hasSize(2);
+    assertThat(issues.stream().map(Issue::getRule)).allMatch("squid:S1228"::equals);
+    assertThat(issues.stream().map(Issue::getLine)).allMatch(line -> line == 0);
+    String sep = "[/\\\\]";
+    Pattern packagePattern = Pattern.compile("'src" + sep + "main" + sep + "java" + sep + "package[12]'");
+    assertThat(issues.stream().map(Issue::getMessage)).allMatch(msg -> packagePattern.matcher(msg).find());
+
+    List<Issue> issuesOnTestPackage = TestUtils.issuesForComponent(orchestrator, "org.sonarsource.it.projects:squid:src/test/java/package1");
+    assertThat(issuesOnTestPackage).isEmpty();
   }
 
 }

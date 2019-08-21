@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,10 +19,11 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Collections;
+import java.util.List;
 import org.sonar.check.Rule;
 import org.sonar.java.ast.api.JavaKeyword;
-import org.sonar.java.model.declaration.MethodTreeImpl;
+import org.sonar.java.checks.helpers.MethodTreeUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
@@ -31,23 +32,22 @@ import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.InstanceOfTree;
 import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
+import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
-
-import java.util.List;
 
 @Rule(key = "S2162")
 public class SymmetricEqualsCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD);
+    return Collections.singletonList(Tree.Kind.METHOD);
   }
 
   @Override
   public void visitNode(Tree tree) {
     if (hasSemantic()) {
-      MethodTreeImpl methodTree = (MethodTreeImpl) tree;
-      if (methodTree.isEqualsMethod() && methodTree.block() != null) {
+      MethodTree methodTree = (MethodTree) tree;
+      if (MethodTreeUtils.isEqualsMethod(methodTree) && methodTree.block() != null) {
         methodTree.block().accept(new SymmetryBrokePatterns(methodTree.symbol()));
       }
     }
@@ -69,7 +69,7 @@ public class SymmetricEqualsCheck extends IssuableSubscriptionVisitor {
 
     @Override
     public void visitInstanceOf(InstanceOfTree tree) {
-      if (tree.type().symbolType().equals(owner.type())) {
+      if (tree.type().symbolType().equals(owner.type().erasure())) {
         if (!isOwnerFinal() && !methodSymbol.isFinal()) {
           reportIssue(tree, "Compare to \"this.getClass()\" instead.");
         }
@@ -96,8 +96,14 @@ public class SymmetricEqualsCheck extends IssuableSubscriptionVisitor {
     private void checkOperand(ExpressionTree expressionTree) {
       if (expressionTree.is(Tree.Kind.MEMBER_SELECT)) {
         MemberSelectExpressionTree mset = (MemberSelectExpressionTree) expressionTree;
-        if (isClassExpression(mset) && isClassOfOwner(mset) && !isOwnerFinal()) {
-          reportIssue(expressionTree, "Compare to \"this.getClass()\" instead.");
+        if (isClassExpression(mset)) {
+          if (isClassOfOwner(mset)) {
+            if (!isOwnerFinal()) {
+              reportIssue(expressionTree, "Compare to \"this.getClass()\" instead.");
+            }
+          } else {
+            reportIssue(expressionTree, "Remove this comparison to an unrelated class.");
+          }
         }
       }
     }

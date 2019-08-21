@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,19 +19,19 @@
  */
 package org.sonar.java.resolve;
 
-import com.google.common.collect.Lists;
+import java.util.ArrayList;
+import java.util.List;
 import org.objectweb.asm.AnnotationVisitor;
-import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 
-import java.util.List;
+import static org.sonar.java.resolve.BytecodeCompleter.ASM_API_VERSION;
 
 public class BytecodeAnnotationVisitor extends AnnotationVisitor {
   private final AnnotationInstanceResolve annotationInstance;
   private final BytecodeVisitor bytecodeVisitor;
 
   public BytecodeAnnotationVisitor(AnnotationInstanceResolve annotationInstance, BytecodeVisitor bytecodeVisitor) {
-    super(Opcodes.ASM5);
+    super(ASM_API_VERSION);
     this.annotationInstance = annotationInstance;
     this.bytecodeVisitor = bytecodeVisitor;
   }
@@ -53,22 +53,35 @@ public class BytecodeAnnotationVisitor extends AnnotationVisitor {
 
   @Override
   public void visitEnum(String name, String desc, String value) {
-    List<JavaSymbol> lookup = getSymbol(desc).members().lookup(value);
-    for (JavaSymbol symbol : lookup) {
-      if (symbol.isKind(JavaSymbol.VAR)) {
-        addValue(name, symbol);
-      }
+    JavaSymbol.TypeJavaSymbol sym = getSymbol(desc);
+    if(sym.completing) {
+      sym.callbackOnceComplete(() -> addSymbolAsValue(name, value, sym));
+      return;
     }
+    addSymbolAsValue(name, value, sym);
+  }
+
+  private void addSymbolAsValue(String name, String value, JavaSymbol.TypeJavaSymbol sym) {
+    sym.members().lookup(value).stream()
+      .filter(symbol -> symbol.isKind(JavaSymbol.VAR))
+      .forEach(symbol -> addValue(name, symbol));
   }
 
   @Override
   public AnnotationVisitor visitArray(final String name) {
-    final List<Object> valuesList = Lists.newArrayList();
-    //TODO handle arrays of annotation and arrays of enum values.
-    return new AnnotationVisitor(Opcodes.ASM5, this) {
+    final List<Object> valuesList = new ArrayList<>();
+    // TODO handle arrays of annotation
+    return new AnnotationVisitor(ASM_API_VERSION, this) {
       @Override
       public void visit(String name, Object value) {
         valuesList.add(value);
+      }
+
+      @Override
+      public void visitEnum(String name, String desc, String value) {
+        getSymbol(desc).members().lookup(value).stream()
+          .filter(symbol -> symbol.isKind(JavaSymbol.VAR))
+          .forEach(valuesList::add);
       }
 
       @Override

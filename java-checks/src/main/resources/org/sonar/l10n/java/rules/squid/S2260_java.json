@@ -9,5 +9,8 @@
   "tags": [
     "suspicious"
   ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-2260",
+  "sqKey": "S2260",
+  "scope": "All"
 }

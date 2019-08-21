@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,12 +19,18 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
-
+import java.util.Collections;
+import java.util.Deque;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Optional;
+import java.util.function.Predicate;
+import javax.annotation.Nullable;
 import org.sonar.check.Rule;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.semantic.Symbol;
+import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
 import org.sonar.plugins.java.api.tree.BlockTree;
 import org.sonar.plugins.java.api.tree.CatchTree;
@@ -33,44 +39,60 @@ import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.ThrowStatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.TryStatementTree;
-
-import javax.annotation.Nullable;
-
-import java.util.Deque;
-import java.util.LinkedList;
-import java.util.List;
+import org.sonar.plugins.java.api.tree.TypeTree;
+import org.sonar.plugins.java.api.tree.UnionTypeTree;
+import org.sonar.plugins.java.api.tree.VariableTree;
 
 @Rule(key = "S2142")
 public class InterruptedExceptionCheck extends IssuableSubscriptionVisitor {
+
+  private static final Predicate<Type> INTERRUPTING_TYPE_PREDICATE = catchType ->
+      catchType.is("java.lang.InterruptedException") ||
+      catchType.is("java.lang.ThreadDeath");
 
   private Deque<Boolean> withinInterruptingFinally = new LinkedList<>();
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.TRY_STATEMENT);
+    return Collections.singletonList(Tree.Kind.TRY_STATEMENT);
   }
 
   @Override
-  public void scanFile(JavaFileScannerContext context) {
-    if(context.getSemanticModel() != null) {
-      super.scanFile(context);
-    }
+  public void leaveFile(JavaFileScannerContext context) {
     withinInterruptingFinally.clear();
   }
 
   @Override
   public void visitNode(Tree tree) {
+    if(!hasSemantic()) {
+      return;
+    }
     TryStatementTree tryStatementTree = (TryStatementTree) tree;
     withinInterruptingFinally.addFirst(isFinallyInterrupting(tryStatementTree.finallyBlock()));
     for (CatchTree catchTree : tryStatementTree.catches()) {
-      if(catchTree.parameter().symbol().type().is("java.lang.InterruptedException")) {
+      Optional<Type> interruptType = findInterruptingType(catchTree.parameter());
+      if(interruptType.isPresent()) {
         BlockVisitor blockVisitor = new BlockVisitor(catchTree.parameter().symbol());
         catchTree.block().accept(blockVisitor);
         if(!blockVisitor.threadInterrupted && !isWithinInterruptingFinally()) {
-          reportIssue(catchTree.parameter(), "Either re-interrupt this method or rethrow the \"InterruptedException\".");
+          reportIssue(catchTree.parameter(), "Either re-interrupt this method" +
+            " or rethrow the \""+interruptType.get().name()+"\".");
         }
       }
     }
+  }
+
+  private static Optional<Type> findInterruptingType(VariableTree parameter) {
+    if (parameter.type().is(Tree.Kind.UNION_TYPE)) {
+      return ((UnionTypeTree) parameter.type()).typeAlternatives().stream()
+        .map(TypeTree::symbolType)
+        .filter(INTERRUPTING_TYPE_PREDICATE)
+        .findFirst();
+    }
+    return Optional.of(parameter)
+      .map(VariableTree::symbol)
+      .map(Symbol::type)
+      .filter(INTERRUPTING_TYPE_PREDICATE);
   }
 
   private boolean isWithinInterruptingFinally() {
@@ -84,6 +106,9 @@ public class InterruptedExceptionCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public void leaveNode(Tree tree) {
+    if (!hasSemantic()) {
+      return;
+    }
     withinInterruptingFinally.removeFirst();
   }
 

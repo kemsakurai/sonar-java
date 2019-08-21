@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -22,11 +22,19 @@ package org.sonar.java.se.checks;
 import org.junit.Test;
 import org.sonar.java.se.JavaCheckVerifier;
 
+import static org.junit.Assume.assumeTrue;
+
 public class OptionalGetBeforeIsPresentCheckTest {
 
   @Test
   public void test() {
     JavaCheckVerifier.verify("src/test/files/se/OptionalGetBeforeIsPresentCheck.java", new OptionalGetBeforeIsPresentCheck());
+  }
+
+  @Test
+  public void test_with_jdk_more_recent_than_8() {
+    assumeTrue(!System.getProperty("java.version").startsWith("1.8"));
+    JavaCheckVerifier.verify("src/test/files/se/OptionalGetBeforeIsPresentCheck_jdk11.java", new OptionalGetBeforeIsPresentCheck());
   }
 
   @Test

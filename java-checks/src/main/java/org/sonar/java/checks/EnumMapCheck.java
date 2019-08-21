@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,15 +20,20 @@
 package org.sonar.java.checks;
 
 import org.sonar.check.Rule;
+import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.java.model.ExpressionUtils;
+import org.sonar.java.resolve.MethodJavaType;
 import org.sonar.java.resolve.ParametrizedTypeJavaType;
 import org.sonar.java.resolve.TypeVariableJavaType;
 import org.sonar.plugins.java.api.JavaFileScanner;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
+import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.AssignmentExpressionTree;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
+import org.sonar.plugins.java.api.tree.IdentifierTree;
+import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.NewClassTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.VariableTree;
@@ -38,6 +43,8 @@ import java.util.List;
 @Rule(key = "S1640")
 public class EnumMapCheck extends BaseTreeVisitor implements JavaFileScanner {
   private JavaFileScannerContext context;
+  private static final String JAVA_UTIL_MAP = "java.util.Map";
+  private static final MethodMatcher mapPut = MethodMatcher.create().typeDefinition(JAVA_UTIL_MAP).name("put").withAnyParameters();
 
   @Override
   public void scanFile(final JavaFileScannerContext context) {
@@ -47,9 +54,9 @@ public class EnumMapCheck extends BaseTreeVisitor implements JavaFileScanner {
 
   @Override
   public void visitVariable(VariableTree tree) {
-    if (tree.type().symbolType().isSubtypeOf("java.util.Map")) {
+    if (tree.type().symbolType().isSubtypeOf(JAVA_UTIL_MAP)) {
       ExpressionTree initializer = tree.initializer();
-      if (initializer != null) {
+      if (initializer != null && !usesNullKey(tree.symbol())) {
         checkNewMap(initializer, hasEnumKey(tree.type().symbolType()));
       }
     } else {
@@ -57,9 +64,22 @@ public class EnumMapCheck extends BaseTreeVisitor implements JavaFileScanner {
     }
   }
 
+  private static boolean usesNullKey(Symbol symbol) {
+    List<IdentifierTree> usages = symbol.usages();
+    for (IdentifierTree usage : usages) {
+      if (usage.parent().is(Tree.Kind.MEMBER_SELECT) && usage.parent().parent().is(Tree.Kind.METHOD_INVOCATION)) {
+        MethodInvocationTree mit = (MethodInvocationTree) usage.parent().parent();
+        if (mapPut.matches(mit) && mit.arguments().get(0).is(Tree.Kind.NULL_LITERAL)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   @Override
   public void visitAssignmentExpression(AssignmentExpressionTree tree) {
-    if (tree.variable().symbolType().isSubtypeOf("java.util.Map")) {
+    if (tree.variable().symbolType().isSubtypeOf(JAVA_UTIL_MAP)) {
       checkNewMap(tree.expression(), hasEnumKey(tree.variable().symbolType()));
     } else {
       super.visitAssignmentExpression(tree);
@@ -68,7 +88,7 @@ public class EnumMapCheck extends BaseTreeVisitor implements JavaFileScanner {
 
   @Override
   public void visitNewClass(NewClassTree tree) {
-    if (tree.symbolType().isSubtypeOf("java.util.HashMap") && hasEnumKey(tree.identifier().symbolType())) {
+    if (isUnorderedMap(tree.symbolType()) && hasEnumKey(tree.identifier().symbolType())) {
       addIssue(tree);
     } else {
       super.visitNewClass(tree);
@@ -79,13 +99,22 @@ public class EnumMapCheck extends BaseTreeVisitor implements JavaFileScanner {
     ExpressionTree expression = ExpressionUtils.skipParentheses(given);
     if (expression.is(Tree.Kind.NEW_CLASS)) {
       NewClassTree newClassTree = (NewClassTree) expression;
-      if (newClassTree.symbolType().isSubtypeOf("java.util.HashMap") && (useEnumKey || hasEnumKey(newClassTree.identifier().symbolType()))) {
+      if (isUnorderedMap(newClassTree.symbolType()) && (useEnumKey || hasEnumKey(newClassTree.identifier().symbolType()))) {
         addIssue(newClassTree);
       }
     }
   }
 
-  private static boolean hasEnumKey(Type type) {
+  private static boolean isUnorderedMap(Type type) {
+    return type.isSubtypeOf("java.util.HashMap") &&
+      !type.isSubtypeOf("java.util.LinkedHashMap");
+  }
+
+  private static boolean hasEnumKey(Type symbolType) {
+    Type type = symbolType;
+    if (type instanceof MethodJavaType) {
+      type = ((MethodJavaType) type).resultType();
+    }
     if (type instanceof ParametrizedTypeJavaType) {
       ParametrizedTypeJavaType parametrizedTypeJavaType = (ParametrizedTypeJavaType) type;
       List<TypeVariableJavaType> typeParameters = parametrizedTypeJavaType.typeParameters();

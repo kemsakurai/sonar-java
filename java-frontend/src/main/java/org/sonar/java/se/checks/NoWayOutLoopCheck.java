@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,11 +19,13 @@
  */
 package org.sonar.java.se.checks;
 
+import javax.annotation.CheckForNull;
 import org.sonar.check.Rule;
 import org.sonar.java.cfg.CFG;
 import org.sonar.java.cfg.CFGLoop;
 import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.java.matcher.TypeCriteria;
+import org.sonar.java.model.LiteralUtils;
 import org.sonar.java.se.CheckerContext;
 import org.sonar.java.se.ProgramState;
 import org.sonar.plugins.java.api.semantic.Symbol;
@@ -33,8 +35,8 @@ import org.sonar.plugins.java.api.tree.BinaryExpressionTree;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.ForStatementTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
-import org.sonar.plugins.java.api.tree.LiteralTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
+import org.sonar.plugins.java.api.tree.StatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.UnaryExpressionTree;
 import org.sonar.plugins.java.api.tree.WhileStatementTree;
@@ -77,7 +79,20 @@ public class NoWayOutLoopCheck extends SECheck {
 
   @Override
   public void checkEndOfExecution(CheckerContext context) {
+    context.alwaysTrueOrFalseExpressions().alwaysTrue().forEach(tree -> {
+      Tree statementParent = firstStatementParent(tree);
+      if (statementParent != null && statementParent.is(Tree.Kind.WHILE_STATEMENT)) {
+        checkLoopWithAlwaysTrueCondition(context, statementParent);
+      }
+    });
     contexts.pop();
+  }
+
+  private void checkLoopWithAlwaysTrueCondition(CheckerContext context, Tree statementParent) {
+    CFGLoop loopBlocks = contexts.peek().getLoop(statementParent);
+    if (loopBlocks != null && loopBlocks.hasNoWayOut()) {
+      context.reportIssue(statementParent, NoWayOutLoopCheck.this, "Add an end condition to this loop.");
+    }
   }
 
   @Override
@@ -96,21 +111,15 @@ public class NoWayOutLoopCheck extends SECheck {
 
     @Override
     public void visitWhileStatement(WhileStatementTree tree) {
-      if (isHardCodedTrue(tree.condition())) {
-        CFGLoop loopBlocks = contexts.peek().getLoop(tree);
-        if (loopBlocks != null && loopBlocks.hasNoWayOut()) {
-          context.reportIssue(tree, NoWayOutLoopCheck.this, "Add an end condition to this loop.");
-        }
+      if (LiteralUtils.isTrue(tree.condition())) {
+        checkLoopWithAlwaysTrueCondition(context, tree);
       }
     }
 
     @Override
     public void visitForStatement(ForStatementTree tree) {
       if (tree.condition() == null) {
-        CFGLoop loopBlocks = contexts.peek().getLoop(tree);
-        if (loopBlocks != null && loopBlocks.hasNoWayOut()) {
-          context.reportIssue(tree, NoWayOutLoopCheck.this, "Add an end condition to this loop.");
-        }
+        checkLoopWithAlwaysTrueCondition(context, tree);
       } else if (isConditionUnreachable(tree)) {
         context.reportIssue(tree, NoWayOutLoopCheck.this, "Correct this loop's end condition.");
       }
@@ -239,8 +248,16 @@ public class NoWayOutLoopCheck extends SECheck {
     }
   }
 
-  static boolean isHardCodedTrue(ExpressionTree condition) {
-    return condition.is(Tree.Kind.BOOLEAN_LITERAL) && Boolean.parseBoolean(((LiteralTree) condition).value());
+  @CheckForNull
+  private static Tree firstStatementParent(Tree node) {
+    Tree current = node.parent();
+    while (current != null) {
+      if (current instanceof StatementTree) {
+        break;
+      }
+      current = current.parent();
+    }
+    return current;
   }
 
   private static class MethodContext {

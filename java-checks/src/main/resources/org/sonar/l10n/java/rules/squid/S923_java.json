@@ -7,9 +7,11 @@
     "constantCost": "1min"
   },
   "tags": [
-    "misra",
     "cert",
     "pitfall"
   ],
-  "defaultSeverity": "Info"
+  "defaultSeverity": "Info",
+  "ruleSpecification": "RSPEC-923",
+  "sqKey": "S923",
+  "scope": "All"
 }

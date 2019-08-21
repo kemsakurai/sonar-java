@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -39,6 +39,15 @@ class ParametrizedExtend<S> {
      S innerMethod(){
        return null;
      }
+  }
+}
+
+class ParametrizedExtendDerived<S> extends ParametrizedExtend<S> {
+  class InnerClassDerived extends ParametrizedExtend<S>.InnerClass {
+    @Override
+    S innerMethod(){
+      return null;
+    }
   }
 }
 

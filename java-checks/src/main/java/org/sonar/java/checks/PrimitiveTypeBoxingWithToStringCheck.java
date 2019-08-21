@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -23,17 +23,13 @@ import org.sonar.check.Rule;
 import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.java.matcher.MethodMatcherCollection;
 import org.sonar.java.matcher.TypeCriteria;
-import org.sonar.java.model.LiteralUtils;
 import org.sonar.java.resolve.JavaType;
 import org.sonar.plugins.java.api.JavaFileScanner;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.AnnotationTree;
-import org.sonar.plugins.java.api.tree.AssignmentExpressionTree;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
-import org.sonar.plugins.java.api.tree.BinaryExpressionTree;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
-import org.sonar.plugins.java.api.tree.LiteralTree;
 import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.Tree;
@@ -83,22 +79,6 @@ public class PrimitiveTypeBoxingWithToStringCheck extends BaseTreeVisitor implem
     super.visitMethodInvocation(tree);
   }
 
-  @Override
-  public void visitBinaryExpression(BinaryExpressionTree tree) {
-    if (tree.is(Kind.PLUS)) {
-      checkConcatenation(tree, tree.leftOperand(), tree.rightOperand());
-    }
-    super.visitBinaryExpression(tree);
-  }
-
-  @Override
-  public void visitAssignmentExpression(AssignmentExpressionTree tree) {
-    Type wrapper = ((JavaType) tree.expression().symbolType()).primitiveWrapperType();
-    if (tree.is(Kind.PLUS_ASSIGNMENT) && tree.variable().symbolType().is("java.lang.String") && wrapper != null) {
-      createIssue(tree, wrapper.name());
-    }
-    super.visitAssignmentExpression(tree);
-  }
 
   private void createIssue(Tree reportingTree, String wrapperName) {
     context.reportIssue(this, reportingTree, "Use \"" + wrapperName + ".toString\" instead.");
@@ -108,22 +88,6 @@ public class PrimitiveTypeBoxingWithToStringCheck extends BaseTreeVisitor implem
   public void visitAnnotation(AnnotationTree annotationTree) {
     scan(annotationTree.annotationType());
     // skip arguments of annotation as it should be compile time constant so it is not relevant here.
-  }
-
-  private void checkConcatenation(Tree tree, ExpressionTree leftOperand, ExpressionTree rightOperand) {
-    Type wrapper = null;
-    if (isEmptyString(leftOperand)) {
-      wrapper = ((JavaType) rightOperand.symbolType()).primitiveWrapperType();
-    } else if (isEmptyString(rightOperand)) {
-      wrapper = ((JavaType) leftOperand.symbolType()).primitiveWrapperType();
-    }
-    if (wrapper != null) {
-      createIssue(tree, wrapper.name());
-    }
-  }
-
-  private static boolean isEmptyString(ExpressionTree expressionTree) {
-    return expressionTree.is(Kind.STRING_LITERAL) && LiteralUtils.trimQuotes(((LiteralTree) expressionTree).value()).isEmpty();
   }
 
   private static boolean isValueOfInvocation(ExpressionTree abstractTypedTree) {

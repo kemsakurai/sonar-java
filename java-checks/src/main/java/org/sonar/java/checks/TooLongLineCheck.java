@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,11 +19,8 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.Sets;
-import com.google.common.io.Files;
 import org.sonar.check.Rule;
 import org.sonar.check.RuleProperty;
-import org.sonar.java.CharsetAwareVisitor;
 import org.sonar.java.RspecKey;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
@@ -33,17 +30,15 @@ import org.sonar.plugins.java.api.tree.ImportClauseTree;
 import org.sonar.plugins.java.api.tree.ImportTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.charset.Charset;
 import java.text.MessageFormat;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 @Rule(key = "S00103")
 @RspecKey("S103")
-public class TooLongLineCheck extends IssuableSubscriptionVisitor implements CharsetAwareVisitor {
+public class TooLongLineCheck extends IssuableSubscriptionVisitor {
 
   private static final int DEFAULT_MAXIMUM_LINE_LENGTH = 120;
 
@@ -53,8 +48,7 @@ public class TooLongLineCheck extends IssuableSubscriptionVisitor implements Cha
       defaultValue = "" + DEFAULT_MAXIMUM_LINE_LENGTH)
   int maximumLineLength = DEFAULT_MAXIMUM_LINE_LENGTH;
 
-  private Charset charset;
-  private Set<Integer> ignoredLines = Sets.newHashSet();
+  private Set<Integer> ignoredLines = new HashSet<>();
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
@@ -62,17 +56,11 @@ public class TooLongLineCheck extends IssuableSubscriptionVisitor implements Cha
   }
 
   @Override
-  public void setCharset(Charset charset) {
-    this.charset = charset;
-  }
-
-  @Override
-  public void scanFile(JavaFileScannerContext context) {
-    super.context = context;
+  public void setContext(JavaFileScannerContext context) {
     ignoredLines.clear();
     ignoreLines(context.getTree());
-    super.scanFile(context);
-    visitFile(context.getFile());
+    super.setContext(context);
+    visitFile();
   }
 
   private void ignoreLines(CompilationUnitTree tree) {
@@ -97,13 +85,8 @@ public class TooLongLineCheck extends IssuableSubscriptionVisitor implements Cha
     return ((EmptyStatementTree) importClauseTree).semicolonToken().line();
   }
 
-  private void visitFile(File file) {
-    List<String> lines;
-    try {
-      lines = Files.readLines(file, charset);
-    } catch (IOException e) {
-      throw new IllegalStateException(e);
-    }
+  private void visitFile() {
+    List<String> lines = context.getFileLines();
     for (int i = 0; i < lines.size(); i++) {
       if (!ignoredLines.contains(i + 1)) {
         String origLine = lines.get(i);

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,7 +20,6 @@
 package org.sonar.java.checks;
 
 import org.sonar.check.Rule;
-import org.sonar.java.model.expression.BinaryExpressionTreeImpl;
 import org.sonar.plugins.java.api.JavaFileScanner;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
@@ -41,14 +40,24 @@ public class MathOnFloatCheck extends BaseTreeVisitor implements JavaFileScanner
   @Override
   public void visitBinaryExpression(BinaryExpressionTree tree) {
     if (tree.is(Tree.Kind.PLUS, Tree.Kind.MINUS, Tree.Kind.MULTIPLY, Tree.Kind.DIVIDE)) {
-      BinaryExpressionTreeImpl expressionTree = (BinaryExpressionTreeImpl) tree;
-      if (expressionTree.symbolType().is("float")) {
+      if (withinStringConcatenation(tree)) {
+        return;
+      }
+      if (tree.symbolType().is("float")) {
         context.reportIssue(this, tree, "Use a \"double\" or \"BigDecimal\" instead.");
         // do not look for other issues in sub-tree
         return;
       }
     }
     super.visitBinaryExpression(tree);
+  }
+
+  private static boolean withinStringConcatenation(BinaryExpressionTree tree) {
+    Tree parent = tree.parent();
+    while (parent.is(Tree.Kind.PARENTHESIZED_EXPRESSION)) {
+      parent = parent.parent();
+    }
+    return parent.is(Tree.Kind.PLUS) && ((BinaryExpressionTree) parent).symbolType().is("java.lang.String");
   }
 
 }

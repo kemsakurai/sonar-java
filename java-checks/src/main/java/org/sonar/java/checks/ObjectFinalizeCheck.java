@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,18 +19,17 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Arrays;
+import java.util.List;
 import org.sonar.check.Rule;
 import org.sonar.java.RspecKey;
-import org.sonar.java.checks.helpers.MethodsHelper;
+import org.sonar.java.model.ExpressionUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.PrimitiveTypeTree;
 import org.sonar.plugins.java.api.tree.Tree;
-
-import java.util.List;
 
 @Rule(key = "ObjectFinalizeCheck")
 @RspecKey("S1111")
@@ -40,7 +39,7 @@ public class ObjectFinalizeCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD, Tree.Kind.METHOD_INVOCATION);
+    return Arrays.asList(Tree.Kind.METHOD, Tree.Kind.METHOD_INVOCATION);
   }
 
   @Override
@@ -49,7 +48,7 @@ public class ObjectFinalizeCheck extends IssuableSubscriptionVisitor {
       isInFinalizeMethod = isFinalizeMethodMember((MethodTree) tree);
     } else {
       MethodInvocationTree methodInvocationTree = (MethodInvocationTree) tree;
-      IdentifierTree methodName = MethodsHelper.methodName(methodInvocationTree);
+      IdentifierTree methodName = ExpressionUtils.methodName(methodInvocationTree);
       if (!isInFinalizeMethod && "finalize".equals(methodName.name()) && methodInvocationTree.arguments().isEmpty()) {
         reportIssue(methodName, "Remove this call to finalize().");
       }

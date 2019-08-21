@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,24 +19,28 @@
  */
 package org.sonar.java.se.checks;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 
-import org.sonar.java.collections.PMap;
 import org.sonar.java.se.ExplodedGraph;
+import org.sonar.java.se.Flow;
 import org.sonar.java.se.FlowComputation;
 import org.sonar.java.se.ProgramState;
 import org.sonar.java.se.constraint.Constraint;
+import org.sonar.java.se.constraint.ConstraintsByDomain;
+import org.sonar.java.se.constraint.ObjectConstraint;
 import org.sonar.java.se.symbolicvalues.SymbolicValue;
 import org.sonar.java.se.xproc.ExceptionalCheckBasedYield;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
+import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
+import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -67,18 +71,28 @@ public class ExceptionalYieldChecker {
     if (methodSelect.is(Tree.Kind.MEMBER_SELECT)) {
       reportTree = ((MemberSelectExpressionTree) methodSelect).identifier();
     }
-    JavaFileScannerContext.Location methodInvocationMessage = new JavaFileScannerContext.Location(String.format("'%s()' is invoked.", methodName), reportTree);
 
-    Set<List<JavaFileScannerContext.Location>> argumentsFlows = flowsForMethodArguments(node, mit);
-    Set<List<JavaFileScannerContext.Location>> exceptionFlows = yield.exceptionFlows();
+    JavaFileScannerContext.Location methodInvocationMessage;
+    int parameterCausingExceptionIndex = yield.parameterCausingExceptionIndex();
+    IdentifierTree identifierTree = FlowComputation.getArgumentIdentifier(mit, parameterCausingExceptionIndex);
+    if (identifierTree != null) {
+      methodInvocationMessage = new JavaFileScannerContext.Location(String.format("'%s' is passed to '%s()'.", identifierTree.name(), methodName), identifierTree);
+    } else {
+      methodInvocationMessage = new JavaFileScannerContext.Location(String.format("'%s()' is invoked.", methodName), reportTree);
+    }
 
-    ImmutableSet.Builder<List<JavaFileScannerContext.Location>> flows = ImmutableSet.builder();
-    for (List<JavaFileScannerContext.Location> argumentFlow : argumentsFlows) {
-      for (List<JavaFileScannerContext.Location> exceptionFlow : exceptionFlows) {
-        flows.add(ImmutableList.<JavaFileScannerContext.Location>builder()
-          .addAll(Lists.reverse(argumentFlow))
+    Flow argumentChangingNameFlows = flowsForArgumentsChangingName(yield, mit);
+    Set<Flow> argumentsFlows = flowsForMethodArguments(node, mit, parameterCausingExceptionIndex);
+    Set<Flow> exceptionFlows = yield.exceptionFlows();
+
+    ImmutableSet.Builder<Flow> flows = ImmutableSet.builder();
+    for (Flow argumentFlow : argumentsFlows) {
+      for (Flow exceptionFlow : exceptionFlows) {
+        flows.add(Flow.builder()
+          .addAll(exceptionFlow)
+          .addAll(argumentChangingNameFlows)
           .add(methodInvocationMessage)
-          .addAll(Lists.reverse(exceptionFlow))
+          .addAll(argumentFlow)
           .build());
       }
     }
@@ -86,26 +100,47 @@ public class ExceptionalYieldChecker {
     check.reportIssue(reportTree, String.format(message, methodName), flows.build());
   }
 
-  private static Set<List<JavaFileScannerContext.Location>> flowsForMethodArguments(ExplodedGraph.Node node, MethodInvocationTree mit) {
+  private static Set<Flow> flowsForMethodArguments(ExplodedGraph.Node node, MethodInvocationTree mit, int parameterCausingExceptionIndex) {
     ProgramState programState = node.programState;
-    List<SymbolicValue> arguments = Lists.reverse(programState.peekValues(mit.arguments().size()));
-    List<Class<? extends Constraint>> domains = domainsFromArguments(programState, arguments);
-    return FlowComputation.flow(node, new LinkedHashSet<>(arguments), c -> true, c -> false, domains, programState.getLastEvaluated());
+    List<ProgramState.SymbolicValueSymbol> arguments = Lists.reverse(programState.peekValuesAndSymbols(mit.arguments().size()));
+    SymbolicValue parameterCausingExceptionSV = arguments.get(parameterCausingExceptionIndex).symbolicValue();
+
+    Set<SymbolicValue> argSymbolicValues = new LinkedHashSet<>();
+    Set<Symbol> argSymbols = new LinkedHashSet<>();
+    arguments.stream()
+      .filter(svs -> parameterCausingExceptionSV == svs.symbolicValue() || hasConstraintOtherThanNonNull(svs, programState))
+      .forEach(svs -> {
+        argSymbolicValues.add(svs.symbolicValue());
+        Symbol symbol = svs.symbol();
+        if (symbol != null) {
+          argSymbols.add(symbol);
+        }
+      });
+
+    List<Class<? extends Constraint>> domains = domainsFromArguments(programState, argSymbolicValues);
+    return FlowComputation.flow(node, argSymbolicValues, c -> true, c -> false, domains, argSymbols);
   }
 
-  private static List<Class<? extends Constraint>> domainsFromArguments(ProgramState programState, List<SymbolicValue> arguments) {
+  private static boolean hasConstraintOtherThanNonNull(ProgramState.SymbolicValueSymbol svs, ProgramState ps) {
+    SymbolicValue sv = svs.symbolicValue();
+    ConstraintsByDomain constraints = ps.getConstraints(sv);
+    return constraints != null && !hasOnlyNonNullConstraint(constraints);
+  }
+
+  private static boolean hasOnlyNonNullConstraint(ConstraintsByDomain constraints) {
+    return constraints.domains().count() == 1 && constraints.get(ObjectConstraint.class) == ObjectConstraint.NOT_NULL;
+  }
+
+  private static List<Class<? extends Constraint>> domainsFromArguments(ProgramState programState, Collection<SymbolicValue> arguments) {
     return arguments.stream()
       .map(programState::getConstraints)
       .filter(Objects::nonNull)
-      .map(ExceptionalYieldChecker::domainsFromConstraints)
-      .flatMap(List::stream)
+      .flatMap(ConstraintsByDomain::domains)
       .distinct()
       .collect(Collectors.toList());
   }
 
-  private static List<Class<? extends Constraint>> domainsFromConstraints(PMap<Class<? extends Constraint>, Constraint> constraints) {
-    List<Class<? extends Constraint>> domains = new ArrayList<>();
-    constraints.forEach((d, c) -> domains.add(d));
-    return domains;
+  private static Flow flowsForArgumentsChangingName(ExceptionalCheckBasedYield yield, MethodInvocationTree mit) {
+    return FlowComputation.flowsForArgumentsChangingName(Collections.singletonList(yield.parameterCausingExceptionIndex()), mit);
   }
 }

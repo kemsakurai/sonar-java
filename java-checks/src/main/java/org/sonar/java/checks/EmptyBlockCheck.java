@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import org.sonar.check.Rule;
 import org.sonar.java.RspecKey;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
@@ -27,6 +26,7 @@ import org.sonar.plugins.java.api.tree.BlockTree;
 import org.sonar.plugins.java.api.tree.SwitchStatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
+import java.util.Arrays;
 import java.util.List;
 
 @Rule(key = "S00108")
@@ -38,7 +38,7 @@ public class EmptyBlockCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(
+    return Arrays.asList(
       Tree.Kind.METHOD,
       Tree.Kind.CONSTRUCTOR,
       Tree.Kind.BLOCK,
@@ -59,10 +59,16 @@ public class EmptyBlockCheck extends IssuableSubscriptionVisitor {
     } else {
       if (isMethodBlock) {
         isMethodBlock = false;
-      } else if (!hasStatements((BlockTree) tree) && !hasCommentInside((BlockTree) tree)) {
+      } else if (!tree.parent().is(Tree.Kind.LAMBDA_EXPRESSION)
+              && !hasStatements((BlockTree) tree)
+              && !isRuleException((BlockTree) tree)) {
         reportIssue(((BlockTree) tree).openBraceToken(), MESSAGE);
       }
     }
+  }
+
+  private static boolean isRuleException(BlockTree tree) {
+    return hasCommentInside(tree) && !tree.parent().is(Tree.Kind.SYNCHRONIZED_STATEMENT);
   }
 
   private static boolean hasCommentInside(BlockTree tree) {

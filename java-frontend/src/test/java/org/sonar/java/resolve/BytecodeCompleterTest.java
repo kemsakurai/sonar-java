@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,11 +21,23 @@ package org.sonar.java.resolve;
 
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.sonar.api.utils.log.LogTester;
 import org.sonar.api.utils.log.LoggerLevel;
+import org.sonar.java.bytecode.loader.SquidClassLoader;
 import org.sonar.java.resolve.JavaSymbol.TypeJavaSymbol;
 import org.sonar.java.resolve.targets.Annotations;
 import org.sonar.java.resolve.targets.AnonymousClass;
@@ -36,13 +48,6 @@ import org.sonar.java.resolve.targets.NamedClassWithinMethod;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.SymbolMetadata;
 import org.sonar.plugins.java.api.semantic.Type;
-
-import java.io.File;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Optional;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
@@ -62,7 +67,7 @@ public class BytecodeCompleterTest {
 
   @Before
   public void setUp() throws Exception {
-    bytecodeCompleter = new BytecodeCompleter(Lists.newArrayList(new File("target/test-classes"), new File("target/classes")), new ParametrizedTypeCache());
+    bytecodeCompleter = new BytecodeCompleter(new SquidClassLoader(Lists.newArrayList(new File("target/test-classes"), new File("target/classes"))), new ParametrizedTypeCache());
     new Symbols(bytecodeCompleter);
 
   }
@@ -94,6 +99,7 @@ public class BytecodeCompleterTest {
   @Test
   public void annotations() throws Exception {
     bytecodeCompleter.getClassSymbol(Annotations.class.getName().replace('.', '/')).complete();
+    assertThat(bytecodeCompleter.classesNotFound()).isEmpty();
   }
 
   @Test
@@ -164,7 +170,7 @@ public class BytecodeCompleterTest {
 
     //Check interfaces
     assertThat(arrayList.getInterfaces()).hasSize(4);
-    List<String> interfacesName = Lists.newArrayList();
+    List<String> interfacesName = new ArrayList<>();
     for (JavaType interfaceType : arrayList.getInterfaces()) {
       interfacesName.add(interfaceType.symbol.name);
     }
@@ -268,7 +274,21 @@ public class BytecodeCompleterTest {
     assertAnnotationValue(value);
     value = iterator.next().value();
     assertAnnotationValue(value);
+  }
 
+  @Test
+  public void annotationArrayOfEnum() {
+    JavaSymbol.TypeJavaSymbol classSymbol = bytecodeCompleter.getClassSymbol("org.sonar.java.resolve.targets.AnnotationSymbolMethod");
+    Symbol barMethod = classSymbol.memberSymbols().stream().filter(symbol -> "bar".equals(symbol.name())).findFirst().get();
+    SymbolMetadata barMetadata = barMethod.metadata();
+    assertThat(barMetadata.annotations()).hasSize(1);
+    List<SymbolMetadata.AnnotationValue> valuesForAnnotation = barMetadata.valuesForAnnotation("org.sonar.java.resolve.targets.ArrayEnumAnnotation");
+    assertThat(valuesForAnnotation).hasSize(1);
+    assertThat(valuesForAnnotation.get(0).name()).isEqualTo("value");
+    Object annotationValue = valuesForAnnotation.get(0).value();
+    assertThat(annotationValue).isInstanceOf(Object[].class);
+    assertThat((Object[]) annotationValue).hasSize(2);
+    assertThat(Arrays.stream((Object[]) annotationValue)).allMatch(o -> o instanceof Symbol && ((Symbol) o).type().is("org.sonar.java.resolve.targets.MyEnum"));
   }
 
   private void assertAnnotationValue(Object value) {
@@ -357,6 +377,48 @@ public class BytecodeCompleterTest {
   }
 
   @Test
+  public void type_annotation_on_members() {
+    JavaSymbol.TypeJavaSymbol clazz = bytecodeCompleter.getClassSymbol("org.sonar.java.resolve.targets.TypeAnnotationOnMembers");
+    JavaSymbol.VariableJavaSymbol field = (JavaSymbol.VariableJavaSymbol) clazz.members().lookup("field").get(0);
+    JavaSymbol.MethodJavaSymbol method = (JavaSymbol.MethodJavaSymbol) clazz.members().lookup("method").get(0);
+    JavaSymbol.VariableJavaSymbol param1 = (JavaSymbol.VariableJavaSymbol) method.getParameters().scopeSymbols().get(0);
+    JavaSymbol.VariableJavaSymbol param2 = (JavaSymbol.VariableJavaSymbol) method.getParameters().scopeSymbols().get(1);
+    assertTypeAnnotation(field, "f");
+    assertTypeAnnotation(method, "r");
+    assertTypeAnnotation(param1, "p1");
+    assertTypeAnnotation(param2, "p2");
+
+    // Limitation: Annotations on "Type Parameters" are not supported by our byte code visitor in the two following cases:
+    // 1) Annotation @TypeAnnotation("t") is missing on symbol "C" (see {@link BytecodeFieldVisitor#visitTypeAnnotation})
+    JavaSymbol.TypeVariableJavaSymbol typeParameterC = (JavaSymbol.TypeVariableJavaSymbol) clazz.typeParameters().lookup("C").get(0);
+    assertThat(typeParameterC.metadata().isAnnotatedWith("org.sonar.java.resolve.targets.TypeAnnotation")).isFalse();
+    // 2) Annotation @TypeAnnotation("t") is missing on symbol "T" (see {@link BytecodeMethodVisitor#visitTypeAnnotation})
+    Symbol typeParameterTSymbol = ((MethodJavaType) method.getType()).argTypes().get(1).symbol();
+    assertThat(typeParameterTSymbol.name()).isEqualTo("T");
+    assertThat(typeParameterTSymbol.metadata().isAnnotatedWith("org.sonar.java.resolve.targets.TypeAnnotation")).isFalse();
+  }
+
+  private static void assertTypeAnnotation(JavaSymbol symbol, String expectedValue) {
+    SymbolMetadataResolve metadata = symbol.metadata();
+    assertThat(metadata.isAnnotatedWith("org.sonar.java.resolve.targets.TypeAnnotation")).isTrue();
+    List<SymbolMetadata.AnnotationValue> fieldValues = metadata.valuesForAnnotation("org.sonar.java.resolve.targets.TypeAnnotation");
+    assertThat(fieldValues).isNotNull();
+    assertThat(fieldValues.size()).isEqualTo(1);
+    assertThat(fieldValues.get(0).name()).isEqualTo("value");
+    assertThat(fieldValues.get(0).value()).isEqualTo(expectedValue);
+  }
+
+  @Test
+  public void super_class_can_be_an_inner_class() {
+    JavaSymbol.TypeJavaSymbol innerClassDerivedSymbol = bytecodeCompleter.getClassSymbol("org.sonar.java.resolve.targets.ParametrizedExtendDerived$InnerClassDerived");
+    innerClassDerivedSymbol.complete();
+    assertThat(innerClassDerivedSymbol.getSuperclass().symbol().type().fullyQualifiedName()).isEqualTo("org.sonar.java.resolve.targets.ParametrizedExtend$InnerClass");
+    JavaSymbol.MethodJavaSymbol symbol = (JavaSymbol.MethodJavaSymbol) innerClassDerivedSymbol.members().lookup("innerMethod").get(0);
+    assertThat(symbol.getReturnType().type).isInstanceOf(TypeVariableJavaType.class);
+    assertThat(symbol.getReturnType().getName()).isEqualTo("S");
+  }
+
+  @Test
   public void annotated_enum_constructor() {
     //Test to handle difference between signature and descriptor for enum:
     //see : https://bugs.openjdk.java.net/browse/JDK-8071444 and https://bugs.openjdk.java.net/browse/JDK-8024694
@@ -367,7 +429,20 @@ public class BytecodeCompleterTest {
       assertThat(arg.metadata().annotations()).hasSize(1);
       assertThat(arg.metadata().annotations().get(0).symbol().type().is("javax.annotation.Nullable")).isTrue();
     }
+    assertThat(bytecodeCompleter.classesNotFound()).isEmpty();
     assertThat(logTester.logs(LoggerLevel.WARN)).doesNotContain("Class not found: java.lang.Synthetic");
+  }
+
+  @Test
+  public void owning_class_name() throws Exception {
+    TypeJavaSymbol classSymbolCase1 = bytecodeCompleter.getClassSymbol("org.sonar.java.resolve.targets.DistinguishNames$Case1$OWNER$$Child");
+    TypeJavaSymbol classSymbolCase2 = bytecodeCompleter.getClassSymbol("org.sonar.java.resolve.targets.DistinguishNames$Case2$OWNER$$Child");
+    assertThat(classSymbolCase1.owner().name).isEqualTo("OWNER");
+    assertThat(classSymbolCase1.name).isEqualTo("$Child");
+    assertThat(classSymbolCase2.owner().name).isEqualTo("OWNER$");
+    assertThat(classSymbolCase2.name).isEqualTo("Child");
+    // No warning about a class not found
+    assertThat(logTester.logs(LoggerLevel.WARN)).isEmpty();
   }
 
   @Test
@@ -477,6 +552,7 @@ public class BytecodeCompleterTest {
     List<Type> interfaces = clazz.interfaces();
     assertThat(interfaces).isNotNull();
     assertThat(interfaces).isEmpty();
+    assertThat(bytecodeCompleter.classesNotFound()).containsOnly("org.sonar.java.resolve.targets.UnknownClass");
   }
 
   @Test
@@ -578,10 +654,155 @@ public class BytecodeCompleterTest {
   }
 
   @Test
+  public void defaultMethods_should_be_correctly_flagged() throws Exception {
+    Symbol.TypeSymbol clazz = bytecodeCompleter.getClassSymbol("org.sonar.java.resolve.targets.DefaultMethods");
+    ((TypeJavaSymbol) clazz).complete();
+
+    assertThat(((TypeJavaSymbol) clazz).flags() & Flags.INTERFACE).isNotZero();
+    JavaSymbol.MethodJavaSymbol abstractMethod = (JavaSymbol.MethodJavaSymbol) ((TypeJavaSymbol) clazz).members().lookup("abstractMethod").get(0);
+    assertThat(abstractMethod.flags() & Flags.ABSTRACT).isNotZero();
+    assertThat(abstractMethod.flags() & Flags.DEFAULT).isZero();
+
+    JavaSymbol.MethodJavaSymbol defaultMethod = (JavaSymbol.MethodJavaSymbol) ((TypeJavaSymbol) clazz).members().lookup("defaultMethod").get(0);
+    assertThat(defaultMethod.flags() & Flags.ABSTRACT).isZero();
+    assertThat(defaultMethod.flags() & Flags.DEFAULT).isNotZero();
+
+    JavaSymbol.MethodJavaSymbol staticMethod = (JavaSymbol.MethodJavaSymbol) ((TypeJavaSymbol) clazz).members().lookup("staticMethod").get(0);
+    assertThat(staticMethod.flags() & Flags.ABSTRACT).isZero();
+    assertThat(staticMethod.flags() & Flags.DEFAULT).isZero();
+    assertThat(staticMethod.flags() & Flags.STATIC).isNotZero();
+  }
+
+
+  @Test
   public void bridge_method_not_synthetic_should_not_be_created_as_symbol_nor_fail_analysis() throws Exception {
     TypeJavaSymbol prezModel42 = bytecodeCompleter.getClassSymbol("model42.PresentationModel42");
     prezModel42.complete();
     assertThat(prezModel42.members().lookup("setSliderMinValue")).isEmpty();
     assertThat(logTester.logs(LoggerLevel.WARN)).contains("bridge method setSliderMinValue not marked as synthetic in class model42/PresentationModel42");
+  }
+
+  @Test
+  public void test_loading_java9_class() throws Exception {
+    BytecodeCompleter bytecodeCompleter = new BytecodeCompleter(
+      new SquidClassLoader(Collections.singletonList(new File("src/test/files/bytecode/java9/bin"))),
+      new ParametrizedTypeCache());
+    new Symbols(bytecodeCompleter);
+    TypeJavaSymbol classSymbol = (TypeJavaSymbol) bytecodeCompleter.loadClass("org.test.Hello9");
+    classSymbol.complete();
+    assertThat(classSymbol.getFullyQualifiedName()).isEqualTo("org.test.Hello9");
+    assertThat(classSymbol.memberSymbols()).hasSize(2);
+  }
+
+  @Test
+  public void test_loading_java9_iface() throws Exception {
+    BytecodeCompleter bytecodeCompleter = new BytecodeCompleter(
+      new SquidClassLoader(Collections.singletonList(new File("src/test/files/bytecode/java9/bin"))),
+      new ParametrizedTypeCache());
+    new Symbols(bytecodeCompleter);
+    TypeJavaSymbol iface = (TypeJavaSymbol) bytecodeCompleter.loadClass("org.test.IfaceTest");
+    iface.complete();
+    assertThat(iface.getFullyQualifiedName()).isEqualTo("org.test.IfaceTest");
+    assertThat(iface.memberSymbols()).hasSize(3);
+    assertThat(iface.isInterface()).isTrue();
+
+    JavaSymbol.MethodJavaSymbol privateMethod = (JavaSymbol.MethodJavaSymbol) Iterables.getOnlyElement(iface.lookupSymbols("privateMethod"));
+    assertThat(privateMethod.flags()).isEqualTo(Flags.PRIVATE);
+
+    JavaSymbol.MethodJavaSymbol defaultMethod = (JavaSymbol.MethodJavaSymbol) Iterables.getOnlyElement(iface.lookupSymbols("defaultMethod"));
+    assertThat(defaultMethod.flags()).isEqualTo(Flags.DEFAULT | Flags.PUBLIC);
+
+    JavaSymbol.MethodJavaSymbol staticMethod = (JavaSymbol.MethodJavaSymbol) Iterables.getOnlyElement(iface.lookupSymbols("staticMethod"));
+    assertThat(staticMethod.flags()).isEqualTo(Flags.STATIC | Flags.PUBLIC);
+  }
+
+  @Test
+  public void test_loading_java10_class() throws Exception {
+    BytecodeCompleter bytecodeCompleter = new BytecodeCompleter(
+      new SquidClassLoader(Collections.singletonList(new File("src/test/files/bytecode/java10/bin"))),
+      new ParametrizedTypeCache());
+    new Symbols(bytecodeCompleter);
+    TypeJavaSymbol classSymbol = (TypeJavaSymbol) bytecodeCompleter.loadClass("org.foo.A");
+    classSymbol.complete();
+    assertThat(classSymbol.getFullyQualifiedName()).isEqualTo("org.foo.A");
+    assertThat(classSymbol.memberSymbols()).hasSize(2);
+
+    Scope members = classSymbol.members();
+    Symbol implicitDefaultConstructor = members.lookup("<init>").get(0);
+    Symbol foo = members.lookup("foo").get(0);
+    assertThat(implicitDefaultConstructor.name()).isEqualTo("<init>");
+    assertThat(implicitDefaultConstructor.isMethodSymbol()).isTrue();
+    assertThat(((JavaSymbol.MethodJavaSymbol) implicitDefaultConstructor).isConstructor()).isTrue();
+    assertThat(((JavaSymbol.MethodJavaSymbol) implicitDefaultConstructor).parameterTypes()).isEmpty();
+
+    assertThat(foo.name()).isEqualTo("foo");
+    assertThat(foo.isMethodSymbol()).isTrue();
+    assertThat(((JavaSymbol.MethodJavaSymbol) foo).isConstructor()).isFalse();
+    assertThat(((JavaSymbol.MethodJavaSymbol) foo).parameterTypes()).isEmpty();
+  }
+
+  @Test
+  public void test_loading_java11_class() {
+    BytecodeCompleter bytecodeCompleter = new BytecodeCompleter(
+      new SquidClassLoader(Collections.singletonList(new File("src/test/files/bytecode/java11/bin"))),
+      new ParametrizedTypeCache());
+    new Symbols(bytecodeCompleter);
+    TypeJavaSymbol classSymbol = (TypeJavaSymbol) bytecodeCompleter.loadClass("org.foo.A");
+    classSymbol.complete();
+    assertThat(classSymbol.getFullyQualifiedName()).isEqualTo("org.foo.A");
+    assertThat(classSymbol.memberSymbols()).hasSize(4);
+
+    Scope members = classSymbol.members();
+    Symbol implicitDefaultConstructor = members.lookup("<init>").get(0);
+    Symbol foo = members.lookup("foo").get(0);
+    assertThat(implicitDefaultConstructor.name()).isEqualTo("<init>");
+    assertThat(implicitDefaultConstructor.isMethodSymbol()).isTrue();
+    assertThat(((JavaSymbol.MethodJavaSymbol) implicitDefaultConstructor).isConstructor()).isTrue();
+    assertThat(((JavaSymbol.MethodJavaSymbol) implicitDefaultConstructor).parameterTypes()).isEmpty();
+
+    assertThat(foo.name()).isEqualTo("foo");
+    assertThat(foo.isMethodSymbol()).isTrue();
+    assertThat(((JavaSymbol.MethodJavaSymbol) foo).isConstructor()).isFalse();
+    assertThat(((JavaSymbol.MethodJavaSymbol) foo).parameterTypes()).isEmpty();
+  }
+
+  @Test
+  public void default_value_of_annotation_methods() throws Exception {
+    Symbol.TypeSymbol annotation = bytecodeCompleter.getClassSymbol("org.sonar.java.resolve.targets.DefaultValueOfAnnotationMethods");
+
+    Map<String, Object> nameToDefaultValue = new HashMap<>();
+    List<JavaSymbol.MethodJavaSymbol> methodJavaSymbols = annotation.memberSymbols()
+      .stream()
+      .filter(Symbol::isMethodSymbol)
+      .map(s -> (JavaSymbol.MethodJavaSymbol) s)
+      .collect(Collectors.toList());
+    for (JavaSymbol.MethodJavaSymbol methodJavaSymbol : methodJavaSymbols) {
+      nameToDefaultValue.put(methodJavaSymbol.name(), methodJavaSymbol.defaultValue);
+    }
+
+    assertThat(nameToDefaultValue.get("valueString")).isEqualTo("valueDefault");
+    assertThat(nameToDefaultValue.get("valueInt")).isEqualTo(42);
+    assertThat(nameToDefaultValue.get("valueLong")).isEqualTo(42L);
+    // constants are computed by compiler.
+    assertThat(nameToDefaultValue.get("valueStringConstant")).isEqualTo("value4Default");
+    // default ints are wrapped to arrays.
+    assertThat(nameToDefaultValue.get("valueArray")).isEqualTo(new int[] {0});
+    assertThat(nameToDefaultValue.get("noDefault")).isNull();
+    // unsupported
+    assertThat(nameToDefaultValue.get("valueEnum")).isNull();
+
+  }
+
+  @Test
+  public void constant_value() {
+    TypeJavaSymbol classSymbol = bytecodeCompleter.getClassSymbol("org.sonar.java.resolve.targets.ClassWithConstants");
+
+    assertThat(lookupVariable(classSymbol, "CONST1").constantValue().orElse(null)).isEqualTo("CONST_VALUE");
+    assertThat(lookupVariable(classSymbol, "nonStatic").constantValue()).isEmpty();
+    assertThat(lookupVariable(classSymbol, "nonFinal").constantValue()).isEmpty();
+  }
+
+  private JavaSymbol.VariableJavaSymbol lookupVariable(TypeJavaSymbol classSymbol, String variableName) {
+    return (JavaSymbol.VariableJavaSymbol) classSymbol.lookupSymbols(variableName).iterator().next();
   }
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,19 +19,19 @@
  */
 package org.sonar.java.resolve;
 
-import com.google.common.collect.Lists;
-
 import org.junit.Test;
+import org.sonar.java.bytecode.loader.SquidClassLoader;
 
-import java.io.File;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class TypesTest {
 
-  private Symbols symbols = new Symbols(new BytecodeCompleter(Lists.<File>newArrayList(), new ParametrizedTypeCache()));
+  private Symbols symbols = new Symbols(new BytecodeCompleter(new SquidClassLoader(Collections.emptyList()), new ParametrizedTypeCache()));
   private Types types = new Types();
 
   @Test
@@ -72,11 +72,11 @@ public class TypesTest {
     shouldBeSubtype(arrayTypeInt, Arrays.asList(symbols.objectType));
     JavaSymbol.TypeJavaSymbol typeSymbol = new JavaSymbol.TypeJavaSymbol(Flags.PUBLIC, "MyType", symbols.defaultPackage);
     ClassJavaType classType = (ClassJavaType) typeSymbol.type;
-    classType.interfaces = Lists.newArrayList();
+    classType.interfaces = new ArrayList<>();
     JavaSymbol.TypeJavaSymbol subtypeSymbol = new JavaSymbol.TypeJavaSymbol(Flags.PUBLIC, "MySubtype", symbols.defaultPackage);
     ClassJavaType subClassType = (ClassJavaType) subtypeSymbol.type;
     subClassType.supertype = classType;
-    subClassType.interfaces = Lists.newArrayList();
+    subClassType.interfaces = new ArrayList<>();
     shouldBeSubtype(subClassType, Arrays.<JavaType>asList(classType, subClassType));
 
   }

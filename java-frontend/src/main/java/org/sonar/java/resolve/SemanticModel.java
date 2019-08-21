@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,40 +20,42 @@
 package org.sonar.java.resolve;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
-import com.google.common.collect.Maps;
+import javax.annotation.CheckForNull;
+import org.sonar.java.bytecode.loader.SquidClassLoader;
 import org.sonar.java.model.AbstractTypedTree;
+import org.sonar.java.model.JavaTree;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
-import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
 import org.sonar.plugins.java.api.tree.CompilationUnitTree;
-import org.sonar.plugins.java.api.tree.ListTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
 import javax.annotation.Nullable;
-import java.io.File;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
-import java.util.List;
+import java.util.LinkedList;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 public class SemanticModel {
 
   private final Map<Tree, Symbol> symbolsTree = new HashMap<>();
 
-  private final Map<Symbol, Resolve.Env> symbolEnvs = Maps.newHashMap();
+  private final Map<Symbol, Resolve.Env> symbolEnvs = new HashMap<>();
   private final BiMap<Tree, Resolve.Env> envs = HashBiMap.create();
   private final BytecodeCompleter bytecodeCompleter;
 
-  private SemanticModel(BytecodeCompleter bytecodeCompleter) {
+  @VisibleForTesting
+  SemanticModel(BytecodeCompleter bytecodeCompleter) {
     this.bytecodeCompleter = bytecodeCompleter;
   }
 
-  public static SemanticModel createFor(CompilationUnitTree tree, List<File> projectClasspath) {
+  public static SemanticModel createFor(CompilationUnitTree tree, SquidClassLoader classLoader) {
     ParametrizedTypeCache parametrizedTypeCache = new ParametrizedTypeCache();
-    BytecodeCompleter bytecodeCompleter = new BytecodeCompleter(projectClasspath, parametrizedTypeCache);
+    BytecodeCompleter bytecodeCompleter = new BytecodeCompleter(classLoader, parametrizedTypeCache);
     Symbols symbols = new Symbols(bytecodeCompleter);
     SemanticModel semanticModel = new SemanticModel(bytecodeCompleter);
     try {
@@ -68,36 +70,36 @@ public class SemanticModel {
     return semanticModel;
   }
 
-  public void done(){
-    ParametrizedTypeJavaType.typeSubstitutionSolver = null;
-    bytecodeCompleter.done();
-  }
-
   /**
    * Handles missing types in Syntax Tree to prevent NPE in subsequent steps of analysis.
    */
   public static void handleMissingTypes(Tree tree) {
     // (Godin): Another and probably better (safer) way to do the same - is to assign default value during creation of nodes, so that to guarantee that this step won't be skipped.
-    tree.accept(new BaseTreeVisitor() {
+    new MissingTypeHandler().handleMissingTypes(tree);
+  }
 
-      @Override
-      protected void scan(@Nullable Tree tree) {
-        if (tree instanceof AbstractTypedTree) {
-          AbstractTypedTree typedNode = (AbstractTypedTree) tree;
-          if (!typedNode.isTypeSet() || ((JavaType) typedNode.symbolType()).isTagged(JavaType.DEFERRED)) {
-            typedNode.setType(Symbols.unknownType);
+
+  private static class MissingTypeHandler {
+    private Deque<JavaTree> parentList = new LinkedList<>();
+
+    void handleMissingTypes(Tree tree) {
+      parentList.push((JavaTree) tree);
+      while (!parentList.isEmpty()) {
+        JavaTree parent = parentList.pop();
+        if (parent instanceof AbstractTypedTree) {
+          ((AbstractTypedTree) parent).completeMissingType();
+        }
+        if (!parent.isLeaf()) {
+          for (Tree nextTree : parent.getChildren()) {
+            JavaTree next = (JavaTree) nextTree;
+            if (next != null) {
+              next.setParent(parent);
+              parentList.push(next);
+            }
           }
         }
-        super.scan(tree);
       }
-
-      @Override
-      protected void scan(@Nullable ListTree<? extends Tree> listTree) {
-        if (listTree != null) {
-          scan((List<? extends Tree>) listTree);
-        }
-      }
-    });
+    }
   }
 
   public void saveEnv(Symbol symbol, Resolve.Env env) {
@@ -135,7 +137,7 @@ public class SemanticModel {
   }
 
   public void associateSymbol(Tree tree, Symbol symbol) {
-    Preconditions.checkNotNull(symbol);
+    Objects.requireNonNull(symbol);
     symbolsTree.put(tree, symbol);
   }
 
@@ -149,4 +151,12 @@ public class SemanticModel {
     return Collections.unmodifiableMap(symbolsTree);
   }
 
+  public Set<String> classesNotFound() {
+    return bytecodeCompleter.classesNotFound();
+  }
+
+  @CheckForNull
+  public Object constantValue(Symbol owner, String constantName) {
+    return bytecodeCompleter.constantValue(owner, constantName);
+  }
 }

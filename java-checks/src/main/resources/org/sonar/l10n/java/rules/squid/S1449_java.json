@@ -1,18 +1,17 @@
 {
   "title": "Locale should be used in String operations",
-  "type": "BUG",
+  "type": "CODE_SMELL",
   "status": "ready",
   "remediation": {
     "func": "Constant\/Issue",
     "constantCost": "5min"
   },
   "tags": [
-    "bug",
     "unpredictable",
     "cert"
   ],
-  "standards": [
-    "CERT"
-  ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-1449",
+  "sqKey": "S1449",
+  "scope": "Main"
 }

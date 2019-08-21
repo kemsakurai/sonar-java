@@ -9,5 +9,8 @@
   "tags": [
     "convention"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-3340",
+  "sqKey": "S3340",
+  "scope": "All"
 }

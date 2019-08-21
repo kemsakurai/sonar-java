@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,10 +19,10 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Arrays;
+import java.util.List;
 import org.sonar.check.Rule;
 import org.sonar.java.RspecKey;
-import org.sonar.java.resolve.JavaSymbol;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.semantic.Symbol;
@@ -30,8 +30,7 @@ import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
-
-import java.util.List;
+import org.sonar.plugins.java.api.tree.VariableTree;
 
 @Rule(key = "CallToDeprecatedMethod")
 @RspecKey("S1874")
@@ -40,19 +39,18 @@ public class CallToDeprecatedMethodCheck extends IssuableSubscriptionVisitor {
   private int nestedDeprecationLevel = 0;
 
   @Override
-  public void scanFile(JavaFileScannerContext context) {
-    super.scanFile(context);
+  public void leaveFile(JavaFileScannerContext context) {
     nestedDeprecationLevel = 0;
   }
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.IDENTIFIER, Tree.Kind.CLASS, Tree.Kind.ENUM, Tree.Kind.INTERFACE, Tree.Kind.ANNOTATION_TYPE, Tree.Kind.METHOD, Tree.Kind.CONSTRUCTOR);
+    return Arrays.asList(Tree.Kind.IDENTIFIER, Tree.Kind.CLASS, Tree.Kind.ENUM, Tree.Kind.INTERFACE, Tree.Kind.ANNOTATION_TYPE, Tree.Kind.METHOD, Tree.Kind.CONSTRUCTOR);
   }
 
   @Override
   public void visitNode(Tree tree) {
-    if(!hasSemantic()) {
+    if (!hasSemantic()) {
       return;
     }
     if (nestedDeprecationLevel == 0) {
@@ -69,12 +67,18 @@ public class CallToDeprecatedMethodCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public void leaveNode(Tree tree) {
-    if (hasSemantic() && (isDeprecatedMethod(tree) || isDeprecatedClassTree(tree))) {
+    if (!hasSemantic()) {
+      return;
+    }
+    if (isDeprecatedMethod(tree) || isDeprecatedClassTree(tree)) {
       nestedDeprecationLevel--;
     }
   }
 
   private void checkIdentifierIssue(IdentifierTree identifierTree) {
+    if (isSimpleNameOfVariableTreeOrVariableIsDeprecated(identifierTree)) {
+      return;
+    }
     Symbol symbol = identifierTree.symbol();
     if (isDeprecated(symbol)) {
       String name;
@@ -87,8 +91,13 @@ public class CallToDeprecatedMethodCheck extends IssuableSubscriptionVisitor {
     }
   }
 
+  private static boolean isSimpleNameOfVariableTreeOrVariableIsDeprecated(IdentifierTree identifierTree) {
+    Tree parent = identifierTree.parent();
+    return parent.is(Tree.Kind.VARIABLE) && (identifierTree.equals(((VariableTree) parent).simpleName()) || ((VariableTree) parent).symbol().isDeprecated());
+  }
+
   private void checkMethodIssue(MethodTree methodTree) {
-    if(!methodTree.symbol().isDeprecated() && isOverridingDeprecatedConcreteMethod((JavaSymbol.MethodJavaSymbol) methodTree.symbol())) {
+    if(!methodTree.symbol().isDeprecated() && isOverridingDeprecatedConcreteMethod(methodTree.symbol())) {
       reportIssue(methodTree.simpleName(), "Don't override a deprecated method or explicitly mark it as \"@Deprecated\".");
     }
   }
@@ -105,8 +114,8 @@ public class CallToDeprecatedMethodCheck extends IssuableSubscriptionVisitor {
     return symbol.isMethodSymbol() && "<init>".equals(symbol.name());
   }
 
-  private static boolean isOverridingDeprecatedConcreteMethod(JavaSymbol.MethodJavaSymbol symbol) {
-    JavaSymbol.MethodJavaSymbol overriddenMethod = symbol.overriddenSymbol();
+  private static boolean isOverridingDeprecatedConcreteMethod(Symbol.MethodSymbol symbol) {
+    Symbol.MethodSymbol overriddenMethod = symbol.overriddenSymbol();
     while(overriddenMethod != null && !overriddenMethod.isUnknown()) {
       if (overriddenMethod.isAbstract()) {
         return false;

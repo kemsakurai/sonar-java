@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,16 +19,16 @@
  */
 package org.sonar.java.resolve;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
-
 import org.junit.Before;
 import org.junit.Test;
+import org.sonar.java.bytecode.loader.SquidClassLoader;
 import org.sonar.java.resolve.JavaSymbol.MethodJavaSymbol;
 import org.sonar.java.resolve.WildCardType.BoundType;
 import org.sonar.plugins.java.api.semantic.Type;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,7 +44,7 @@ public class TypeInferenceSolverTest {
   @Before
   public void setUp() {
     parametrizedTypeCache = new ParametrizedTypeCache();
-    symbols = new Symbols(new BytecodeCompleter(Lists.<java.io.File>newArrayList(), parametrizedTypeCache));
+    symbols = new Symbols(new BytecodeCompleter(new SquidClassLoader(Collections.emptyList()), parametrizedTypeCache));
     TypeSubstitutionSolver typeSubstitutionSolver = new TypeSubstitutionSolver(parametrizedTypeCache, symbols);
     LeastUpperBound lub = new LeastUpperBound(typeSubstitutionSolver, parametrizedTypeCache, symbols);
     typeInferenceSolver = new TypeInferenceSolver(lub, symbols, typeSubstitutionSolver);
@@ -103,12 +103,14 @@ public class TypeInferenceSolverTest {
     // only raw types: args = A, A
     List<JavaType> args = Lists.<JavaType>newArrayList(aRawType, aRawType);
     TypeSubstitution substitution = typeSubstitutionForTypeParametersWithVarargs(formals, args, T);
-    assertThat(substitution.substitutedType(T)).isSameAs(symbols.objectType);
+    assertThat(substitution.substitutedType(T)).isNull();
+    assertThat(substitution.isUnchecked()).isTrue();
 
     // raw type with generic type : A, A<String>
     args = Lists.<JavaType>newArrayList(aRawType, parametrizedTypeCache.getParametrizedTypeType(aType.symbol, new TypeSubstitution().add(X, symbols.stringType)));
     substitution = typeSubstitutionForTypeParametersWithVarargs(formals, args, T);
-    assertThat(substitution.substitutedType(T)).isSameAs(symbols.objectType);
+    assertThat(substitution.substitutedType(T)).isNull();
+    assertThat(substitution.isUnchecked()).isTrue();
   }
 
   @Test
@@ -138,7 +140,7 @@ public class TypeInferenceSolverTest {
   private JavaType createType(String string, JavaType superType) {
     JavaSymbol.TypeJavaSymbol symbol = new JavaSymbol.TypeJavaSymbol(Flags.PUBLIC, "A", symbols.defaultPackage);
     ClassJavaType type = (ClassJavaType) symbol.type;
-    type.interfaces = ImmutableList.of();
+    type.interfaces = Collections.emptyList();
     type.supertype = superType;
     return type;
   }
@@ -188,12 +190,12 @@ public class TypeInferenceSolverTest {
 
   private TypeVariableJavaType getTypeVariable(String variableName) {
     TypeVariableJavaType typeVariableJavaType = new TypeVariableJavaType(new JavaSymbol.TypeVariableJavaSymbol(variableName, Symbols.unknownSymbol));
-    typeVariableJavaType.bounds = ImmutableList.of(symbols.objectType);
+    typeVariableJavaType.bounds = Collections.singletonList(symbols.objectType);
     return typeVariableJavaType;
   }
 
   private TypeSubstitution typeSubstitutionForTypeParameters(List<JavaType> formals, List<JavaType> args, boolean varargs, TypeVariableJavaType... typeParameters) {
-    MethodJavaType methodType = new MethodJavaType(formals, symbols.voidType, ImmutableList.<JavaType>of(), symbols.objectType.symbol);
+    MethodJavaType methodType = new MethodJavaType(formals, symbols.voidType, Collections.emptyList(), symbols.objectType.symbol);
     int flags = Flags.PUBLIC;
     if (varargs) {
       flags |= Flags.VARARGS;

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -28,17 +28,9 @@ import org.testng.ITestResult;
  */
 public class TestNGListener extends JUnitListener implements ITestListener {
 
-  public TestNGListener() {
-    this(JacocoController.getInstance());
-  }
-
-  TestNGListener(JacocoController jacoco) {
-    super(jacoco);
-  }
-
   @Override
   public void onTestStart(ITestResult result) {
-    jacoco.onTestStart();
+    getJacocoController().onTestStart();
   }
 
   private static String getName(ITestResult result) {

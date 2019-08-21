@@ -1,6 +1,6 @@
 {
-  "title": "SQL binding mechanisms should be used",
-  "type": "VULNERABILITY",
+  "title": "Formatting SQL queries is security-sensitive",
+  "type": "SECURITY_HOTSPOT",
   "status": "ready",
   "remediation": {
     "func": "Constant\/Issue",
@@ -9,17 +9,25 @@
   "tags": [
     "cwe",
     "owasp-a1",
-    "security",
     "sans-top25-insecure",
+    "bad-practice",
     "cert",
     "hibernate",
     "sql"
   ],
-  "standards": [
-    "CWE",
-    "CERT",
-    "OWASP Top Ten",
-    "SANS Top 25"
-  ],
-  "defaultSeverity": "Blocker"
+  "defaultSeverity": "Critical",
+  "ruleSpecification": "RSPEC-2077",
+  "sqKey": "S2077",
+  "scope": "Main",
+  "securityStandards": {
+    "CWE": [
+      564,
+      89,
+      20,
+      943
+    ],
+    "OWASP": [
+      "A1"
+    ]
+  }
 }

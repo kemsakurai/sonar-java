@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -26,20 +26,12 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Multiset;
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang.StringUtils;
-import org.assertj.core.api.Fail;
-import org.sonar.java.AnalyzerMessage;
-import org.sonar.java.ast.JavaAstScanner;
-import org.sonar.java.model.VisitorsBridgeForTests;
-import org.sonar.plugins.java.api.JavaFileScanner;
-
+import com.sonar.sslr.api.RecognitionException;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -47,8 +39,23 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.SortedSet;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang.StringUtils;
+import org.assertj.core.api.Fail;
+import org.sonar.api.batch.fs.InputFile;
+import org.sonar.api.batch.sensor.internal.SensorContextTester;
+import org.sonar.api.config.internal.MapSettings;
+import org.sonar.api.internal.SonarRuntimeImpl;
+import org.sonar.api.utils.Version;
+import org.sonar.java.AnalyzerMessage;
+import org.sonar.java.SonarComponents;
+import org.sonar.java.TestUtils;
+import org.sonar.java.ast.JavaAstScanner;
+import org.sonar.java.model.VisitorsBridgeForTests;
+import org.sonar.plugins.java.api.JavaFileScanner;
 
 import static java.util.stream.Collectors.joining;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -92,7 +99,7 @@ public class JavaCheckVerifier {
   private final String testJarsDirectory;
   private final Expectations expectations;
 
-  private JavaCheckVerifier() {
+  public JavaCheckVerifier() {
     this.testJarsDirectory = DEFAULT_TEST_JARS_DIRECTORY;
     this.expectations = new Expectations();
   }
@@ -170,7 +177,7 @@ public class JavaCheckVerifier {
     javaCheckVerifier.scanFile(filename, new JavaFileScanner[] {check});
   }
 
-  private void scanFile(String filename, JavaFileScanner[] checks) {
+  public void scanFile(String filename, JavaFileScanner[] checks) {
     Collection<File> classpath = Lists.newLinkedList();
     File testJars = new File(testJarsDirectory);
     if (testJars.exists()) {
@@ -185,13 +192,28 @@ public class JavaCheckVerifier {
   private void scanFile(String filename, JavaFileScanner[] checks, Collection<File> classpath) {
     List<JavaFileScanner> visitors = new ArrayList<>(Arrays.asList(checks));
     visitors.add(expectations.parser());
-    VisitorsBridgeForTests visitorsBridge = new VisitorsBridgeForTests(visitors, Lists.newArrayList(classpath), null);
-    JavaAstScanner.scanSingleFileForTests(new File(filename), visitorsBridge);
+    InputFile inputFile = TestUtils.inputFile(filename);
+    VisitorsBridgeForTests visitorsBridge = new VisitorsBridgeForTests(visitors, Lists.newArrayList(classpath), sonarComponents());
+    JavaAstScanner.scanSingleFileForTests(inputFile, visitorsBridge);
     VisitorsBridgeForTests.TestJavaFileScannerContext testJavaFileScannerContext = visitorsBridge.lastCreatedTestContext();
     checkIssues(testJavaFileScannerContext.getIssues());
   }
 
-  private void checkIssues(Set<AnalyzerMessage> issues) {
+  private static SonarComponents sonarComponents() {
+    SensorContextTester context = SensorContextTester.create(new File(""))
+      .setRuntime(SonarRuntimeImpl.forSonarLint(Version.create(6, 7)));
+    context.setSettings(new MapSettings().setProperty("sonar.java.failOnException", true));
+    SonarComponents sonarComponents = new SonarComponents(null, context.fileSystem(), null, null, null) {
+      @Override
+      public boolean reportAnalysisError(RecognitionException re, InputFile inputFile) {
+        return false;
+      }
+    };
+    sonarComponents.setSensorContext(context);
+    return sonarComponents;
+  }
+
+  protected void checkIssues(Set<AnalyzerMessage> issues) {
     if (expectations.expectNoIssues) {
       assertNoIssues(expectations.issues, issues);
     } else if (StringUtils.isNotEmpty(expectations.expectFileIssue)) {
@@ -202,16 +224,19 @@ public class JavaCheckVerifier {
   }
 
   private void assertMultipleIssue(Set<AnalyzerMessage> issues) throws AssertionError {
-    Preconditions.checkState(!issues.isEmpty(), "At least one issue expected");
+    if (issues.isEmpty()) {
+      Fail.fail("At least one issue expected");
+    }
     List<Integer> unexpectedLines = Lists.newLinkedList();
     Multimap<Integer, Expectations.Issue> expected = expectations.issues;
-    expectations.reverseFlows(); // platform expects the flows in reversed order compared to the order they appear in the file
+
     for (AnalyzerMessage issue : issues) {
       validateIssue(expected, unexpectedLines, issue);
     }
     if (!expected.isEmpty() || !unexpectedLines.isEmpty()) {
       Collections.sort(unexpectedLines);
-      String expectedMsg = !expected.isEmpty() ? ("Expected " + expected) : "";
+      List<Integer> expectedLines = expected.keys().stream().sorted().collect(Collectors.toList());
+      String expectedMsg = !expectedLines.isEmpty() ? ("Expected at " + expectedLines) : "";
       String unexpectedMsg = !unexpectedLines.isEmpty() ? ((expectedMsg.isEmpty() ? "" : ", ") + "Unexpected at " + unexpectedLines) : "";
       fail(expectedMsg + unexpectedMsg);
     }
@@ -256,7 +281,7 @@ public class JavaCheckVerifier {
   }
 
   private static void validateLocation(Map<Expectations.IssueAttribute, Object> attrs, AnalyzerMessage.TextSpan textSpan) {
-    Preconditions.checkNotNull(textSpan);
+    Objects.requireNonNull(textSpan);
     assertAttributeMatch(normalizeColumn(textSpan.startCharacter), attrs, START_COLUMN);
     assertAttributeMatch(textSpan.endLine, attrs, END_LINE);
     assertAttributeMatch(normalizeColumn(textSpan.endCharacter), attrs, END_COLUMN);
@@ -291,8 +316,8 @@ public class JavaCheckVerifier {
   }
 
   private void assertSoleFlowDiscrepancy(String expectedId, List<AnalyzerMessage> actualFlow) {
-    Collection<Expectations.FlowComment> expected = expectations.flows.get(expectedId);
-    List<Integer> expectedLines = expected.stream().sorted(Comparator.comparingInt(Expectations.FlowComment::order)).map(f -> f.line).collect(Collectors.toList());
+    SortedSet<Expectations.FlowComment> expected = expectations.flows.get(expectedId);
+    List<Integer> expectedLines = expected.stream().map(f -> f.line).collect(Collectors.toList());
     List<Integer> actualLines = actualFlow.stream().map(AnalyzerMessage::getLine).collect(Collectors.toList());
     assertThat(actualLines).as("Flow " + expectedId + " has line differences").isEqualTo(expectedLines);
   }
@@ -311,7 +336,7 @@ public class JavaCheckVerifier {
   }
 
   private void validateFlowAttributes(List<AnalyzerMessage> actual, String flowId) {
-    List<Expectations.FlowComment> expected = expectations.flows.get(flowId);
+    SortedSet<Expectations.FlowComment> expected = expectations.flows.get(flowId);
 
     validateFlowMessages(actual, flowId, expected);
 
@@ -325,7 +350,7 @@ public class JavaCheckVerifier {
     }
   }
 
-  private void validateFlowMessages(List<AnalyzerMessage> actual, String flowId, List<Expectations.FlowComment> expected) {
+  private void validateFlowMessages(List<AnalyzerMessage> actual, String flowId, SortedSet<Expectations.FlowComment> expected) {
     List<String> actualMessages = actual.stream().map(AnalyzerMessage::getMessage).collect(Collectors.toList());
     List<String> expectedMessages = expected.stream().map(Expectations.FlowComment::message).collect(Collectors.toList());
 
@@ -345,7 +370,7 @@ public class JavaCheckVerifier {
   }
 
   private static String flowToString(List<AnalyzerMessage> flow) {
-    return flow.stream().map(m -> String.valueOf(m.getLine())).sorted().collect(joining(",","[","]"));
+    return flow.stream().map(m -> String.valueOf(m.getLine())).collect(joining(",","[","]"));
   }
 
   private static void validateSecondaryLocations(List<AnalyzerMessage> actual, List<Integer> expected) {
@@ -378,7 +403,7 @@ public class JavaCheckVerifier {
     if (attributes.containsKey(attribute)) {
       assertThat(issue.getMessage())
         .as("line " + issue.getLine() + " attribute mismatch for " + attribute + ": " + attributes)
-        .isEqualTo(String.valueOf((Object) attribute.get(attributes)));
+        .isEqualTo(attribute.getter.apply(attributes.get(attribute)));
     }
   }
 

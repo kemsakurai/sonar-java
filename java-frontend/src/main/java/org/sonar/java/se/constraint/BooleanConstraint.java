@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,6 +20,7 @@
 package org.sonar.java.se.constraint;
 
 import javax.annotation.Nullable;
+import org.sonar.java.se.symbolicvalues.RelationalSymbolicValue;
 
 public enum BooleanConstraint implements Constraint {
   TRUE,
@@ -34,11 +35,31 @@ public enum BooleanConstraint implements Constraint {
   }
 
   @Override
+  public boolean hasPreciseValue() {
+    return true;
+  }
+
+  @Override
   public String valueAsString() {
     if (this == TRUE) {
       return "true";
     }
     return "false";
+  }
+
+  @Nullable
+  @Override
+  public Constraint copyOver(RelationalSymbolicValue.Kind kind) {
+    switch (kind) {
+      case LESS_THAN:
+      case GREATER_THAN_OR_EQUAL:
+        return null;
+      case EQUAL:
+      case METHOD_EQUALS:
+        return this;
+      default:
+        return inverse();
+    }
   }
 
   @Override

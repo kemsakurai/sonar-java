@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -22,34 +22,32 @@ package org.sonar.java.filters;
 import com.google.common.collect.ContiguousSet;
 import com.google.common.collect.DiscreteDomain;
 import com.google.common.collect.HashMultimap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Range;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.sonar.api.rule.RuleKey;
 import org.sonar.api.scan.issue.filter.FilterableIssue;
 import org.sonar.api.utils.AnnotationUtils;
 import org.sonar.check.Rule;
 import org.sonar.java.checks.SuppressWarningsCheck;
-import org.sonar.java.model.JavaTree;
-import org.sonar.java.model.LiteralUtils;
+import org.sonar.java.checks.helpers.ConstantUtils;
 import org.sonar.plugins.java.api.JavaCheck;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.tree.AnnotationTree;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
-import org.sonar.plugins.java.api.tree.LiteralTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.NewArrayTree;
+import org.sonar.plugins.java.api.tree.SyntaxToken;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.VariableTree;
-
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 public class SuppressWarningFilter extends BaseTreeVisitorIssueFilter {
 
@@ -63,7 +61,7 @@ public class SuppressWarningFilter extends BaseTreeVisitorIssueFilter {
 
   @Override
   public Set<Class<? extends JavaCheck>> filteredRules() {
-    return ImmutableSet.of();
+    return Collections.emptySet();
   }
 
   @Override
@@ -127,10 +125,10 @@ public class SuppressWarningFilter extends BaseTreeVisitorIssueFilter {
 
   private void handleSuppressWarning(List<AnnotationTree> annotationTrees, Tree tree) {
     int startLine = -1;
-    List<String> rules = Lists.newArrayList();
+    List<String> rules = new ArrayList<>();
     for (AnnotationTree annotationTree : annotationTrees) {
       if (isSuppressWarningsAnnotation(annotationTree)) {
-        startLine = ((JavaTree) annotationTree).getLine();
+        startLine = startLineIncludingTrivia(tree);
         rules.addAll(getRules(annotationTree));
         break;
       }
@@ -145,6 +143,15 @@ public class SuppressWarningFilter extends BaseTreeVisitorIssueFilter {
     }
   }
 
+  private static int startLineIncludingTrivia(Tree tree) {
+    SyntaxToken firstToken = tree.firstToken();
+    // first token can't be null, because tree has @SuppressWarnings annotation
+    if (!firstToken.trivias().isEmpty()) {
+      return firstToken.trivias().get(0).startLine();
+    }
+    return firstToken.line();
+  }
+
   private static boolean isSuppressWarningsAnnotation(AnnotationTree annotationTree) {
     return annotationTree.annotationType().symbolType().is("java.lang.SuppressWarnings") && !annotationTree.arguments().isEmpty();
   }
@@ -154,12 +161,15 @@ public class SuppressWarningFilter extends BaseTreeVisitorIssueFilter {
   }
 
   private static List<String> getRulesFromExpression(ExpressionTree expression) {
-    List<String> args = Lists.newArrayList();
-    if (expression.is(Tree.Kind.STRING_LITERAL)) {
-      args.add(LiteralUtils.trimQuotes(((LiteralTree) expression).value()));
-    } else if (expression.is(Tree.Kind.NEW_ARRAY)) {
+    List<String> args = new ArrayList<>();
+    if (expression.is(Tree.Kind.NEW_ARRAY)) {
       for (ExpressionTree initializer : ((NewArrayTree) expression).initializers()) {
         args.addAll(getRulesFromExpression(initializer));
+      }
+    } else {
+      String constant = ConstantUtils.resolveAsStringConstant(expression);
+      if (constant != null) {
+        args.add(constant);
       }
     }
     return args;

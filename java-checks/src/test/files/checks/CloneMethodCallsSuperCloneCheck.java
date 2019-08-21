@@ -47,13 +47,14 @@ class F {
     return super.toString();
   }
 }
-
-class G {
+class G0 {
+  int clone;
+}
+class G1 extends G0 {
   @Override
   protected Object clone() throws CloneNotSupportedException { // Noncompliant {{Use super.clone() to create and seed the cloned instance to be returned.}}
     super();
-    super.clone;
-    new Foo().super.clone();
+    int c = super.clone;
     return super.clone("foo");
   }
 

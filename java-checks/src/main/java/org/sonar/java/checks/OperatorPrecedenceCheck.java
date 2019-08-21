@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -78,7 +78,7 @@ public class OperatorPrecedenceCheck extends BaseTreeVisitor implements JavaFile
   private static final Tree.Kind[] CONDITIONAL_EXCLUSIONS = new Tree.Kind[]{
       Tree.Kind.METHOD_INVOCATION, Tree.Kind.IDENTIFIER, Tree.Kind.MEMBER_SELECT,
       Tree.Kind.PARENTHESIZED_EXPRESSION, Tree.Kind.TYPE_CAST, Tree.Kind.NEW_CLASS,
-      Tree.Kind.ARRAY_ACCESS_EXPRESSION, Tree.Kind.NEW_ARRAY
+      Tree.Kind.ARRAY_ACCESS_EXPRESSION, Tree.Kind.NEW_ARRAY, Tree.Kind.METHOD_REFERENCE
   };
 
   static {

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,25 +19,25 @@
  */
 package org.sonar.java.se.xproc;
 
+import java.util.List;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import javax.annotation.Nullable;
 import org.apache.commons.lang.builder.EqualsBuilder;
 import org.apache.commons.lang.builder.HashCodeBuilder;
+import org.sonar.java.resolve.SemanticModel;
+import org.sonar.java.resolve.Symbols;
 import org.sonar.java.se.ExplodedGraph;
 import org.sonar.java.se.ProgramState;
 import org.sonar.java.se.constraint.Constraint;
 import org.sonar.java.se.symbolicvalues.SymbolicValue;
 import org.sonar.plugins.java.api.semantic.Type;
 
-import javax.annotation.CheckForNull;
-import javax.annotation.Nullable;
-import java.util.List;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
 public class ExceptionalYield extends MethodYield {
 
   @Nullable
-  private Type exceptionType;
+  private String exceptionType;
 
   public ExceptionalYield(MethodBehavior behavior) {
     super(behavior);
@@ -57,20 +57,23 @@ public class ExceptionalYield extends MethodYield {
       .distinct();
   }
 
-  public void setExceptionType(Type exceptionType) {
+  public void setExceptionType(String exceptionType) {
     this.exceptionType = exceptionType;
   }
 
-  @CheckForNull
-  public Type exceptionType() {
-    return exceptionType;
+  public Type exceptionType(SemanticModel semanticModel) {
+    if (exceptionType == null) {
+      return Symbols.unknownType;
+    }
+    Type type = semanticModel.getClassType(this.exceptionType);
+    return type == null ? Symbols.unknownType : type;
   }
 
   @Override
   public String toString() {
     return String.format("{params: %s, exceptional%s}",
-      parametersConstraints.stream().map(pMap -> MethodYield.pmapToStream(pMap).map(Constraint::toString).collect(Collectors.toList())).collect(Collectors.toList()),
-      exceptionType == null ? "" : (" (" + exceptionType.fullyQualifiedName() + ")"));
+      parametersConstraints.stream().map(constraints -> constraints.stream().map(Constraint::toString).collect(Collectors.toList())).collect(Collectors.toList()),
+      exceptionType == null ? "" : (" (" + exceptionType + ")"));
   }
 
   @Override

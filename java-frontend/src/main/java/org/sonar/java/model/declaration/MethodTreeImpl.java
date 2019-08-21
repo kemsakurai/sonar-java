@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,15 +21,18 @@ package org.sonar.java.model.declaration;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import java.util.List;
+import java.util.Objects;
+import javax.annotation.Nullable;
 import org.sonar.java.ast.parser.FormalParametersListTreeImpl;
 import org.sonar.java.ast.parser.QualifiedIdentifierListTreeImpl;
 import org.sonar.java.ast.parser.TypeParameterListTreeImpl;
+import org.sonar.java.cfg.CFG;
 import org.sonar.java.model.JavaTree;
 import org.sonar.java.model.ModifiersUtils;
 import org.sonar.java.resolve.JavaSymbol;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.tree.AnnotationTree;
-import org.sonar.plugins.java.api.tree.ArrayTypeTree;
 import org.sonar.plugins.java.api.tree.BlockTree;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
@@ -38,17 +41,12 @@ import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Modifier;
 import org.sonar.plugins.java.api.tree.ModifiersTree;
-import org.sonar.plugins.java.api.tree.PrimitiveTypeTree;
 import org.sonar.plugins.java.api.tree.SyntaxToken;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.TreeVisitor;
 import org.sonar.plugins.java.api.tree.TypeParameters;
 import org.sonar.plugins.java.api.tree.TypeTree;
 import org.sonar.plugins.java.api.tree.VariableTree;
-
-import javax.annotation.CheckForNull;
-import javax.annotation.Nullable;
-import java.util.List;
 
 public class MethodTreeImpl extends JavaTree implements MethodTree {
 
@@ -69,6 +67,9 @@ public class MethodTreeImpl extends JavaTree implements MethodTree {
   private final ListTree<TypeTree> throwsClauses;
   private final SyntaxToken defaultToken;
   private final ExpressionTree defaultValue;
+
+  @Nullable
+  private CFG cfg;
 
   //FIXME nullable if semantic analysis is not set. Should have a default value.
   @Nullable
@@ -101,14 +102,14 @@ public class MethodTreeImpl extends JavaTree implements MethodTree {
     this.typeParameters = new TypeParameterListTreeImpl();
     this.modifiers = null;
     this.returnType = returnType;
-    this.simpleName = Preconditions.checkNotNull(simpleName);
-    this.parameters = Preconditions.checkNotNull(parameters);
+    this.simpleName = Objects.requireNonNull(simpleName);
+    this.parameters = Objects.requireNonNull(parameters);
     this.openParenToken = parameters.openParenToken();
     this.closeParenToken = parameters.closeParenToken();
     this.block = block;
     this.semicolonToken = semicolonToken;
     this.throwsToken = throwsToken;
-    this.throwsClauses = Preconditions.checkNotNull(throwsClauses);
+    this.throwsClauses = Objects.requireNonNull(throwsClauses);
     this.defaultToken = null;
     this.defaultValue = null;
   }
@@ -228,6 +229,18 @@ public class MethodTreeImpl extends JavaTree implements MethodTree {
     return parameters.openParenToken().getLine();
   }
 
+  @Nullable
+  @Override
+  public CFG cfg() {
+    if (block == null) {
+      return null;
+    }
+    if (cfg == null) {
+      cfg = CFG.build(this);
+    }
+    return cfg;
+  }
+
   @Override
   public Iterable<Tree> children() {
     ImmutableList.Builder<Tree> iteratorBuilder = ImmutableList.builder();
@@ -253,12 +266,8 @@ public class MethodTreeImpl extends JavaTree implements MethodTree {
     return iteratorBuilder.build();
   }
 
-  /**
-   * Check if a methodTree is overriden.
-   *
-   * @return true if overriden, null if it cannot be decided (method symbol not resolved or lack of bytecode for super types).
-   */
-  @CheckForNull
+  @Override
+  @Nullable
   public Boolean isOverriding() {
     if (isStatic() || isPrivate()) {
       return false;
@@ -269,9 +278,9 @@ public class MethodTreeImpl extends JavaTree implements MethodTree {
     if (symbol == null) {
       return null;
     }
-    JavaSymbol.MethodJavaSymbol methodJavaSymbol = symbol.overriddenSymbol();
-    if (methodJavaSymbol != null) {
-      return methodJavaSymbol.isUnknown() ? null : true;
+    Symbol.MethodSymbol methodSymbol = symbol.overriddenSymbol();
+    if (methodSymbol != null) {
+      return methodSymbol.isUnknown() ? null : true;
     }
     return false;
   }
@@ -282,10 +291,6 @@ public class MethodTreeImpl extends JavaTree implements MethodTree {
 
   private boolean isPrivate() {
     return ModifiersUtils.hasModifier(modifiers, Modifier.PRIVATE);
-  }
-
-  private boolean isPublic() {
-    return ModifiersUtils.hasModifier(modifiers, Modifier.PUBLIC);
   }
 
   public boolean isAnnotatedOverride() {
@@ -315,74 +320,4 @@ public class MethodTreeImpl extends JavaTree implements MethodTree {
     return "Override".equals(id.name());
   }
 
-  public boolean isMainMethod() {
-    return isPublicStatic() && isNamed("main") && returnsVoid() && hasStringArrayParameter();
-  }
-
-  private boolean isPublicStatic() {
-    return isStatic() && isPublic();
-  }
-
-  private boolean hasStringArrayParameter() {
-    return parameters.size() == 1 && isParameterStringArray();
-  }
-
-  private boolean isParameterStringArray() {
-    VariableTree variableTree = parameters.get(0);
-    boolean result = false;
-    if (variableTree.type().is(Tree.Kind.ARRAY_TYPE)) {
-      ArrayTypeTree arrayTypeTree = (ArrayTypeTree) variableTree.type();
-      result = arrayTypeTree.type().symbolType().isClass() && "String".equals(arrayTypeTree.type().symbolType().name());
-    }
-    return result;
-  }
-
-  private boolean returnsVoid() {
-    return returnsPrimitive("void");
-  }
-
-  private boolean isNamed(String name) {
-    return name.equals(simpleName().name());
-  }
-
-  public boolean isEqualsMethod() {
-    boolean hasEqualsSignature = isNamed("equals") && returnsBoolean() && hasObjectParameter();
-    return isPublic() && !isStatic() && hasEqualsSignature;
-  }
-
-  private boolean hasObjectParameter() {
-    return parameters.size()==1 && parameters.get(0).type().symbolType().is("java.lang.Object");
-  }
-
-  private boolean returnsBoolean() {
-    return returnsPrimitive("boolean");
-  }
-
-  private boolean returnsPrimitive(String primitive) {
-    if (returnType != null) {
-      return returnType.is(Tree.Kind.PRIMITIVE_TYPE) && primitive.equals(((PrimitiveTypeTree) returnType).keyword().text());
-    }
-    return false;
-  }
-
-  public boolean isHashCodeMethod() {
-    boolean hasHashCodeSignature = isNamed("hashCode") && parameters.isEmpty() && returnsInt();
-    return isPublic() && !isStatic() && hasHashCodeSignature;
-  }
-
-  private boolean returnsInt() {
-    return returnsPrimitive("int");
-  }
-
-  public boolean isToStringMethod() {
-    boolean hasToStringSignature = isNamed("toString") && parameters.isEmpty() && returnsString();
-    return isPublic() && !isStatic() && hasToStringSignature;
-  }
-
-  private boolean returnsString() {
-    if (returnType != null) {
-      return returnType.symbolType().is("java.lang.String");
-    }
-    return false;
-  }
 }

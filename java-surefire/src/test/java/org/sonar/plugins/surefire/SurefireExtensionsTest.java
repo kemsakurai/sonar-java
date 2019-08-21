@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,13 +21,13 @@ package org.sonar.plugins.surefire;
 
 import org.junit.Test;
 
-import static org.hamcrest.Matchers.greaterThan;
+import static org.hamcrest.Matchers.equalTo;
 import static org.junit.Assert.assertThat;
 
 public class SurefireExtensionsTest {
 
   @Test
   public void shouldGetExtensions() {
-    assertThat(SurefireExtensions.getExtensions().size(), greaterThan(0));
+    assertThat(SurefireExtensions.getExtensions().size(), equalTo(3));
   }
 }

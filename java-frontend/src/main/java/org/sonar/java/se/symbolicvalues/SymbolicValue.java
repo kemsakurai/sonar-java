@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,31 +21,30 @@ package org.sonar.java.se.symbolicvalues;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
-import org.sonar.java.collections.PCollections;
-import org.sonar.java.collections.PMap;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
+import org.sonar.java.resolve.Symbols;
 import org.sonar.java.se.ExplodedGraphWalker;
 import org.sonar.java.se.ProgramState;
 import org.sonar.java.se.constraint.BooleanConstraint;
 import org.sonar.java.se.constraint.Constraint;
+import org.sonar.java.se.constraint.ConstraintsByDomain;
 import org.sonar.java.se.constraint.ObjectConstraint;
 import org.sonar.java.se.constraint.TypedConstraint;
+import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
-
-import javax.annotation.CheckForNull;
-import javax.annotation.Nullable;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
 
 public class SymbolicValue {
 
-  public static final SymbolicValue NULL_LITERAL = new SymbolicValue(0) {
+  public static final SymbolicValue NULL_LITERAL = new SymbolicValue() {
 
     @Override
     public List<ProgramState> setConstraint(ProgramState programState, BooleanConstraint booleanConstraint) {
-      return ImmutableList.of();
+      return Collections.emptyList();
     }
 
     @Override
@@ -53,26 +52,26 @@ public class SymbolicValue {
       if(constraint instanceof ObjectConstraint) {
         return super.setConstraint(programState, (ObjectConstraint) constraint);
       }
-      return ImmutableList.of(programState);
+      return Collections.singletonList(programState);
     }
 
     @Override
     public String toString() {
-      return super.toString() + "_NULL";
-    }
-  };
-
-  public static final SymbolicValue TRUE_LITERAL = new SymbolicValue(1) {
-    @Override
-    public String toString() {
-      return super.toString() + "_TRUE";
+      return "SV_NULL";
     }
   };
 
-  public static final SymbolicValue FALSE_LITERAL = new SymbolicValue(2) {
+  public static final SymbolicValue TRUE_LITERAL = new SymbolicValue() {
     @Override
     public String toString() {
-      return super.toString() + "_FALSE";
+      return "SV_TRUE";
+    }
+  };
+
+  public static final SymbolicValue FALSE_LITERAL = new SymbolicValue() {
+    @Override
+    public String toString() {
+      return "SV_FALSE";
     }
   };
 
@@ -82,14 +81,30 @@ public class SymbolicValue {
     FALSE_LITERAL
   );
 
+  private static int idGenerator;
   private final int id;
 
-  public SymbolicValue(int id) {
-    this.id = id;
+  public SymbolicValue() {
+    id = idGenerator;
+    idGenerator++;
   }
 
-  public int id() {
-    return id;
+  @Override
+  public int hashCode() {
+    return 31 * id;
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    SymbolicValue that = (SymbolicValue) o;
+    Preconditions.checkState(id != that.id, "Impossible to have two SV with same id");
+    return false;
   }
 
   public static boolean isDisposable(SymbolicValue symbolicValue) {
@@ -105,29 +120,16 @@ public class SymbolicValue {
   }
 
   @Override
-  public boolean equals(Object o) {
-    if (this == o) {
-      return true;
-    }
-    if (o == null || getClass() != o.getClass()) {
-      return false;
-    }
-    SymbolicValue that = (SymbolicValue) o;
-    return id == that.id;
-  }
-
-  @Override
-  public int hashCode() {
-    return id;
-  }
-
-  @Override
   public String toString() {
     return "SV_" + id;
   }
 
-  public void computedFrom(List<SymbolicValue> symbolicValues) {
+  public void computedFrom(List<ProgramState.SymbolicValueSymbol> symbolicValues) {
     // no op in general case
+  }
+
+  public List<Symbol> computedFromSymbols() {
+    return Collections.emptyList();
   }
 
   public List<SymbolicValue> computedFrom() {
@@ -139,24 +141,23 @@ public class SymbolicValue {
     if (constraint == null) {
       if(nullConstraint.isNull()) {
         // null constraints get rid of all other constraints
-        PMap<Class<? extends Constraint>, Constraint> onlyNullConstraint = PCollections.<Class<? extends Constraint>, Constraint>emptyMap()
-          .put(ObjectConstraint.class, ObjectConstraint.NULL);
-        return ImmutableList.of(programState.addConstraints(this, onlyNullConstraint));
+        ConstraintsByDomain onlyNullConstraint = ConstraintsByDomain.empty().put(ObjectConstraint.NULL);
+        return Collections.singletonList(programState.addConstraints(this, onlyNullConstraint));
       } else {
-        return ImmutableList.of(programState.addConstraint(this, nullConstraint));
+        return Collections.singletonList(programState.addConstraint(this, nullConstraint));
       }
     } else if (constraint != nullConstraint) {
-      return ImmutableList.of();
+      return Collections.emptyList();
     }
-    return ImmutableList.of(programState);
+    return Collections.singletonList(programState);
   }
 
   public List<ProgramState> setConstraint(ProgramState programState, BooleanConstraint booleanConstraint) {
     Constraint cstraint = programState.getConstraint(this, booleanConstraint.getClass());
     if (!booleanConstraint.isValidWith(cstraint)) {
-      return ImmutableList.of();
+      return Collections.emptyList();
     }
-    return ImmutableList.of(programState.addConstraint(this, booleanConstraint));
+    return Collections.singletonList(programState.addConstraint(this, booleanConstraint));
   }
 
   public List<ProgramState> setConstraint(ProgramState programState, Constraint constraint) {
@@ -167,9 +168,9 @@ public class SymbolicValue {
     }
     Constraint csrtaint = programState.getConstraint(this, constraint.getClass());
     if (constraint.isValidWith(csrtaint)) {
-      return ImmutableList.of(programState.addConstraint(this, constraint));
+      return Collections.singletonList(programState.addConstraint(this, constraint));
     }
-    return ImmutableList.of();
+    return Collections.emptyList();
   }
 
   public ProgramState setSingleConstraint(ProgramState programState, ObjectConstraint nullConstraint) {
@@ -180,16 +181,18 @@ public class SymbolicValue {
     return states.get(0);
   }
 
+  protected List<ProgramState> setConstraint(ProgramState state, Constraint constraint, Set<RelationalSymbolicValue> knownRelations) {
+    return setConstraint(state, constraint);
+  }
+
   public SymbolicValue wrappedValue() {
     return this;
   }
 
   public abstract static class UnarySymbolicValue extends SymbolicValue {
     protected SymbolicValue operand;
+    private Symbol operandSymbol;
 
-    public UnarySymbolicValue(int id) {
-      super(id);
-    }
 
     @Override
     public boolean references(SymbolicValue other) {
@@ -197,14 +200,20 @@ public class SymbolicValue {
     }
 
     @Override
-    public void computedFrom(List<SymbolicValue> symbolicValues) {
+    public void computedFrom(List<ProgramState.SymbolicValueSymbol> symbolicValues) {
       Preconditions.checkArgument(symbolicValues.size() == 1);
-      this.operand = symbolicValues.get(0);
+      this.operand = symbolicValues.get(0).symbolicValue();
+      this.operandSymbol = symbolicValues.get(0).symbol();
     }
 
     @Override
     public List<SymbolicValue> computedFrom() {
-      return ImmutableList.of(operand);
+      return Collections.singletonList(operand);
+    }
+
+    @Override
+    public List<Symbol> computedFromSymbols() {
+      return operandSymbol == null ? operand.computedFromSymbols() : Collections.singletonList(operandSymbol);
     }
   }
 
@@ -212,8 +221,7 @@ public class SymbolicValue {
     @Nullable
     private final Type exceptionType;
 
-    public ExceptionalSymbolicValue(int id, @Nullable Type exceptionType) {
-      super(id);
+    public ExceptionalSymbolicValue(@Nullable Type exceptionType) {
       this.exceptionType = exceptionType;
     }
 
@@ -227,24 +235,22 @@ public class SymbolicValue {
       return super.toString() + "_" + (exceptionType == null ? "!unknownException" : exceptionType.fullyQualifiedName()) + "!";
     }
 
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (o == null || getClass() != o.getClass()) {
-        return false;
-      }
-      ExceptionalSymbolicValue that = (ExceptionalSymbolicValue) o;
-      return id() == that.id() && Objects.equals(exceptionType, that.exceptionType);
+  }
+
+  public static class CaughtExceptionSymbolicValue extends SymbolicValue {
+    private final ExceptionalSymbolicValue thrownSV;
+
+    public CaughtExceptionSymbolicValue(ExceptionalSymbolicValue thrownSV) {
+      this.thrownSV = thrownSV;
+    }
+
+    public ExceptionalSymbolicValue exception() {
+      return thrownSV;
     }
   }
 
   public static class NotSymbolicValue extends UnarySymbolicValue {
 
-    public NotSymbolicValue(int id) {
-      super(id);
-    }
 
     @Override
     public List<ProgramState> setConstraint(ProgramState programState, BooleanConstraint booleanConstraint) {
@@ -253,14 +259,11 @@ public class SymbolicValue {
 
     @Override
     public String toString() {
-      return "!" + operand;
+      return "!(" + operand + ")";
     }
   }
 
   public static class InstanceOfSymbolicValue extends UnarySymbolicValue {
-    public InstanceOfSymbolicValue(int id) {
-      super(id);
-    }
 
     @Override
     public List<ProgramState> setConstraint(ProgramState programState, BooleanConstraint booleanConstraint) {
@@ -268,31 +271,22 @@ public class SymbolicValue {
         ObjectConstraint constraint = programState.getConstraint(operand, ObjectConstraint.class);
         if (constraint !=null && constraint.isNull()) {
           // irrealizable constraint : instance of true if operand is null
-          return ImmutableList.of();
+          return Collections.emptyList();
         }
         // if instanceof is true then we know for sure that expression is not null.
         List<ProgramState> ps = operand.setConstraint(programState, ObjectConstraint.NOT_NULL);
         if (ps.size() == 1 && ps.get(0).equals(programState)) {
           // FIXME we already know that operand is NOT NULL, so we add a different constraint to distinguish program state. Typed Constraint
           // should store the deduced type.
-          return ImmutableList.of(programState.addConstraint(this, new TypedConstraint()));
+          return Collections.singletonList(programState.addConstraint(this, new TypedConstraint(Symbols.unknownType.fullyQualifiedName())));
         }
         return ps;
       }
-      return ImmutableList.of(programState);
+      return Collections.singletonList(programState);
     }
   }
 
   public abstract static class BooleanExpressionSymbolicValue extends BinarySymbolicValue {
-
-    protected BooleanExpressionSymbolicValue(int id) {
-      super(id);
-    }
-
-    @Override
-    public BooleanConstraint shouldNotInverse() {
-      return BooleanConstraint.TRUE;
-    }
 
     protected static void addStates(List<ProgramState> states, List<ProgramState> newStates) {
       if (states.size() > ExplodedGraphWalker.MAX_NESTED_BOOLEAN_STATES || newStates.size() > ExplodedGraphWalker.MAX_NESTED_BOOLEAN_STATES) {
@@ -304,9 +298,6 @@ public class SymbolicValue {
 
   public static class AndSymbolicValue extends BooleanExpressionSymbolicValue {
 
-    public AndSymbolicValue(int id) {
-      super(id);
-    }
 
     @Override
     public List<ProgramState> setConstraint(ProgramState programState, BooleanConstraint booleanConstraint) {
@@ -333,9 +324,6 @@ public class SymbolicValue {
 
   public static class OrSymbolicValue extends BooleanExpressionSymbolicValue {
 
-    public OrSymbolicValue(int id) {
-      super(id);
-    }
 
     @Override
     public List<ProgramState> setConstraint(ProgramState programState, BooleanConstraint booleanConstraint) {
@@ -362,9 +350,6 @@ public class SymbolicValue {
 
   public static class XorSymbolicValue extends BooleanExpressionSymbolicValue {
 
-    public XorSymbolicValue(int id) {
-      super(id);
-    }
 
     @Override
     public List<ProgramState> setConstraint(ProgramState programState, BooleanConstraint booleanConstraint) {
@@ -386,8 +371,4 @@ public class SymbolicValue {
     }
   }
 
-  @CheckForNull
-  public BinaryRelation binaryRelation() {
-    return null;
-  }
 }

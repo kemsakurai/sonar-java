@@ -1,19 +1,17 @@
 {
   "title": "Empty statements should be removed",
-  "type": "BUG",
+  "type": "CODE_SMELL",
   "status": "ready",
   "remediation": {
     "func": "Constant\/Issue",
     "constantCost": "2min"
   },
   "tags": [
-    "bug",
-    "misra",
     "cert",
     "unused"
   ],
-  "standards": [
-    "CERT"
-  ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-1116",
+  "sqKey": "S1116",
+  "scope": "All"
 }

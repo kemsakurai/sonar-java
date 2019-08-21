@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,22 +19,21 @@
  */
 package org.sonar.java;
 
-import org.sonar.api.batch.fs.FileSystem;
-import org.sonar.api.batch.fs.InputFile;
-import org.sonar.api.config.Settings;
-import org.sonar.api.utils.log.Logger;
-import org.sonar.api.utils.log.Loggers;
-import org.sonar.api.utils.log.Profiler;
-
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Set;
+import org.sonar.api.batch.fs.FileSystem;
+import org.sonar.api.batch.fs.InputFile;
+import org.sonar.api.config.Configuration;
+import org.sonar.api.utils.log.Logger;
+import org.sonar.api.utils.log.Loggers;
+import org.sonar.api.utils.log.Profiler;
 
 public class JavaTestClasspath extends AbstractJavaClasspath {
 
   private static final Logger LOG = Loggers.get(JavaTestClasspath.class);
 
-  public JavaTestClasspath(Settings settings, FileSystem fs) {
+  public JavaTestClasspath(Configuration settings, FileSystem fs) {
     super(settings, fs, InputFile.Type.TEST);
   }
 
@@ -48,7 +47,7 @@ public class JavaTestClasspath extends AbstractJavaClasspath {
       Set<File> libraries = getFilesFromProperty(JavaClasspathProperties.SONAR_JAVA_TEST_LIBRARIES);
       if (libraries.isEmpty() && hasJavaSources()) {
         LOG.warn("Bytecode of dependencies was not provided for analysis of test files, you might end up with less precise results. " +
-          "Bytecode can be provided using sonar.java.test.libraries property");
+          "Bytecode can be provided using sonar.java.test.libraries property.");
       }
       elements = new ArrayList<>(binaries);
       elements.addAll(libraries);

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,24 +19,23 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Collections;
+import java.util.List;
 import org.sonar.check.Rule;
-import org.sonar.java.checks.helpers.MethodsHelper;
 import org.sonar.java.checks.methods.AbstractMethodDetection;
 import org.sonar.java.matcher.MethodMatcher;
+import org.sonar.java.model.ExpressionUtils;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.LiteralTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.Tree;
-
-import java.util.List;
 
 @Rule(key = "S2089")
 public class HttpRefererCheck extends AbstractMethodDetection {
 
   @Override
   protected List<MethodMatcher> getMethodInvocationMatchers() {
-    return ImmutableList.of(MethodMatcher.create()
+    return Collections.singletonList(MethodMatcher.create()
       .typeDefinition("javax.servlet.http.HttpServletRequest")
       .name("getHeader")
       .addParameter("java.lang.String"));
@@ -48,7 +47,7 @@ public class HttpRefererCheck extends AbstractMethodDetection {
     if (arg.is(Tree.Kind.STRING_LITERAL)) {
       LiteralTree lt = (LiteralTree) arg;
       if ("\"referer\"".equals(lt.value())) {
-        reportIssue(MethodsHelper.methodName(mit), "\"referer\" header should not be relied on");
+        reportIssue(ExpressionUtils.methodName(mit), "\"referer\" header should not be relied on");
       }
     }
   }

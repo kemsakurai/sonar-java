@@ -5,7 +5,7 @@
   <parent>
     <groupId>org.sonarsource.java</groupId>
     <artifactId>java-its</artifactId>
-    <version>4.6.0-SNAPSHOT</version>
+    <version>6.0.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>it-java-ruling</artifactId>
@@ -29,6 +29,10 @@
       <groupId>org.slf4j</groupId>
       <artifactId>log4j-over-slf4j</artifactId>
       <version>1.6.2</version>
+    </dependency>
+    <dependency>
+      <groupId>com.google.code.gson</groupId>
+      <artifactId>gson</artifactId>
     </dependency>
     <dependency>
       <groupId>org.sonarsource.orchestrator</groupId>
@@ -57,6 +61,16 @@
       <artifactId>lambda-companion</artifactId>
       <version>0.26</version>
       <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.code.findbugs</groupId>
+      <artifactId>jsr305</artifactId>
+      <scope>provided</scope>
     </dependency>
   </dependencies>
 

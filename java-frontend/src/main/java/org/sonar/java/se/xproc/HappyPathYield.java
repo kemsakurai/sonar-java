@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -22,13 +22,15 @@ package org.sonar.java.se.xproc;
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.commons.lang.builder.EqualsBuilder;
 import org.apache.commons.lang.builder.HashCodeBuilder;
-import org.sonar.java.collections.PMap;
+
 import org.sonar.java.se.ExplodedGraph;
 import org.sonar.java.se.ProgramState;
 import org.sonar.java.se.constraint.Constraint;
+import org.sonar.java.se.constraint.ConstraintsByDomain;
 import org.sonar.java.se.symbolicvalues.SymbolicValue;
 import org.sonar.plugins.java.api.semantic.Type;
 
+import javax.annotation.CheckForNull;
 import javax.annotation.Nullable;
 
 import java.util.List;
@@ -40,7 +42,7 @@ public class HappyPathYield extends MethodYield {
 
   private int resultIndex;
   @Nullable
-  private PMap<Class<? extends Constraint>, Constraint> resultConstraint;
+  private ConstraintsByDomain resultConstraint;
 
   public HappyPathYield(MethodBehavior behavior) {
     super(behavior);
@@ -61,26 +63,30 @@ public class HappyPathYield extends MethodYield {
 
     // applied all constraints from parameters, stack return value
     SymbolicValue sv;
-    if (resultIndex < 0) {
+    if (resultIndex < 0 || resultIndex == invocationArguments.size()) {
+      // if returnIndex is the size of invocationArguments : returning vararg parameter on a call with no elements specified
       sv = svSupplier.get();
     } else {
       // returned SV is the same as one of the arguments.
       sv = invocationArguments.get(resultIndex);
     }
-    results = results.map(s -> s.stackValue(sv));
-    if (resultConstraint != null) {
-      results = results.map(s -> s.addConstraints(sv, resultConstraint));
+    // sv can be null if method is void
+    if (sv != null) {
+      results = results.map(s -> s.stackValue(sv));
+      if (resultConstraint != null) {
+        results = results.map(s -> s.addConstraints(sv, resultConstraint));
+      }
     }
     return results.distinct();
   }
 
-  public void setResult(int resultIndex, @Nullable PMap<Class<? extends Constraint>, Constraint> resultConstraint) {
+  public void setResult(int resultIndex, @Nullable ConstraintsByDomain resultConstraint) {
     this.resultIndex = resultIndex;
     this.resultConstraint = resultConstraint;
   }
 
-  @VisibleForTesting
-  public PMap<Class<? extends Constraint>, Constraint> resultConstraint() {
+  @CheckForNull
+  public ConstraintsByDomain resultConstraint() {
     return resultConstraint;
   }
 
@@ -92,7 +98,7 @@ public class HappyPathYield extends MethodYield {
   @Override
   public String toString() {
     return String.format("{params: %s, result: %s (%d)}",
-      parametersConstraints.stream().map(pMap -> MethodYield.pmapToStream(pMap).map(Constraint::toString).collect(Collectors.toList())).collect(Collectors.toList()),
+      parametersConstraints.stream().map(constraints -> constraints.stream().map(Constraint::toString).collect(Collectors.toList())).collect(Collectors.toList()),
       resultConstraint, resultIndex);
   }
 

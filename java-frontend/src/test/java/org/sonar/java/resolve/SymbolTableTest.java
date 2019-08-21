@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,6 +20,14 @@
 package org.sonar.java.resolve;
 
 import com.google.common.collect.Iterables;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import org.assertj.core.api.SoftAssertions;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -33,20 +41,15 @@ import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.LambdaExpressionTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
-import org.sonar.plugins.java.api.tree.MethodReferenceTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
+import org.sonar.plugins.java.api.tree.NewArrayTree;
 import org.sonar.plugins.java.api.tree.NewClassTree;
 import org.sonar.plugins.java.api.tree.ParenthesizedTree;
 import org.sonar.plugins.java.api.tree.ReturnStatementTree;
 import org.sonar.plugins.java.api.tree.SyntaxToken;
 import org.sonar.plugins.java.api.tree.Tree;
+import org.sonar.plugins.java.api.tree.TypeCastTree;
 import org.sonar.plugins.java.api.tree.VariableTree;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
@@ -213,6 +216,9 @@ public class SymbolTableTest {
     assertThat(metadata.isAnnotatedWith("java.lang.Override")).isFalse();
     assertThat(metadata.valuesForAnnotation("java.lang.SuppressWarnings")).hasSize(1);
     assertThat(metadata.isAnnotatedWith("java.lang.SuppressWarnings")).isTrue();
+
+    List<IdentifierTree> usages = result.symbol("Base").usages();
+    assertThat(usages).hasSize(2).extracting(i -> i.firstToken().line()).containsOnly(29, 35);
   }
 
   @Test
@@ -254,6 +260,103 @@ public class SymbolTableTest {
     assertThat(typeSymbol.members.lookup("this")).isNotEmpty();
   }
 
+  /**
+   * JLS9 - §15.9.3
+   * @since Java 9
+   */
+  @Test
+  public void anonymousClassWithDiamondOperator() {
+    Result result = Result.createForJavaFile("src/test/files/resolve/Java9DiamondOperatorAnonymousClass");
+
+    NewClassTree nct;
+    ClassJavaType symbolType;
+    ClassJavaType superType;
+    ParametrizedTypeJavaType ptjt;
+
+    // ArrayList<>(), not anonymous but with diamond
+    nct = parentNewClassTree(result.referenceTree(7, 16));
+    symbolType = (ClassJavaType) nct.symbolType();
+    assertThat(symbolType.is("java.util.ArrayList")).isTrue();
+    assertThat(symbolType.isParameterized()).isTrue();
+    ptjt = (ParametrizedTypeJavaType) symbolType;
+    assertThat(ptjt.typeSubstitution.substitutedTypes().get(0).is("java.lang.Integer")).isTrue();
+
+    // B<Integer>(), no diamond
+    nct = parentNewClassTree(result.referenceTree(11, 16));
+    symbolType = (ClassJavaType) nct.symbolType();
+    assertThat(symbolType.isSubtypeOf("B")).isTrue();
+    superType = symbolType.getSuperType();
+    assertThat(superType.is("B")).isTrue();
+    assertThat(superType.isParameterized()).isTrue();
+    ptjt = (ParametrizedTypeJavaType) superType;
+    assertThat(ptjt.typeSubstitution.substitutedTypes().get(0).is("java.lang.Integer")).isTrue();
+
+    // B<>(Integer), diamond with inference from B<U> to B<Integer>
+    nct = parentNewClassTree(result.referenceTree(15, 16));
+    symbolType = (ClassJavaType) nct.symbolType();
+    assertThat(symbolType.isSubtypeOf("B")).isTrue();
+    superType = symbolType.getSuperType();
+    assertThat(superType.is("B")).isTrue();
+    assertThat(superType.isParameterized()).isTrue();
+    ptjt = (ParametrizedTypeJavaType) superType;
+    assertThat(ptjt.typeSubstitution.substitutedTypes().get(0).is("java.lang.Integer")).isTrue();
+
+    // B<>(T), diamond with inference from B<U> to B<T>
+    nct = parentNewClassTree(result.referenceTree(19, 16));
+    symbolType = (ClassJavaType) nct.symbolType();
+    assertThat(symbolType.isSubtypeOf("B")).isTrue();
+    superType = symbolType.getSuperType();
+    assertThat(superType.is("B")).isTrue();
+    assertThat(superType.isParameterized()).isTrue();
+    ptjt = (ParametrizedTypeJavaType) superType;
+    assertThat(ptjt.typeSubstitution.substitutedTypes().get(0).symbol().name()).isEqualTo("T");
+
+    // C<>(Integer, String[]), diamond with inference from C<U,V> to C<Integer, String>
+    nct = parentNewClassTree(result.referenceTree(23, 16));
+    symbolType = (ClassJavaType) nct.symbolType();
+    assertThat(symbolType.isSubtypeOf("C")).isTrue();
+    superType = symbolType.getSuperType();
+    assertThat(superType.is("C")).isTrue();
+    assertThat(superType.isParameterized()).isTrue();
+    ptjt = (ParametrizedTypeJavaType) superType;
+    assertThat(ptjt.typeSubstitution.substitutedTypes().get(0).is("java.lang.Integer")).isTrue();
+    assertThat(ptjt.typeSubstitution.substitutedTypes().get(1).is("java.lang.String")).isTrue();
+
+    // D<>(), diamond with inference on interface from D<X> to D<Integer>
+    nct = parentNewClassTree(result.referenceTree(27, 16));
+    symbolType = (ClassJavaType) nct.symbolType();
+    assertThat(symbolType.isSubtypeOf("D")).isTrue();
+    superType = (ClassJavaType) symbolType.interfaces.get(0);
+    assertThat(superType.is("D")).isTrue();
+    assertThat(superType.isParameterized()).isTrue();
+    ptjt = (ParametrizedTypeJavaType) superType;
+    // FIXME SONARJAVA-1706 : requires inference from target type
+    assertThat(ptjt.typeSubstitution.substitutedTypes().get(0).symbol().name()).isEqualTo("X");
+    // should be true
+    assertThat(ptjt.typeSubstitution.substitutedTypes().get(0).is("java.lang.Integer")).isFalse();
+
+    // B<>(), diamond with inference on class from B<U> to B<Integer>
+    nct = parentNewClassTree(result.referenceTree(34, 13));
+    symbolType = (ClassJavaType) nct.symbolType();
+    assertThat(symbolType.isSubtypeOf("B")).isTrue();
+    superType = symbolType.getSuperType();
+    assertThat(superType.is("B")).isTrue();
+    assertThat(superType.isParameterized()).isTrue();
+    ptjt = (ParametrizedTypeJavaType) superType;
+    // FIXME SONARJAVA-1706 : requires inference from target type
+    assertThat(ptjt.typeSubstitution.substitutedTypes().get(0).symbol().name()).isEqualTo("U");
+    // should be true
+    assertThat(ptjt.typeSubstitution.substitutedTypes().get(0).is("java.lang.Integer")).isFalse();
+  }
+
+  private static NewClassTree parentNewClassTree(IdentifierTree referenceTree) {
+    Tree parent = referenceTree.parent();
+    while (!parent.is(Tree.Kind.NEW_CLASS)) {
+      parent = parent.parent();
+    }
+    return (NewClassTree) parent;
+  }
+
   @Test
   public void LocalClassDeclaration() {
     Result result = Result.createFor("declarations/LocalClassDeclaration");
@@ -283,7 +386,7 @@ public class SymbolTableTest {
       result.symbol("FirstInterface").type,
       result.symbol("SecondInterface").type);
     assertThat(interfaceSymbol.members.lookup("this")).hasSize(1);
-    assertThat(interfaceSymbol.members.lookup("super")).isEmpty();
+    assertThat(interfaceSymbol.members.lookup("super")).hasSize(1);
 
     JavaSymbol.VariableJavaSymbol variableSymbol = (JavaSymbol.VariableJavaSymbol) result.symbol("FIRST_CONSTANT");
     assertThat(variableSymbol.owner()).isSameAs(interfaceSymbol);
@@ -316,6 +419,17 @@ public class SymbolTableTest {
     typeSymbol = (JavaSymbol.TypeJavaSymbol) result.symbol("NestedEnum");
     assertThat(typeSymbol.owner()).isSameAs(interfaceSymbol);
     assertThat(typeSymbol.flags()).isEqualTo(Flags.PUBLIC | Flags.ENUM | Flags.STATIC);
+
+    typeSymbol = (JavaSymbol.TypeJavaSymbol) result.symbol("IfaceWithPrivateMethods");
+    assertThat(typeSymbol.owner()).isSameAs(result.symbol("InterfaceDeclaration"));
+
+    JavaSymbol.MethodJavaSymbol privateMethod = (JavaSymbol.MethodJavaSymbol) result.symbol("thisIsPrivate");
+    assertThat(privateMethod.owner()).isSameAs(typeSymbol);
+    assertThat(privateMethod.flags()).isEqualTo(Flags.PRIVATE);
+
+    JavaSymbol.MethodJavaSymbol staticPrivateMethod = (JavaSymbol.MethodJavaSymbol) result.symbol("staticPrivate");
+    assertThat(staticPrivateMethod.owner()).isSameAs(typeSymbol);
+    assertThat(staticPrivateMethod.flags()).isEqualTo(Flags.PRIVATE | Flags.STATIC);
   }
 
   @Test
@@ -340,6 +454,9 @@ public class SymbolTableTest {
     assertThat(enumSymbol.members.lookup("super")).hasSize(1);
     JavaSymbol.VariableJavaSymbol superSymbol = (JavaSymbol.VariableJavaSymbol) enumSymbol.members.lookup("super").get(0);
     assertThat(superSymbol.type).isSameAs(superType);
+
+    // check default constructor is registered.
+    assertThat(enumSymbol.members.lookup("<init>")).hasSize(1);
 
     assertThat(enumSymbol.getInterfaces()).containsExactly(
       result.symbol("FirstInterface").type,
@@ -395,6 +512,8 @@ public class SymbolTableTest {
     assertThat(valuesMethod.declaration).isNull();
     assertThat(valuesMethod.isStatic()).isTrue();
     assertThat(valuesMethod.parameterTypes()).isEmpty();
+    assertThat(valuesMethod.getParameters()).isNotNull();
+    assertThat(valuesMethod.getParameters().scopeSymbols()).isEmpty();
     assertThat(((MethodJavaType) valuesMethod.type).resultType).isInstanceOf(ArrayJavaType.class);
     assertThat(((ArrayJavaType) (((MethodJavaType) valuesMethod.type).resultType)).elementType).isSameAs(enumSymbol.type);
     assertThat(result.reference(9, 19)).isSameAs(valuesMethod);
@@ -405,6 +524,8 @@ public class SymbolTableTest {
     assertThat(valueOfMethod.isStatic()).isTrue();
     assertThat(valueOfMethod.parameterTypes()).hasSize(1);
     assertThat(valueOfMethod.parameterTypes().get(0).is("java.lang.String")).isTrue();
+    assertThat(valueOfMethod.getParameters()).isNotNull();
+    assertThat(valueOfMethod.getParameters().scopeSymbols()).hasSize(1);
     assertThat(((MethodJavaType) valueOfMethod.type).resultType).isSameAs(enumSymbol.type);
     assertThat(result.reference(10, 20)).isSameAs(valueOfMethod);
     assertThat(result.reference(10, 5)).isSameAs(result.symbol("useValueOf", 14));
@@ -434,6 +555,7 @@ public class SymbolTableTest {
     assertThat(superinterface.owner.getName()).isEqualTo("java.lang.annotation");
 
     assertThat(annotationSymbol.members.lookup("this")).isEmpty();
+    assertThat(((JavaSymbol.MethodJavaSymbol) annotationSymbol.members.lookup("value").get(0)).defaultValue()).isEqualTo(42);
 
     JavaSymbol.VariableJavaSymbol variableSymbol = (JavaSymbol.VariableJavaSymbol) result.symbol("FIRST_CONSTANT");
     assertThat(variableSymbol.owner()).isSameAs(annotationSymbol);
@@ -462,6 +584,27 @@ public class SymbolTableTest {
     typeSymbol = (JavaSymbol.TypeJavaSymbol) result.symbol("NestedAnnotationType");
     assertThat(typeSymbol.owner()).isSameAs(annotationSymbol);
     assertThat(typeSymbol.flags()).isEqualTo(Flags.PUBLIC | Flags.STATIC | Flags.INTERFACE | Flags.ANNOTATION);
+
+    Map<String, Object> nameToDefaultValue = new HashMap<>();
+    List<JavaSymbol.MethodJavaSymbol> methodJavaSymbols = typeSymbol.memberSymbols()
+      .stream()
+      .filter(Symbol::isMethodSymbol)
+      .map(s -> (JavaSymbol.MethodJavaSymbol) s)
+      .collect(Collectors.toList());
+    for (JavaSymbol.MethodJavaSymbol methodJavaSymbol : methodJavaSymbols) {
+      nameToDefaultValue.put(methodJavaSymbol.name(), methodJavaSymbol.defaultValue);
+    }
+
+    assertThat(nameToDefaultValue.get("valueString")).isEqualTo("valueDefault");
+    assertThat(nameToDefaultValue.get("valueInt")).isEqualTo(42);
+    assertThat(nameToDefaultValue.get("valueLong")).isEqualTo(42L);
+    // constants are unsupported when read from sources
+    assertThat(nameToDefaultValue.get("valueStringConstant")).isNull();
+    // arrays not wrapped when read from sources
+    assertThat(nameToDefaultValue.get("valueArray")).isEqualTo(0);
+    assertThat(nameToDefaultValue.get("noDefault")).isNull();
+    // unsupported
+    assertThat(nameToDefaultValue.get("valueEnum")).isNull();
   }
 
   @Test
@@ -496,7 +639,8 @@ public class SymbolTableTest {
     assertThat(defaultConstructor.owner).isSameAs(result.symbol("ParameterType"));
     defaultConstructor = result.reference(28, 7);
     assertThat(defaultConstructor.isAbstract()).isFalse();
-
+    assertThat(((JavaSymbol.MethodJavaSymbol) defaultConstructor).getParameters()).isNotNull();
+    assertThat(((JavaSymbol.MethodJavaSymbol) defaultConstructor).getParameters().scopeSymbols()).isEmpty();
   }
 
   @Test
@@ -529,14 +673,56 @@ public class SymbolTableTest {
   }
 
   @Test
+  public void constructor_resolution() {
+    Result result = Result.createFor("ConstructorResolution");
+    JavaSymbol.TypeJavaSymbol parentClassSymbol = (JavaSymbol.TypeJavaSymbol) result.symbol("ParentClass");
+    List<JavaSymbol> parentClassConstructors = parentClassSymbol.members.lookup("<init>");
+    JavaSymbol stringConstructor = parentClassConstructors.get(0);
+
+    JavaSymbol.TypeJavaSymbol childClassSymbol = (JavaSymbol.TypeJavaSymbol) result.symbol("ChildClass");
+    List<JavaSymbol> childClassConstructors = childClassSymbol.members.lookup("<init>");
+    JavaSymbol objectConstructor = childClassConstructors.get(0);
+
+    // constructor can not be inherited
+    JavaSymbol.MethodJavaSymbol constructorReference = (JavaSymbol.MethodJavaSymbol) result.reference(9, 9);
+    assertThat(constructorReference.owner()).isSameAs(childClassSymbol);
+    assertThat(constructorReference).isEqualTo(objectConstructor);
+
+    assertThat(stringConstructor.usages()).isEmpty();
+    assertThat(objectConstructor.usages()).hasSize(1);
+    NewClassTree hashmapConstructorCall = (NewClassTree) ((VariableTree) result.symbol("m").declaration()).initializer();
+    assertThat(hashmapConstructorCall.constructorSymbol().isUnknown()).isTrue();
+  }
+
+  @Test
   public void StrictThenLooseInvocationContext() {
     Result result = Result.createFor("StrictThenLooseInvocationContext");
     JavaSymbol fooA = result.symbol("foo", 2);
     JavaSymbol fooC = result.symbol("foo", 12);
 
-    assertThat(fooA).isSameAs(result.reference(9, 5));
+    assertThat(result.reference(9, 5)).isSameAs(fooA);
     assertThat(fooA.usages()).hasSize(1);
     assertThat(fooC.usages()).hasSize(0);
+
+    assertThat(result.symbol("qix", 17).usages()).isEmpty();
+    assertThat(result.symbol("qix", 21).usages()).hasSize(1);
+  }
+
+  @Test
+  public void AutoboxingAndLooseInvocation() throws Exception {
+    Result result = Result.createFor("AutoboxingAndLooseInvocation");
+    JavaSymbol fooVariadicInteger = result.symbol("foo", 2);
+    JavaSymbol fooStrictInt = result.symbol("foo", 9);
+
+    JavaSymbol barVariadicObject = result.symbol("bar", 14);
+    JavaSymbol barStrictString = result.symbol("bar", 21);
+
+    SoftAssertions softly = new SoftAssertions();
+    softly.assertThat(fooVariadicInteger.usages()).isEmpty();
+    softly.assertThat(fooStrictInt.usages()).hasSize(1);
+    softly.assertThat(barVariadicObject.usages()).isEmpty();
+    softly.assertThat(barStrictString.usages()).hasSize(1);
+    softly.assertAll();
   }
 
   @Test
@@ -690,8 +876,9 @@ public class SymbolTableTest {
     JavaSymbol.TypeJavaSymbol classSymbol = (JavaSymbol.TypeJavaSymbol) result.symbol("MyClass");
     List<JavaSymbol> constructors = classSymbol.members.lookup("<init>");
 
-    assertThat(constructors.get(0).usages()).hasSize(1);
-    assertThat(constructors.get(1).usages()).hasSize(1);
+    // FIXME SONARJAVA-2791 : there should be one reference to each constructor : this is a bug in how method inference specificity is applied see JLS8 18.5.4
+    assertThat(constructors.get(0).usages()).hasSize(2);
+    assertThat(constructors.get(1).usages()).hasSize(0);
   }
 
   private static Type getNewClassTreeType(IdentifierTree constructorId) {
@@ -736,11 +923,6 @@ public class SymbolTableTest {
     JavaSymbol.MethodJavaSymbol methodSymbol;
     methodSymbol = (JavaSymbol.MethodJavaSymbol) result.reference(34, 9, "foo");
     assertThat(methodSymbol).isSameAs(result.symbol("foo", 22));
-  }
-
-  @Test
-  public void Example() {
-    Result.createFor("Example");
   }
 
   @Test
@@ -845,6 +1027,18 @@ public class SymbolTableTest {
   }
 
   @Test
+  public void most_specific_generic_method() throws Exception {
+    Result result = Result.createFor("references/MostSpecificGenericMethodCall");
+    JavaSymbol foo = result.symbol("foo", 11);
+    JavaSymbol fooArray = result.symbol("foo", 12);
+    JavaSymbol fooParameterized = result.symbol("foo", 13);
+
+    assertThat(result.reference(6, 5)).as("Method with Array type argument not resolved").isSameAs(fooArray);
+    assertThat(result.reference(7, 5)).as("Method with Parameterized type argument not resolved").isSameAs(fooParameterized);
+    assertThat(result.reference(8, 5)).isSameAs(foo);
+  }
+
+  @Test
   public void MethodCall() {
     Result result = Result.createFor("references/MethodCall");
     assertThat(result.reference(10, 5)).isSameAs(result.symbol("target"));
@@ -927,10 +1121,47 @@ public class SymbolTableTest {
 
     assertThat(result.reference(342, 5)).isSameAs(result.symbol("myMethod", 339));
     assertThat(result.symbol("myMethod", 338).usages()).isEmpty();
+    assertThat(result.symbol("someFun", 365).usages()).isEmpty();
 
     JavaSymbol add = result.symbol("add");
     assertThat(add.usages()).hasSize(1);
 
+  }
+
+  @Test
+  public void SuperMethodCall() {
+    Result result = Result.createFor("references/SuperMethodCall");
+
+    JavaSymbol fOfD = result.reference(21, 5);
+    assertThat(fOfD.name()).isEqualTo("f");
+    assertThat(fOfD.owner().name()).isEqualTo("D");
+
+    JavaSymbol superOfD = result.reference(25, 12);
+    assertThat(superOfD.name()).isEqualTo("super");
+    assertThat(superOfD.isVariableSymbol()).isTrue();
+    assertThat(superOfD.type().fullyQualifiedName()).isEqualTo("C");
+    assertThat(superOfD.owner().name()).isEqualTo("D");
+
+    JavaSymbol fOfC = result.reference(25, 18);
+    assertThat(fOfC.name()).isEqualTo("f");
+    assertThat(fOfC.owner().name()).isEqualTo("C");
+
+    JavaSymbol refA = result.reference(26, 12);
+    assertThat(refA.name()).isEqualTo("A");
+    assertThat(refA.isTypeSymbol()).isTrue();
+
+    JavaSymbol superOfA = result.reference(26, 14);
+    assertThat(superOfA.name()).isEqualTo("super");
+    assertThat(superOfA.isVariableSymbol()).isTrue();
+    assertThat(superOfA.type().fullyQualifiedName()).isEqualTo("A");
+
+    JavaSymbol fOfA = result.reference(26, 20);
+    assertThat(fOfA.name()).isEqualTo("f");
+    assertThat(fOfA.owner().name()).isEqualTo("A");
+
+    JavaSymbol fOfB = result.reference(27, 20);
+    assertThat(fOfB.name()).isEqualTo("f");
+    assertThat(fOfB.owner().name()).isEqualTo("B");
   }
 
   @Test
@@ -952,6 +1183,26 @@ public class SymbolTableTest {
     assertThat(result.symbol("strings3").type.symbol.name).isEqualTo("Array");
     assertThat(result.symbol("strings3").type.toString()).isEqualTo("String[][][]");
     assertThat(result.symbol("objects").type.toString()).isEqualTo("Object[][][]");
+
+    ExpressionTree init = ((VariableTree) result.symbol("strings2").declaration()).initializer();
+    Type initalizerType = init.symbolType();
+    assertThat(initalizerType.isArray()).isTrue();
+    assertThat(((ArrayJavaType) initalizerType).elementType.isArray()).isTrue();
+    assertThat(((ArrayJavaType) ((ArrayJavaType) initalizerType).elementType).elementType.is("java.lang.String")).isTrue();
+
+    init = ((VariableTree) result.symbol("strings3").declaration()).initializer();
+    initalizerType = init.symbolType();
+    assertThat(initalizerType.isArray()).isTrue();
+    assertThat(((ArrayJavaType) initalizerType).elementType.isArray()).isTrue();
+    assertThat(((ArrayJavaType) ((ArrayJavaType) initalizerType).elementType).elementType.isArray()).isTrue();
+    assertThat(((ArrayJavaType) ((ArrayJavaType) ((ArrayJavaType) initalizerType).elementType).elementType).elementType.is("java.lang.String")).isTrue();
+
+    NewArrayTree newStringArray = ((NewArrayTree) ((ReturnStatementTree) ((MethodTree) result.symbol("foo").declaration()).block().body().get(0)).expression());
+    List<Type> initTypes = newStringArray.initializers().stream().map(ExpressionTree::symbolType).collect(Collectors.toList());
+    for (Type initType : initTypes) {
+      assertThat(initType.isArray()).isTrue();
+      assertThat(((Type.ArrayType) initType).elementType().is("java.lang.String")).isTrue();
+    }
   }
 
   @Test
@@ -1051,133 +1302,9 @@ public class SymbolTableTest {
     assertThat(result.symbol("s2").type.is("java.lang.String")).isTrue();
     assertThat(result.symbol("foo", 95).usages()).hasSize(1);
     assertThat(result.symbol("x", 103).type.is("java.lang.Integer")).as(result.symbol("x",103).type.name()).isTrue();
-  }
 
-  @Test
-  public void MethodReference() throws Exception {
-    Result result = Result.createFor("MethodReferences");
-    JavaSymbol methodReference = result.symbol("methodReference");
-    assertThat(methodReference.usages()).hasSize(3);
-
-    JavaSymbol bar = result.symbol("bar");
-    assertThat(bar.usages()).hasSize(3);
-    JavaSymbol qix = result.symbol("qix");
-    assertThat(result.reference(11, 27)).isSameAs(bar);
-    assertThat(result.reference(12, 30)).isSameAs(bar);
-    assertThat(result.reference(13, 24)).isSameAs(qix);
-    assertThat(result.reference(14, 17)).isSameAs(bar);
-    assertThat(result.reference(11, 21).owner).isSameAs(result.symbol("A"));
-    assertThat(result.reference(11, 21).getName()).isEqualTo("this");
-    assertThat(result.reference(12, 25).owner).isSameAs(result.symbol("A"));
-    assertThat(result.reference(13, 21)).isSameAs(result.symbol("A"));
-
-    JavaSymbol methodRefConstructor = result.symbol("methodRefConstructor");
-    assertThat(methodRefConstructor.usages()).hasSize(1);
-    assertThat(methodRefConstructor.isMethodSymbol()).isTrue();
-    assertThat(((Symbol.MethodSymbol) methodRefConstructor).parameterTypes().get(0)).isSameAs(result.symbol("AProducer").type);
-
-  }
-
-  @Test
-  public void MethodReferenceUsingThis() throws Exception {
-    Result result = Result.createFor("MethodReferencesThis");
-
-    JavaSymbol bar1 = result.symbol("bar1");
-    assertThat(bar1.usages()).hasSize(2);
-
-    JavaSymbol bar = result.symbol("bar");
-    assertThat(bar.usages()).hasSize(1);
-
-    MethodReferenceTree methodRef = (MethodReferenceTree) bar.usages().get(0).parent();
-    assertThat(methodRef.symbolType().is("java.util.function.Consumer")).isTrue();
-
-    MethodInvocationTree foreach = (MethodInvocationTree) methodRef.parent().parent();
-    assertThat(foreach.symbol().owner().type().is("java.lang.Iterable")).isTrue();
-  }
-
-  @Test
-  public void MethodReferenceWithArrayNew() throws Exception {
-    Result result = Result.createFor("MethodReferencesArrayNew");
-
-    JavaSymbol bar = result.symbol("bar");
-    assertThat(bar.usages()).hasSize(1);
-
-    MethodInvocationTree callingBar = (MethodInvocationTree) bar.usages().get(0).parent();
-    MethodInvocationTree toArray = (MethodInvocationTree) callingBar.arguments().get(0);
-    assertThat(toArray.symbolType().is("B[][]")).isTrue();
-
-    JavaSymbol bool = result.symbol("bool");
-    assertThat(bool.usages()).hasSize(1);
-  }
-
-  @Test
-  public void MethodReferenceWithStream() throws Exception {
-    Result result = Result.createFor("MethodReferencesStream");
-
-    JavaSymbol flatipus1 = result.symbol("flatipus1");
-    assertThat(flatipus1.usages()).hasSize(1);
-
-    MethodInvocationTree flatMap = (MethodInvocationTree) flatipus1.usages().get(0).parent().parent().parent();
-    Type symbolType = flatMap.symbolType();
-    assertThat(symbolType.is("java.util.Optional")).isTrue();
-
-    JavaSymbol flatipus2 = result.symbol("flatipus2");
-    assertThat(flatipus2.usages()).hasSize(1);
-
-    JavaSymbol bool = result.symbol("bool");
-    assertThat(bool.usages()).hasSize(1);
-  }
-
-  @Test
-  public void method_references_type_defered_should_not_raise_npe() throws Exception {
-    Result result = Result.createFor("MethodReferencesDeferedType");
-    LambdaExpressionTree lambda = (LambdaExpressionTree) result.symbol("qualifier").declaration().parent();
-    Type symbolType = ((MethodInvocationTree) lambda.body()).symbolType();
-    assertThat(symbolType.is("java.util.stream.Stream")).isTrue() ;
-    assertThat(symbolType).isInstanceOf(ParametrizedTypeJavaType.class);
-    List<JavaType> substitutedTypes = ((ParametrizedTypeJavaType) symbolType).typeSubstitution.substitutedTypes();
-    assertThat(substitutedTypes).hasSize(1);
-    assertThat(substitutedTypes.get(0).is("Qualifier")).isTrue();
-
-  }
-
-  @Test
-  public void MethodReferencesNoArguments() throws Exception {
-    Result result = Result.createFor("MethodReferencesNoArguments");
-
-    JavaSymbol isTrue = result.symbol("isTrue");
-    assertThat(isTrue.usages()).hasSize(1);
-
-    JavaSymbol isFalse = result.symbol("isFalse");
-    assertThat(isFalse.usages()).hasSize(1);
-
-    JavaSymbol up = result.symbol("up");
-    assertThat(up.usages()).hasSize(1);
-
-    Tree upMethodRef = up.usages().get(0).parent();
-    MethodInvocationTree map = (MethodInvocationTree) upMethodRef.parent().parent();
-
-    JavaType mapType = (JavaType) map.symbolType();
-    assertThat(mapType.is("java.util.stream.Stream")).isTrue();
-    assertThat(mapType.isParameterized()).isTrue();
-    List<JavaType> substitutedTypes = ((ParametrizedTypeJavaType) mapType).typeSubstitution.substitutedTypes();
-    assertThat(substitutedTypes).hasSize(1);
-    assertThat(substitutedTypes.get(0).is("A$B")).isTrue();
-
-    JavaSymbol bool = result.symbol("bool", 28);
-    assertThat(bool.usages().stream().map(id -> id.identifierToken().line()).collect(Collectors.toList())).containsExactly(11, 12, 13);
-
-    bool = result.symbol("bool", 29);
-    assertThat(bool.usages().stream().map(id -> id.identifierToken().line()).collect(Collectors.toList())).containsExactly(14, 15);
-  }
-
-  @Test
-  public void MethodReferencesTypeArguments() throws Exception {
-    Result result = Result.createFor("MethodReferencesTypeArguments");
-
-    JavaSymbol getValue = result.symbol("getValue");
-    // FIXME SONARJAVA-1663 type arguments are currently ignored
-    assertThat(getValue.usages()).hasSize(0);
+    assertThat(result.symbol("call", 124).usages()).isEmpty();
+    assertThat(result.symbol("call", 125).usages()).hasSize(3);
   }
 
   @Test
@@ -1232,6 +1359,20 @@ public class SymbolTableTest {
   }
 
   @Test
+  public void annotation_usages() throws Exception {
+    Result result = Result.createFor("AnnotationUsages");
+
+    JavaSymbol.TypeSymbol myAnnotation1 = (JavaSymbol.TypeSymbol) result.symbol("MyAnnotation1");
+    assertThat(myAnnotation1.usages()).hasSize(1);
+
+    JavaSymbol.TypeSymbol myAnnotation2 = (JavaSymbol.TypeSymbol) result.symbol("MyAnnotation2");
+    assertThat(myAnnotation2.usages()).hasSize(1);
+
+    JavaSymbol.TypeSymbol myAnnotation3 = (JavaSymbol.TypeSymbol) result.symbol("MyAnnotation3");
+    assertThat(myAnnotation3.usages()).hasSize(1);
+  }
+
+  @Test
   public void annotations_on_fields() throws Exception {
     Result result = Result.createFor("AnnotationOnFields");
 
@@ -1255,7 +1396,19 @@ public class SymbolTableTest {
     Result result = Result.createFor("SwitchStatement");
     assertThat(result.symbol("a", 16)).isSameAs(result.reference(18, 28));
     assertThat(result.symbol("a", 20)).isSameAs(result.reference(21, 24));
+  }
 
+  @Test
+  public void switch_cases() {
+    Result result = Result.createFor("SwitchCases");
+
+    assertThat(result.symbol("A", 2)).isSameAs(result.reference(11, 12));
+    assertThat(result.symbol("B", 3)).isSameAs(result.reference(14, 12));
+
+    // relying on syntax
+    assertThat(result.referenceTree(11, 12).symbolType().is("MyEnum")).isTrue();
+    // relying on bytecode
+    assertThat(result.referenceTree(27, 12).symbolType().is("java.util.concurrent.TimeUnit")).isTrue();
   }
 
   @Test
@@ -1279,8 +1432,7 @@ public class SymbolTableTest {
     JavaSymbol reverse = result.symbol("reverse");
     //lookup on defered type allow method resolution
     assertThat(sortKeysByValue.usages()).hasSize(1);
-    //Lack of resolution when target type is deduced, we should be able to redo the lookup
-    assertThat(reverse.usages()).isEmpty();
+    assertThat(reverse.usages()).hasSize(1);
   }
 
   @Test
@@ -1311,7 +1463,7 @@ public class SymbolTableTest {
   }
 
   @Test
-  public void infer_steam_types_on_chained_map() {
+  public void infer_stream_types_on_chained_map() {
     Result result = Result.createFor("InferLambdaType");
 
     JavaSymbol stringToBoolean = result.symbol("stringToBoolean");
@@ -1320,9 +1472,12 @@ public class SymbolTableTest {
     assertThat(result.reference(67, 17)).isEqualTo(stringToBoolean);
 
     IdentifierTree map = result.referenceTree(63, 8);
-    MethodJavaType methodJavaType = (MethodJavaType) map.symbolType();
-    // expression type is correctly infered but method type is not recomputed and thus is still defered
-    assertThat(methodJavaType.resultType.isTagged(JavaType.DEFERRED)).isTrue();
+    JavaType mapResultType = ((MethodJavaType) map.symbolType()).resultType;
+    assertThat(mapResultType.isTagged(JavaType.DEFERRED)).isFalse();
+    assertThat(mapResultType.is("java.util.stream.Stream")).isTrue();
+    assertThat(mapResultType.isParameterized()).isTrue();
+    JavaType substitutionType = ((ParametrizedTypeJavaType) mapResultType).typeSubstitution.substitutedTypes().get(0);
+    assertThat(substitutionType.is("java.lang.Boolean")).isTrue();
 
      JavaSymbol booleanToInt = result.symbol("booleanToInt");
      assertThat(booleanToInt.usages()).hasSize(1);
@@ -1398,19 +1553,6 @@ public class SymbolTableTest {
   }
 
   @Test
-  public void method_reference_as_variable_initializer() {
-    Result result = Result.createFor("MethodReferencesVariableInitializers");
-
-    JavaSymbol invalidate = result.symbol("invalidate");
-    assertThat(invalidate.usages()).hasSize(1);
-    assertThat(result.reference(4, 46)).isEqualTo(invalidate);
-
-    JavaSymbol foo = result.symbol("foo");
-    assertThat(foo.usages()).hasSize(1);
-    assertThat(result.reference(5, 54)).isEqualTo(foo);
-  }
-
-  @Test
   public void double_lambda_type_propagation() {
     Result result = Result.createFor("DoubleLambda");
     JavaSymbol my = result.symbol("my");
@@ -1421,34 +1563,18 @@ public class SymbolTableTest {
   }
 
   @Test
-  public void method_reference_constructor_inference() throws Exception {
-    Result result = Result.createFor("ConstructorInMethodRef");
-    MethodTree methodTree = (MethodTree) result.symbol("erased").declaration();
-    Type returnStatementType = ((ReturnStatementTree) methodTree.block().body().get(0)).expression().symbolType();
-    assertThat(returnStatementType.is("java.util.List")).isTrue();
-    assertThat(((JavaType) returnStatementType).isParameterized()).isTrue();
-    assertThat(((ParametrizedTypeJavaType) returnStatementType).typeSubstitution.substitutedTypes()).hasSize(1);
-    assertThat(((ParametrizedTypeJavaType) returnStatementType).typeSubstitution.substitutedTypes().get(0).is("java.util.LinkedHashSet")).isTrue();
-
-
-    methodTree = (MethodTree) result.symbol("erased2").declaration();
-    returnStatementType = ((ReturnStatementTree) methodTree.block().body().get(0)).expression().symbolType();
-    assertThat(returnStatementType.is("java.util.List")).isTrue();
-    assertThat(((JavaType) returnStatementType).isParameterized()).isTrue();
-    assertThat(((ParametrizedTypeJavaType) returnStatementType).typeSubstitution.substitutedTypes()).hasSize(1);
-    assertThat(((ParametrizedTypeJavaType) returnStatementType).typeSubstitution.substitutedTypes().get(0).is("java.util.LinkedHashSet")).isTrue();
-  }
-  
-  @Test
   public void conditional_expression_in_lambda() {
     Result result = Result.createFor("ConditionalExpressionInLambda");
     JavaSymbol foo = result.symbol("foo");
     assertThat(foo.usages()).hasSize(1);
 
     IdentifierTree map = result.referenceTree(8, 8);
-    MethodJavaType mapJavaType = (MethodJavaType) map.symbolType();
-    // expression type is correctly inferred but method type is not recomputed and thus is still deferred
-    assertThat(mapJavaType.resultType.isTagged(JavaType.DEFERRED)).isTrue();
+    JavaType mapResultType = ((MethodJavaType) map.symbolType()).resultType;
+    assertThat(mapResultType.isTagged(JavaType.DEFERRED)).isFalse();
+    assertThat(mapResultType.is("java.util.stream.Stream")).isTrue();
+    assertThat(mapResultType.isParameterized()).isTrue();
+    JavaType substitutionType = ((ParametrizedTypeJavaType) mapResultType).typeSubstitution.substitutedTypes().get(0);
+    assertThat(substitutionType.is("java.lang.Comparable")).isTrue();
 
     JavaType lambdaType = (JavaType) ((MethodInvocationTree) map.parent().parent()).arguments().get(0).symbolType();
     assertThat(lambdaType.isParameterized()).isTrue();
@@ -1462,9 +1588,12 @@ public class SymbolTableTest {
     assertThat(bar.usages()).hasSize(1);
 
     IdentifierTree flatMap = result.referenceTree(13, 8);
-    MethodJavaType flatMapJavaType = (MethodJavaType) flatMap.symbolType();
-    // expression type is correctly inferred but method type is not recomputed and thus is still deferred
-    assertThat(flatMapJavaType.resultType.isTagged(JavaType.DEFERRED)).isTrue();
+    JavaType flatMapResultType = ((MethodJavaType) flatMap.symbolType()).resultType;
+    assertThat(flatMapResultType.isTagged(JavaType.DEFERRED)).isFalse();
+    assertThat(flatMapResultType.is("java.util.stream.Stream")).isTrue();
+    assertThat(flatMapResultType.isParameterized()).isTrue();
+    JavaType flatMapSubstitutionType = ((ParametrizedTypeJavaType) flatMapResultType).typeSubstitution.substitutedTypes().get(0);
+    assertThat(flatMapSubstitutionType.is("java.lang.Integer")).isTrue();
 
     lambdaType = (JavaType) ((MethodInvocationTree) flatMap.parent().parent()).arguments().get(0).symbolType();
     assertThat(lambdaType.isParameterized()).isTrue();
@@ -1508,8 +1637,102 @@ public class SymbolTableTest {
   }
 
   @Test
-  public void type_inference_should_be_triggered_on_cast_expression() throws Exception {
+  public void target_type_of_cast_expression() {
     Result result = Result.createFor("CastTargetType");
     assertThat(result.symbol("s").usages()).hasSize(1);
+    TypeCastTree typeCast = (TypeCastTree) ((VariableTree) result.symbol("UNIQUE_ID_COMPARATOR").declaration()).initializer();
+    assertThat(((IdentifierTree) typeCast.bounds().get(0)).symbol().type().is("java.io.Serializable")).isTrue();
+    assertThat(typeCast.symbolType().isSubtypeOf("java.io.Serializable")).isTrue();
+    assertThat(typeCast.symbolType().fullyQualifiedName()).startsWith("<intersection");
+  }
+
+  @Test
+  public void enum_protected_constructor_should_not_be_resolved() {
+    Result result = Result.createFor("EnumConstructor");
+    Symbol constructorRef = result.referenceTree(2, 3).symbol();
+    assertThat(constructorRef.name()).isEqualTo("<init>");
+    assertThat(constructorRef.owner().type().is("java.lang.Enum")).overridingErrorMessage("Wrongly resolving unaccessible protected enum constructor").isFalse();
+    assertThat(constructorRef.owner().type().is("EnumConstructor")).isTrue();
+  }
+
+  @Test
+  public void defered_type_wrongly_resolve_methods() {
+    Result res = Result.createFor("DeferedLambdaShouldOnlyBeAppliedToInterface");
+    assertThat(res.symbol("foo", 2).usages()).isEmpty();
+    assertThat(res.symbol("foo", 6).usages()).hasSize(1);
+    assertThat(res.symbol("foo", 9).usages()).isEmpty();
+  }
+
+  @Test
+  public void return_type_inference() {
+    Result res = Result.createFor("ReturnTypeInference");
+    assertThat(res.symbol("mapToString").usages()).hasSize(1);
+
+  }
+
+  @Test
+  public void resolve_return_type_after_inference() throws Exception {
+    Result res = Result.createFor("VarInitializerInference");
+    VariableTree mySet = (VariableTree) res.symbol("mySet").declaration();
+    assertThat(mySet.initializer().symbolType().is("VarInitializer$ImmutableSet")).isTrue();
+  }
+
+  @Test
+  public void resolution_of_method_ref() throws Exception {
+    Result res = Result.createFor("InferedCalls");
+    assertThat(res.symbol("combine1").usages()).hasSize(1);
+    assertThat(res.symbol("combine2").usages()).hasSize(1);
+  }
+
+  @Test
+  public void type_inference_recursion() throws Exception {
+    Result res = Result.createFor("TypeInferenceRecursion");
+    // wrong resolution because of flaw in type inference. usages size should be one.
+    assertThat(res.symbol("baseBuilder").usages()).isEmpty();
+  }
+
+  @Test
+  public void fieldType_in_parameterized_hierarchy() throws Exception {
+    Result res = Result.createFor("TypeSubstitutionInSubclasses");
+    SoftAssertions softly = new SoftAssertions();
+    softly.assertThat(res.referenceTree(10, 9).symbolType().fullyQualifiedName()).isEqualTo("java.lang.Integer");
+    softly.assertThat(res.referenceTree(17, 9).symbolType().fullyQualifiedName()).isEqualTo("java.lang.Integer");
+    softly.assertAll();
+  }
+
+  @Test
+  public void conditional_operator_expression_type() {
+    Result res = Result.createFor("ConditionalOperator");
+    ExpressionTree conditional = ((ReturnStatementTree) ((MethodTree) res.symbol("fun").declaration()).block().body().get(0)).expression();
+    Type conditionalExpressionType = conditional.symbolType();
+    assertThat(conditionalExpressionType.is("App$Foo")).isTrue();
+    assertThat(((JavaType) conditionalExpressionType).isParameterized()).isTrue();
+    List<JavaType> substitutedTypes = ((ParametrizedTypeJavaType) conditionalExpressionType).typeSubstitution.substitutedTypes();
+    assertThat(substitutedTypes).hasSize(1);
+    assertThat(substitutedTypes.get(0).isTagged(JavaType.WILDCARD)).isTrue();
+    assertThat(((WildCardType) substitutedTypes.get(0)).bound.is("java.util.List")).isTrue();
+  }
+
+  @Test
+  public void most_specific_method_when_signature_is_equivalent() {
+    Result res = Result.createFor("MostSpecificMethod");
+    JavaSymbol reference = res.reference(3, 5);
+    assertThat(reference.owner()).isSameAs(res.symbol("A"));
+  }
+
+  @Test
+  public void parameterized_innerclass_constructor_resolution() {
+    Result res = Result.createFor("InnerClassParameterized");
+    assertThat(res.symbol("<init>", 7).usages()).hasSize(1);
+    assertThat(res.symbol("<init>", 17).usages()).hasSize(1);
+    assertThat(res.symbol("<init>", 27).usages()).hasSize(1);
+    assertThat(res.symbol("<init>", 37).usages()).hasSize(1);
+  }
+  @Test
+  public void interface_cycle() {
+    Result res = Result.createFor("InterfaceCycle");
+    JavaSymbol.TypeJavaSymbol a = (JavaSymbol.TypeJavaSymbol) res.symbol("A");
+    Set<ClassJavaType> superTypes = a.superTypes();
+    assertThat(superTypes).hasSize(3).doesNotContain((ClassJavaType) a.type); // types B, C and Object
   }
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -30,6 +30,11 @@ import java.util.List;
  * Subscription visitor providing an API to report issues.
  */
 public abstract class IssuableSubscriptionVisitor extends SubscriptionVisitor {
+
+  @Override
+  protected void scanTree(Tree tree) {
+    throw new UnsupportedOperationException("IssuableSubscriptionVisitor should not drive visit of AST.");
+  }
 
   /**
    * Report an issue on a specific line.

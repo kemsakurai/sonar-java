@@ -8,12 +8,15 @@
   },
   "tags": [
     "cwe",
-    "bug",
     "cert"
   ],
-  "standards": [
-    "CWE",
-    "CERT"
-  ],
-  "defaultSeverity": "Critical"
+  "defaultSeverity": "Critical",
+  "ruleSpecification": "RSPEC-1114",
+  "sqKey": "ObjectFinalizeOverridenCallsSuperFinalizeCheck",
+  "scope": "All",
+  "securityStandards": {
+    "CWE": [
+      568
+    ]
+  }
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,12 +19,13 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Arrays;
 import org.sonar.check.Rule;
 import org.sonar.java.model.ModifiersUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.semantic.Symbol;
+import org.sonar.plugins.java.api.semantic.SymbolMetadata;
 import org.sonar.plugins.java.api.tree.AssignmentExpressionTree;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
@@ -44,22 +45,27 @@ public class ServletInstanceFieldCheck extends IssuableSubscriptionVisitor {
   private List<VariableTree> issuableVariables = new ArrayList<>();
   private List<VariableTree> excludedVariables = new ArrayList<>();
 
+  private static final List<String> ANNOTATIONS_EXCLUDING_FIELDS = Arrays.asList(
+    "javax.inject.Inject",
+    "javax.ejb.EJB",
+    "org.springframework.beans.factory.annotation.Autowired",
+    "javax.annotation.Resource");
+
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.VARIABLE, Kind.METHOD);
+    return Arrays.asList(Tree.Kind.VARIABLE, Kind.METHOD);
   }
 
   @Override
-  public void scanFile(JavaFileScannerContext context) {
-    if(context.getSemanticModel() == null) {
-      return;
-    }
-    super.scanFile(context);
+  public void leaveFile(JavaFileScannerContext context) {
     reportIssuesOnVariable();
   }
 
   @Override
   public void visitNode(Tree tree) {
+    if(!hasSemantic()) {
+      return;
+    }
     if (tree.is(Kind.METHOD) && isServletInit((MethodTree) tree)) {
       tree.accept(new AssignmentVisitor());
     } else if (tree.is(Kind.VARIABLE)) {
@@ -71,7 +77,8 @@ public class ServletInstanceFieldCheck extends IssuableSubscriptionVisitor {
   }
 
   private static boolean isExcluded(VariableTree variable) {
-    return isStaticOrFinal(variable) || variable.symbol().metadata().isAnnotatedWith("javax.inject.Inject");
+    SymbolMetadata varMetadata = variable.symbol().metadata();
+    return isStaticOrFinal(variable) || ANNOTATIONS_EXCLUDING_FIELDS.stream().anyMatch(varMetadata::isAnnotatedWith);
   }
 
   private static boolean isServletInit(MethodTree tree) {
@@ -81,7 +88,7 @@ public class ServletInstanceFieldCheck extends IssuableSubscriptionVisitor {
   private void reportIssuesOnVariable() {
     issuableVariables.removeAll(excludedVariables);
     for (VariableTree variable : issuableVariables) {
-      reportIssue(variable.simpleName(), "Remove this misleading mutable servlet instance fields or make it \"static\" and/or \"final\"");
+      reportIssue(variable.simpleName(), "Remove this misleading mutable servlet instance field or make it \"static\" and/or \"final\"");
     }
     issuableVariables.clear();
     excludedVariables.clear();
@@ -101,7 +108,10 @@ public class ServletInstanceFieldCheck extends IssuableSubscriptionVisitor {
 
   private static boolean isOwnedByAServlet(VariableTree variable) {
     Symbol owner = variable.symbol().owner();
-    return owner.isTypeSymbol() && (owner.type().isSubtypeOf("javax.servlet.http.HttpServlet") || owner.type().isSubtypeOf("org.apache.struts.action.Action"));
+    return owner.isTypeSymbol()
+      && variable.parent().is(Tree.Kind.CLASS)
+      && (owner.type().isSubtypeOf("javax.servlet.http.HttpServlet")
+      || owner.type().isSubtypeOf("org.apache.struts.action.Action"));
   }
 
   private static boolean isStaticOrFinal(VariableTree variable) {

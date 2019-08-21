@@ -7,8 +7,10 @@
     "constantCost": "5min"
   },
   "tags": [
-    "leak",
-    "bug"
+    "leak"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-3599",
+  "sqKey": "S3599",
+  "scope": "All"
 }

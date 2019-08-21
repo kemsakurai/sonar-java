@@ -2,9 +2,6 @@
 'jdk6:java/awt/AWTEvent.java':[
 355,
 ],
-'jdk6:java/awt/BasicStroke.java':[
-317,
-],
 'jdk6:java/awt/Container.java':[
 427,
 4181,
@@ -266,12 +263,6 @@
 ],
 'jdk6:java/util/Calendar.java':[
 1494,
-],
-'jdk6:java/util/Collections.java':[
-2925,
-2974,
-3037,
-3320,
 ],
 'jdk6:java/util/EnumMap.java':[
 94,

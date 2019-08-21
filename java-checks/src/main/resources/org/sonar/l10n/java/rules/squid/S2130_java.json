@@ -1,14 +1,16 @@
 {
   "title": "Parsing should be used to convert \"Strings\" to primitives",
-  "type": "BUG",
+  "type": "CODE_SMELL",
   "status": "ready",
   "remediation": {
     "func": "Constant\/Issue",
     "constantCost": "5min"
   },
   "tags": [
-    "performance",
-    "bug"
+    "performance"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-2130",
+  "sqKey": "S2130",
+  "scope": "All"
 }

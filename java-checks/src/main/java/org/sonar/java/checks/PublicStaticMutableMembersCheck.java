@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,10 +20,15 @@
 package org.sonar.java.checks;
 
 import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Multimap;
-
+import java.text.MessageFormat;
+import java.util.Collections;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import javax.annotation.Nullable;
 import org.sonar.check.Rule;
 import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.java.matcher.MethodMatcherCollection;
@@ -46,13 +51,6 @@ import org.sonar.plugins.java.api.tree.NewArrayTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
-import javax.annotation.Nullable;
-
-import java.text.MessageFormat;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-
 @Rule(key = "S2386")
 public class PublicStaticMutableMembersCheck extends IssuableSubscriptionVisitor {
 
@@ -70,7 +68,13 @@ public class PublicStaticMutableMembersCheck extends IssuableSubscriptionVisitor
   private static final String DECORATE = "decorate";
   // java.util and apache commons
   private static final MethodMatcherCollection UNMODIFIABLE_METHOD_CALLS = MethodMatcherCollection.create()
+    .add(MethodMatcher.create().typeDefinition("java.util.Collections").name(NameCriteria.startsWith("singleton")).withAnyParameters())
+    .add(MethodMatcher.create().typeDefinition("java.util.Collections").name(NameCriteria.startsWith("empty")).withAnyParameters())
     .add(MethodMatcher.create().typeDefinition(TypeCriteria.anyType()).name(NameCriteria.startsWith("unmodifiable")).withAnyParameters())
+       // Java 9
+    .add(MethodMatcher.create().typeDefinition("java.util.Set").name("of").withAnyParameters())
+    .add(MethodMatcher.create().typeDefinition("java.util.List").name("of").withAnyParameters())
+    .add(MethodMatcher.create().typeDefinition("java.util.Map").name("of").withAnyParameters())
       // apache commons 3.X
     .add(MethodMatcher.create().typeDefinition(TypeCriteria.subtypeOf("org.apache.commons.collections.map.UnmodifiableMap")).name(DECORATE).withAnyParameters())
     .add(MethodMatcher.create().typeDefinition(TypeCriteria.subtypeOf("org.apache.commons.collections.set.UnmodifiableSet")).name(DECORATE).withAnyParameters())
@@ -87,7 +91,7 @@ public class PublicStaticMutableMembersCheck extends IssuableSubscriptionVisitor
     "com.google.common.collect.ImmutableCollection"
   );
 
-  private static final Set<String> ACCEPTED_NEW_TYPES = ImmutableSet.of(
+  private static final Set<String> ACCEPTED_NEW_TYPES = Collections.singleton(
     "org.apache.commons.collections4.list.UnmodifiableList"
   );
 
@@ -96,12 +100,11 @@ public class PublicStaticMutableMembersCheck extends IssuableSubscriptionVisitor
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.INTERFACE, Tree.Kind.CLASS, Tree.Kind.ENUM, Tree.Kind.ASSIGNMENT);
+    return Arrays.asList(Tree.Kind.INTERFACE, Tree.Kind.CLASS, Tree.Kind.ENUM, Tree.Kind.ASSIGNMENT);
   }
 
   @Override
-  public void scanFile(JavaFileScannerContext context) {
-    super.scanFile(context);
+  public void leaveFile(JavaFileScannerContext context) {
     CLASS_IMMUTABLE_CANDIDATES.clear();
   }
 
@@ -171,6 +174,9 @@ public class PublicStaticMutableMembersCheck extends IssuableSubscriptionVisitor
       return returnValueIsMutable((MethodInvocationTree) expression);
     } else if (expression.is(Tree.Kind.NEW_CLASS)) {
       return !isAcceptedType(expression.symbolType(), ACCEPTED_NEW_TYPES);
+    } else if (expression.is(Tree.Kind.IDENTIFIER)) {
+      Symbol assigned = ((IdentifierTree) expression).symbol();
+      return !IMMUTABLE_CANDIDATES.contains(assigned);
     }
     return true;
   }

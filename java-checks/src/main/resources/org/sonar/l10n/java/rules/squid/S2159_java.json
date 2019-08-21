@@ -7,12 +7,11 @@
     "constantCost": "15min"
   },
   "tags": [
-    "bug",
     "cert",
     "unused"
   ],
-  "standards": [
-    "CERT"
-  ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-2159",
+  "sqKey": "S2159",
+  "scope": "Main"
 }

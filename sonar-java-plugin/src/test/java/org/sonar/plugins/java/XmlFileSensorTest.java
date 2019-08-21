@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,98 +19,197 @@
  */
 package org.sonar.plugins.java;
 
-import com.google.common.collect.Lists;
-
+import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
-import org.mockito.ArgumentMatcher;
+import org.junit.rules.TemporaryFolder;
 import org.mockito.Mockito;
-import org.sonar.api.batch.fs.internal.DefaultFileSystem;
+import org.sonar.api.batch.fs.InputFile;
 import org.sonar.api.batch.fs.internal.DefaultInputFile;
-import org.sonar.api.batch.rule.Checks;
-import org.sonar.api.batch.sensor.SensorDescriptor;
+import org.sonar.api.batch.fs.internal.TestInputFileBuilder;
+import org.sonar.api.batch.rule.CheckFactory;
+import org.sonar.api.batch.rule.internal.ActiveRulesBuilder;
+import org.sonar.api.batch.sensor.internal.DefaultSensorDescriptor;
 import org.sonar.api.batch.sensor.internal.SensorContextTester;
+import org.sonar.api.batch.sensor.issue.Issue;
+import org.sonar.api.config.internal.MapSettings;
 import org.sonar.api.rule.RuleKey;
-import org.sonar.api.rules.RuleAnnotationUtils;
-import org.sonar.java.AnalyzerMessage;
-import org.sonar.java.SonarComponents;
-import org.sonar.java.checks.xml.maven.PomElementOrderCheck;
-import org.sonar.plugins.java.api.JavaCheck;
-import org.sonar.squidbridge.api.CodeVisitor;
-
-import java.io.File;
+import org.sonar.api.utils.log.LogTester;
+import org.sonar.api.utils.log.LoggerLevel;
+import org.sonarsource.analyzer.commons.xml.XmlFile;
+import org.sonarsource.analyzer.commons.xml.checks.SonarXmlCheck;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Matchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 public class XmlFileSensorTest {
 
-  private DefaultFileSystem fileSystem;
-  private XmlFileSensor sensor;
+  @Rule
+  public TemporaryFolder temporaryFolder = new TemporaryFolder();
+
+  @Rule
+  public LogTester logTester = new LogTester();
+
+  private static final RuleKey XML_RULE_KEY = RuleKey.of("squid", "S3281");
+  private SensorContextTester context;
 
   @Before
-  public void setUp() {
-    fileSystem = new DefaultFileSystem((File)null);
-    sensor = new XmlFileSensor(mock(SonarComponents.class), fileSystem);
+  public void setUp() throws Exception {
+    context = SensorContextTester.create(temporaryFolder.newFolder());
   }
 
   @Test
-  public void to_string() {
-    assertThat(sensor.toString()).isEqualTo("XmlFileSensor");
+  public void test() throws Exception {
+    CheckFactory checkFactory = new CheckFactory(new ActiveRulesBuilder().create(XML_RULE_KEY).activate().build());
+    XmlFileSensor sensor = new XmlFileSensor(checkFactory);
+
+    DefaultInputFile xml = (DefaultInputFile) addFileWithIssue("xml");
+    sensor.execute(context);
+    assertThat(xml.isPublished()).isTrue();
+
+    Collection<Issue> issues = context.allIssues();
+    assertThat(issues).hasSize(1);
+    Issue issue = issues.iterator().next();
+
+    assertThat(issue.ruleKey()).isEqualTo(XML_RULE_KEY);
+    assertThat(issue.primaryLocation().message()).isEqualTo("Move this default interceptor to \"ejb-jar.xml\"");
+    assertThat(issue.primaryLocation().textRange().start().line()).isEqualTo(5);
   }
 
   @Test
-  public void describe() {
-    SensorDescriptor sensorDescriptor = mock(SensorDescriptor.class);
-    sensor.describe(sensorDescriptor);
-    verify(sensorDescriptor).name("XmlFileSensor");
+  public void testDoNothingIfNoXmlFile() throws Exception {
+    CheckFactory checkFactory = new CheckFactory(new ActiveRulesBuilder().create(XML_RULE_KEY).activate().build());
+    XmlFileSensor sensor = new XmlFileSensor(checkFactory);
+
+    addFileWithIssue("foo");
+    sensor.execute(context);
+
+    assertThat(context.allIssues()).isEmpty();
   }
 
   @Test
-  public void test_issues_creation() throws Exception {
-    SensorContextTester context = SensorContextTester.create(new File("src/test/files/maven/"));
-    DefaultFileSystem fs = context.fileSystem();
-    final File file = new File("src/test/files/maven/pom.xml");
-    fs.add(new DefaultInputFile("", "pom.xml"));
-    SonarComponents sonarComponents = createSonarComponentsMock(fs);
-    XmlFileSensor sensor = new XmlFileSensor(sonarComponents, fs);
+  public void testDoNothingIfNoXmlRule() throws Exception {
+    CheckFactory checkFactory = new CheckFactory(new ActiveRulesBuilder().build());
+    XmlFileSensor sensor = new XmlFileSensor(checkFactory);
+
+    DefaultInputFile xml = (DefaultInputFile) addFileWithIssue("xml");
+    sensor.execute(context);
+    assertThat(xml.isPublished()).isTrue();
+
+    assertThat(context.allIssues()).isEmpty();
+  }
+
+  @Test
+  public void testHandleAnalysisCancellation() throws Exception {
+    CheckFactory checkFactory = new CheckFactory(new ActiveRulesBuilder().build());
+    XmlFileSensor sensor = new XmlFileSensor(checkFactory);
+
+    context.setCancelled(true);
+
+    DefaultInputFile xml = (DefaultInputFile) addFileWithIssue("xml");
+    sensor.execute(context);
+    assertThat(xml.isPublished()).isTrue();
+
+    assertThat(context.allIssues()).isEmpty();
+  }
+
+  @Test
+  public void testDoNothingIfParsingError() throws Exception {
+    CheckFactory checkFactory = new CheckFactory(new ActiveRulesBuilder().create(XML_RULE_KEY).activate().build());
+    XmlFileSensor sensor = new XmlFileSensor(checkFactory);
+
+    DefaultInputFile notXml = TestInputFileBuilder.create("moduleKey", "test.xml")
+      .setCharset(StandardCharsets.UTF_8)
+      .setContents("<ejb-jar")
+      .build();
+    context.fileSystem().add(notXml);
 
     sensor.execute(context);
 
-    verify(sonarComponents, times(1)).reportIssue(Mockito.argThat(new ArgumentMatcher<AnalyzerMessage>() {
-      @Override
-      public boolean matches(Object argument) {
-        return file.getAbsolutePath().equals(((AnalyzerMessage) argument).getFile().getAbsolutePath());
-      }
-    }));
+    assertThat(context.allIssues()).isEmpty();
+    assertThat(logTester.logs(LoggerLevel.DEBUG)).hasSize(1);
+    assertThat(logTester.logs(LoggerLevel.DEBUG).get(0)).isEqualTo("Skipped 'test.xml' due to parsing error");
   }
 
   @Test
-  public void not_executed_without_xml_files_in_file_system() throws Exception {
-    SensorContextTester context = SensorContextTester.create(new File("src/test/files/maven/"));
-    DefaultFileSystem fs = context.fileSystem();
-    SonarComponents sonarComponents = createSonarComponentsMock(fs);
-    XmlFileSensor sensor = new XmlFileSensor(sonarComponents, fs);
+  public void testDoNotFailAnalysisIfUnexpectedIssue() throws Exception {
+    CheckFactory checkFactory = new CheckFactory(new ActiveRulesBuilder().create(XML_RULE_KEY).activate().build());
+    XmlFileSensor sensor = new XmlFileSensor(checkFactory);
 
+    DefaultInputFile inputFile = TestInputFileBuilder.create("moduleKey", "test.xml")
+      .setCharset(StandardCharsets.UTF_8)
+      .setContents(
+        "<a>\n"
+          + "  <b />\n"
+          + "</a>\n")
+      .build();
+    DefaultInputFile mocked = Mockito.spy(inputFile);
+    Mockito.when(mocked.contents()).thenThrow(new IllegalStateException("This should have been caught."));
+    context.fileSystem().add(mocked);
     sensor.execute(context);
 
-    verify(sonarComponents, Mockito.never()).reportIssue(any());
+    assertThat(context.allIssues()).isEmpty();
+    assertThat(logTester.logs(LoggerLevel.DEBUG)).isEmpty();
+    assertThat(logTester.logs(LoggerLevel.WARN)).hasSize(1);
+    assertThat(logTester.logs(LoggerLevel.WARN).get(0)).startsWith("Unable to analyse file 'test.xml'.");
   }
 
-  private static SonarComponents createSonarComponentsMock(DefaultFileSystem fs) {
-    SonarComponents sonarComponents = mock(SonarComponents.class);
-    when(sonarComponents.checkClasses()).thenReturn(new CodeVisitor[] {new PomElementOrderCheck()});
+  @Test
+  public void testDescriptor() throws Exception {
+    XmlFileSensor sensor = new XmlFileSensor(new CheckFactory(new ActiveRulesBuilder().build()));
+    DefaultSensorDescriptor descriptor = new DefaultSensorDescriptor();
+    sensor.describe(descriptor);
 
-    when(sonarComponents.getFileSystem()).thenReturn(fs);
+    assertThat(descriptor.name()).isEqualTo("JavaXmlSensor");
+    // todo: do we want to run this sensor only for projects containing JVM languages
+    assertThat(descriptor.languages()).isEmpty();
+    assertThat(descriptor.isGlobal()).isFalse();
+    assertThat(descriptor.configurationPredicate().test(new MapSettings().asConfig())).isFalse();
 
-    Checks<JavaCheck> checks = mock(Checks.class);
-    when(checks.ruleKey(any(JavaCheck.class))).thenReturn(RuleKey.of("squid", RuleAnnotationUtils.getRuleKey(PomElementOrderCheck.class)));
-    when(sonarComponents.checks()).thenReturn(Lists.<Checks<JavaCheck>>newArrayList(checks));
+    sensor = new XmlFileSensor(new CheckFactory(new ActiveRulesBuilder().create(XML_RULE_KEY).activate().build()));
+    descriptor = new DefaultSensorDescriptor();
+    sensor.describe(descriptor);
+    assertThat(descriptor.languages()).isEmpty();
+    assertThat(descriptor.isGlobal()).isFalse();
+    assertThat(descriptor.configurationPredicate().test(new MapSettings().asConfig())).isTrue();
 
-    return sonarComponents;
   }
+
+  @Test
+  public void testCheckFailure() throws Exception {
+    XmlFileSensor sensor = new XmlFileSensor(new CheckFactory(new ActiveRulesBuilder().build()));
+    InputFile inputFile = addFileWithIssue("xml");
+    XmlFile xmlFile = XmlFile.create(inputFile);
+    sensor.scanFile(context, xmlFile, new TestCheck(), XML_RULE_KEY);
+
+    assertThat(logTester.logs(LoggerLevel.ERROR)).hasSize(1);
+    assertThat(logTester.logs(LoggerLevel.ERROR).get(0)).isEqualTo("Failed to analyze 'test.xml' with rule squid:S3281");
+  }
+
+  private InputFile addFileWithIssue(String extension) {
+    DefaultInputFile inputFile = TestInputFileBuilder.create("moduleKey", "test." + extension)
+      .setCharset(StandardCharsets.UTF_8)
+      .setContents("<ejb-jar>\n" +
+        "  <assembly-descriptor>\n" +
+        "    <interceptor-binding>\n" +
+        "      <ejb-name>*</ejb-name>\n" +
+        "      <interceptor-class>com.myco.ImportantInterceptor1</interceptor-class>" +
+        "    </interceptor-binding>\n" +
+        "  </assembly-descriptor>\n" +
+        "</ejb-jar>")
+      .setPublish(false)
+      .build();
+    context.fileSystem().add(inputFile);
+    return inputFile;
+  }
+
+  private static class TestCheck extends SonarXmlCheck {
+
+    @Override
+    public void scanFile(XmlFile file) {
+      throw new IllegalStateException("Something wrong happened");
+    }
+  }
+
 }

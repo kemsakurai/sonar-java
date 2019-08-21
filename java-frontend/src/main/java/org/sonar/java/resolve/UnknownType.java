@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,15 +19,16 @@
  */
 package org.sonar.java.resolve;
 
-import com.google.common.collect.ImmutableList;
 import org.sonar.plugins.java.api.semantic.Type;
+
+import java.util.Collections;
 
 public class UnknownType extends ClassJavaType {
   public UnknownType(JavaSymbol.TypeJavaSymbol symbol) {
     super(symbol);
     tag = UNKNOWN;
     supertype = null;
-    interfaces = ImmutableList.of();
+    interfaces = Collections.emptyList();
   }
 
   @Override

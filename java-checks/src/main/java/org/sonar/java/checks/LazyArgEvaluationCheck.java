@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,54 +19,70 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.List;
+import java.util.Locale;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.sonar.check.Rule;
 import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.java.matcher.MethodMatcherCollection;
 import org.sonar.java.matcher.TypeCriteria;
+import org.sonar.java.resolve.JavaSymbol;
 import org.sonar.plugins.java.api.JavaFileScanner;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
+import org.sonar.plugins.java.api.semantic.Symbol;
+import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
 import org.sonar.plugins.java.api.tree.BinaryExpressionTree;
 import org.sonar.plugins.java.api.tree.CatchTree;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.IfStatementTree;
+import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.NewClassTree;
 import org.sonar.plugins.java.api.tree.Tree;
-
-import java.util.ArrayDeque;
-import java.util.Arrays;
-import java.util.Deque;
-import java.util.List;
-import java.util.Locale;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static org.sonar.java.matcher.TypeCriteria.anyType;
 
 @Rule(key = "S2629")
 public class LazyArgEvaluationCheck extends BaseTreeVisitor implements JavaFileScanner {
 
-  private static final String SLF4J_LOGGER = "org.slf4j.Logger";
-  public static final String JUL_LOGGER = "java.util.logging.Logger";
   private static final TypeCriteria STRING = TypeCriteria.is("java.lang.String");
-  public static final TypeCriteria OBJECT_ARR = TypeCriteria.is("java.lang.Object[]");
+  private static final TypeCriteria OBJECT_ARR = TypeCriteria.is("java.lang.Object[]");
 
   interface LogLevels {
+    /**
+     * The methods used by the logger to log messages.
+     */
     List<MethodMatcher> log();
 
+    /**
+     * The method matcher corresponding to the test method used to check if a logger level is enabled.
+     * For instance: 'isTraceEnabled()'.
+     */
     MethodMatcher test();
 
     static Stream<LogLevels> logLevels() {
-      return Stream.concat(Arrays.stream(SLF4J_LEVELS.values()), Arrays.stream(JUL_LEVELS.values()));
+      return Stream.of(SLF4J.values(), JUL.values(), LOG4J.values())
+        .flatMap(Arrays::stream);
     }
 
-    enum SLF4J_LEVELS implements LogLevels {
+    static MethodMatcher levelTestMatcher(TypeCriteria typeDefinition, String level) {
+      return MethodMatcher.create()
+        .typeDefinition(typeDefinition)
+        .name(String.format("is%c%sEnabled", level.charAt(0), level.toLowerCase(Locale.ROOT).substring(1)));
+    }
+
+    enum SLF4J implements LogLevels {
       TRACE,
       DEBUG,
       INFO,
@@ -74,20 +90,21 @@ public class LazyArgEvaluationCheck extends BaseTreeVisitor implements JavaFileS
       ERROR
       ;
 
-      public static final TypeCriteria MARKER = TypeCriteria.is("org.slf4j.Marker");
+      private static final TypeCriteria LOGGER = TypeCriteria.subtypeOf("org.slf4j.Logger");
+      private static final TypeCriteria MARKER = TypeCriteria.is("org.slf4j.Marker");
 
       @Override
       public List<MethodMatcher> log() {
-        return slf4jVariants(() -> MethodMatcher.create().typeDefinition(SLF4J_LOGGER).name(toString().toLowerCase(Locale.ROOT)));
+        return slf4jVariants(() -> MethodMatcher.create().typeDefinition(LOGGER).name(toString().toLowerCase(Locale.ROOT)));
       }
 
       @Override
       public MethodMatcher test() {
-        return levelTestMatcher(SLF4J_LOGGER, toString());
+        return LogLevels.levelTestMatcher(LOGGER, toString()).withoutParameter();
       }
 
       private static List<MethodMatcher> slf4jVariants(Supplier<MethodMatcher> prototype) {
-        return ImmutableList.of(
+        return Arrays.asList(
           prototype.get().parameters(STRING),
           prototype.get().parameters(STRING, anyType()),
           prototype.get().parameters(STRING, anyType(), anyType()),
@@ -98,16 +115,9 @@ public class LazyArgEvaluationCheck extends BaseTreeVisitor implements JavaFileS
           prototype.get().parameters(MARKER, STRING, OBJECT_ARR)
         );
       }
-
-      private static MethodMatcher levelTestMatcher(String typeDefinition, String level) {
-        return MethodMatcher.create()
-          .typeDefinition(typeDefinition)
-          .name(String.format("is%c%sEnabled", level.charAt(0), level.toLowerCase(Locale.ROOT).substring(1)))
-          .withoutParameter();
-      }
     }
 
-    enum JUL_LEVELS implements LogLevels {
+    enum JUL implements LogLevels {
       SEVERE,
       WARNING,
       INFO,
@@ -116,18 +126,63 @@ public class LazyArgEvaluationCheck extends BaseTreeVisitor implements JavaFileS
       FINER,
       FINEST;
 
+      private static final String LOGGER = "java.util.logging.Logger";
+      private static final MethodMatcher LOG = MethodMatcher.create()
+        .typeDefinition(LOGGER)
+        .name("log")
+        .addParameter("java.util.logging.Level")
+        .addParameter(STRING);
+
       @Override
       public List<MethodMatcher> log() {
-        MethodMatcher matcher = MethodMatcher.create()
-          .typeDefinition(JUL_LOGGER)
+        return Collections.singletonList(
+          MethodMatcher.create()
+          .typeDefinition(LOGGER)
           .name(toString().toLowerCase(Locale.ROOT))
-          .addParameter(STRING);
-        return ImmutableList.of(matcher);
+          .addParameter(STRING));
       }
 
       @Override
       public MethodMatcher test() {
-        return MethodMatcher.create().typeDefinition(JUL_LOGGER).name("isLoggable").addParameter("java.util.logging.Level");
+        return MethodMatcher.create()
+          .typeDefinition(LOGGER)
+          .name("isLoggable")
+          .addParameter("java.util.logging.Level");
+      }
+    }
+
+    enum LOG4J implements LogLevels {
+      DEBUG,
+      ERROR,
+      FATAL,
+      INFO,
+      TRACE,
+      WARN;
+
+      private static final String LEVEL = "org.apache.logging.log4j.Level";
+
+      private static final TypeCriteria LOGGER = TypeCriteria.subtypeOf("org.apache.logging.log4j.Logger");
+      private static final TypeCriteria MARKER = TypeCriteria.is("org.apache.logging.log4j.Marker");
+      private static final Predicate<Type> SUPPLIER = TypeCriteria.subtypeOf("org.apache.logging.log4j.util.Supplier")
+        .or(TypeCriteria.subtypeOf("org.apache.logging.log4j.util.MessageSupplier"));
+
+      private static final List<MethodMatcher> TESTS = Arrays.asList(
+        MethodMatcher.create().typeDefinition(LOGGER).name("isEnabled").addParameter(LEVEL),
+        MethodMatcher.create().typeDefinition(LOGGER).name("isEnabled").addParameter(LEVEL).addParameter(MARKER));
+
+      private static final MethodMatcher LOG = MethodMatcher.create().typeDefinition(LOGGER).name("log").withAnyParameters();
+
+      @Override
+      public List<MethodMatcher> log() {
+        return Collections.singletonList(MethodMatcher.create()
+          .typeDefinition(LOGGER)
+          .name(toString().toLowerCase(Locale.ROOT))
+          .withAnyParameters());
+      }
+
+      @Override
+      public MethodMatcher test() {
+        return LogLevels.levelTestMatcher(LOGGER, toString()).withAnyParameters();
       }
     }
   }
@@ -137,22 +192,14 @@ public class LazyArgEvaluationCheck extends BaseTreeVisitor implements JavaFileS
     .name("checkState")
     .withAnyParameters();
 
-  private static final MethodMatcher JUL_LOG = MethodMatcher.create()
-    .typeDefinition(JUL_LOGGER)
-    .name("log")
-    .addParameter("java.util.logging.Level")
-    .addParameter(STRING);
-
-  private static final MethodMatcherCollection LAZY_ARG_METHODS = MethodMatcherCollection.create(PRECONDITIONS, JUL_LOG);
-
+  private static final MethodMatcherCollection LAZY_ARG_METHODS = MethodMatcherCollection.create(PRECONDITIONS, LogLevels.JUL.LOG, LogLevels.LOG4J.LOG);
   static {
-    LogLevels.logLevels().forEach(l -> LAZY_ARG_METHODS.addAll(l.log()));
+    LogLevels.logLevels().map(LogLevels::log).forEach(LAZY_ARG_METHODS::addAll);
   }
 
-  private static final MethodMatcherCollection LOG_LEVEL_TESTS = MethodMatcherCollection.create();
-
+  private static final MethodMatcherCollection LOG_LEVEL_TESTS = MethodMatcherCollection.create().addAll(LogLevels.LOG4J.TESTS);
   static {
-    LogLevels.logLevels().forEach(l -> LOG_LEVEL_TESTS.add(l.test()));
+    LogLevels.logLevels().map(LogLevels::test).forEach(LOG_LEVEL_TESTS::add);
   }
 
   private JavaFileScannerContext context;
@@ -169,9 +216,13 @@ public class LazyArgEvaluationCheck extends BaseTreeVisitor implements JavaFileS
 
   @Override
   public void visitMethodInvocation(MethodInvocationTree tree) {
-    if (LAZY_ARG_METHODS.anyMatch(tree) && !insideCatchStatement() && !insideLevelTest()) {
+    if (LAZY_ARG_METHODS.anyMatch(tree) && !insideCatchStatement() && !insideLevelTest() && !argsUsingSuppliers(tree)) {
       onMethodInvocationFound(tree);
     }
+  }
+
+  private static boolean argsUsingSuppliers(MethodInvocationTree tree) {
+    return tree.arguments().stream().map(ExpressionTree::symbolType).anyMatch(LogLevels.LOG4J.SUPPLIER::test);
   }
 
   @Override
@@ -253,7 +304,7 @@ public class LazyArgEvaluationCheck extends BaseTreeVisitor implements JavaFileS
 
     @Override
     public void visitMethodInvocation(MethodInvocationTree tree) {
-      if (!isGetter(tree)) {
+      if (!isGetter(tree) && !isAnnotationMethod(tree)) {
         shouldReport = true;
         hasMethodInvocation = true;
       }
@@ -262,6 +313,11 @@ public class LazyArgEvaluationCheck extends BaseTreeVisitor implements JavaFileS
     private static boolean isGetter(MethodInvocationTree tree) {
       String methodName = tree.symbol().name();
       return methodName != null && (methodName.startsWith("get") || methodName.startsWith("is"));
+    }
+
+    private static boolean isAnnotationMethod(MethodInvocationTree tree) {
+      Symbol owner = tree.symbol().owner();
+      return owner.isTypeSymbol() && ((JavaSymbol.TypeJavaSymbol) owner).isAnnotation();
     }
 
     @Override
@@ -280,7 +336,37 @@ public class LazyArgEvaluationCheck extends BaseTreeVisitor implements JavaFileS
     @Override
     public void visitBinaryExpression(BinaryExpressionTree tree) {
       hasBinaryExpression = true;
-      super.visitBinaryExpression(tree);
+      if (!isConstant(tree.rightOperand())) {
+        tree.rightOperand().accept(this);
+      }
+      if (!isConstant(tree.leftOperand())) {
+        tree.leftOperand().accept(this);
+      }
+    }
+
+    private static boolean isConstant(ExpressionTree operand) {
+      switch (operand.kind()) {
+        case BOOLEAN_LITERAL:
+        case CHAR_LITERAL:
+        case DOUBLE_LITERAL:
+        case FLOAT_LITERAL:
+        case INT_LITERAL:
+        case LONG_LITERAL:
+        case STRING_LITERAL:
+        case NULL_LITERAL:
+          return true;
+        case IDENTIFIER:
+          return isConstant(((IdentifierTree) operand).symbol());
+        case MEMBER_SELECT:
+          MemberSelectExpressionTree mset = (MemberSelectExpressionTree) operand;
+          return isConstant(mset.identifier().symbol());
+        default:
+          return false;
+      }
+    }
+
+    private static boolean isConstant(Symbol symbol) {
+      return symbol.isStatic() && symbol.isFinal();
     }
   }
 

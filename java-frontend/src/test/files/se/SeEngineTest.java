@@ -7,6 +7,10 @@ class A0 {
       a.toString(); // Noncompliant
   }
 
+  void switch_expression(int r) {
+    r = switch (1) { default -> 42; };
+  }
+
   void complex_condition() {
     if (b == a && a == null)
       a.toString(); // Noncompliant
@@ -34,8 +38,8 @@ class A0 {
     Object a = null;
     Object b = new Object();
     b = a;
-    if (b == null) { // Noncompliant {{Change this condition so that it does not always evaluate to "true"}}
-      a.toString(); // Noncompliant {{NullPointerException might be thrown as 'a' is nullable here}}
+    if (b == null) { // Noncompliant {{Remove this expression which always evaluates to "true"}}
+      a.toString(); // Noncompliant {{A "NullPointerException" could be thrown; "a" is nullable here.}}
     }
   }
 
@@ -69,7 +73,7 @@ class A0 {
 
   void test_npe_in_conditional_and(String str) {
     boolean b1 = str == null
-        && str.length() == 0; // Noncompliant {{NullPointerException might be thrown as 'str' is nullable here}}
+        && str.length() == 0; // Noncompliant {{A "NullPointerException" could be thrown; "str" is nullable here.}}
   }
 
   void instance_of_set_not_null_constraint(Object d) {
@@ -113,18 +117,18 @@ class DefaultValues {
     manyStatementsLater();
     inTheGalaxyFarFarAway();
     variablesAreInitialized();
-    a = true; // flow@vars {{'a' is assigned true.}} flow@vars {{'a' is assigned non-null.}}
+    a = true; // flow@vars {{Implies 'a' is true.}}
     if (a) {  // Noncompliant [[flows=vars]] flow@vars
 
     }
-    b = new Object();  // flow@vars2
+    b = new Object();  // flow@vars2 flow@vars2
     if (b != null) {  // Noncompliant [[flows=vars2]] flow@vars2
 
     }
     try {
       Thread.sleep(10);
     } catch (Exception ex) {
-      if (ex != null) {  // Noncompliant {{Change this condition so that it does not always evaluate to "true"}}
+      if (ex != null) {  // Noncompliant {{Remove this expression which always evaluates to "true"}}
 
       }
     }
@@ -136,6 +140,91 @@ class DefaultValues {
 
       }
     }
+  }
+}
+
+abstract class TestingOptionals {
+  private void usingOfNullable(@javax.annotation.Nullable Object o) {
+    // null value used with 'ofNullable' creates an empty optional
+    java.util.Optional<Object> op = java.util.Optional.ofNullable(o);
+    if (op.isPresent()) {
+      o.toString(); // Compliant - 'o' is necessary not null here
+    } else {
+      o.toString(); // Noncompliant {{A "NullPointerException" could be thrown; "o" is nullable here.}} - 'o' is necessary null if not 'op' is empty
+    }
+    op.get(); // Compliant - empty case triggered a NPE
+  }
+
+  private java.util.Optional<File> usingFilters(java.util.Optional<String> relativePath) { // Compliant - not always same result
+    if (relativePath.filter(this::isNotBlank).isPresent()) {
+      java.io.File f = getFile(relativePath.get()); // Compliant
+      return java.util.Optional.ofNullable(f);
+    }
+    return java.util.Optional.empty();
+  }
+
+  abstract boolean isNotBlank(@javax.annotation.Nullable String s);
+
+  @javax.annotation.CheckForNull
+  abstract File getFile(String path);
+}
+
+class ResetFieldValue {
+  boolean b;
+  static boolean b2 = true;
+  Object o;
+
+  void bar() {
+    if (b) {
+      getClass();
+      if (b) { } // Noncompliant
+    }
+
+    if (o == null) {
+      this.getClass();
+      o.toString(); // Noncompliant
+    }
+  }
+  void bar2() {
+    if (b) {
+      foo();
+      if (b) { } // Noncompliant
+    }
+    if (b2) {
+      foo();
+      if (b2) { } // compliant : static call can update static field
+    }
+
+    if (o == null) {
+      foo();
+      o.toString(); // Noncompliant
+    }
+  }
+
+  void qix() {
+    if (b) {
+      fun(this);
+      if (b) { } // compliant, fun can modify internal state of this instance.
+    }
+  }
+
+  public static void foo() {
+    b2 = false;
+  }
+  public static void fun(Object o) {
+    // could modify internal state of o
+  }
+
+  public static String divisionResultCanBeZero(long millis) {
+    if (millis <= 0) {
+      return "goodbye";
+    }
+    long seconds = millis / 1000;
+    long minutes = seconds / 60;
+    if (minutes == 0) { // minutes can be zero due to 'long' division
+      return "zero";
+    }
+    return "non-zero";
   }
 
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2010-2017 SonarSource SA
+ * Copyright (C) 2010-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,18 +19,18 @@
  */
 package org.sonar.plugins.jacoco;
 
-import com.google.common.collect.Maps;
 import org.jacoco.core.data.ExecutionData;
 import org.jacoco.core.data.ExecutionDataStore;
 import org.jacoco.core.data.IExecutionDataVisitor;
 import org.jacoco.core.data.ISessionInfoVisitor;
 import org.jacoco.core.data.SessionInfo;
 
+import java.util.HashMap;
 import java.util.Map;
 
 public class ExecutionDataVisitor implements ISessionInfoVisitor, IExecutionDataVisitor {
 
-  private final Map<String, ExecutionDataStore> sessions = Maps.newHashMap();
+  private final Map<String, ExecutionDataStore> sessions = new HashMap<>();
 
   private ExecutionDataStore executionDataStore;
   private ExecutionDataStore merged = new ExecutionDataStore();
@@ -38,11 +38,7 @@ public class ExecutionDataVisitor implements ISessionInfoVisitor, IExecutionData
   @Override
   public void visitSessionInfo(SessionInfo info) {
     String sessionId = info.getId();
-    executionDataStore = sessions.get(sessionId);
-    if (executionDataStore == null) {
-      executionDataStore = new ExecutionDataStore();
-      sessions.put(sessionId, executionDataStore);
-    }
+    executionDataStore = sessions.computeIfAbsent(sessionId, id -> new ExecutionDataStore());
   }
 
   @Override

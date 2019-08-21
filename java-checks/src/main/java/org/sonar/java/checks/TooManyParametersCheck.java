@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,19 +20,16 @@
 package org.sonar.java.checks;
 
 import com.google.common.collect.ImmutableList;
-
+import java.util.List;
 import org.sonar.check.Rule;
 import org.sonar.check.RuleProperty;
 import org.sonar.java.RspecKey;
-import org.sonar.java.model.declaration.MethodTreeImpl;
 import org.sonar.plugins.java.api.JavaFileScanner;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.semantic.SymbolMetadata;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
-
-import java.util.List;
 
 @Rule(  key = "S00107")
 @RspecKey("S107")
@@ -56,6 +53,11 @@ public class TooManyParametersCheck extends BaseTreeVisitor implements JavaFileS
 
   private static final List<String> WHITE_LIST = ImmutableList.of(
     "org.springframework.web.bind.annotation.RequestMapping",
+    "org.springframework.web.bind.annotation.GetMapping",
+    "org.springframework.web.bind.annotation.PostMapping",
+    "org.springframework.web.bind.annotation.PutMapping",
+    "org.springframework.web.bind.annotation.DeleteMapping",
+    "org.springframework.web.bind.annotation.PatchMapping",
     "com.fasterxml.jackson.annotation.JsonCreator");
 
   @Override
@@ -86,7 +88,7 @@ public class TooManyParametersCheck extends BaseTreeVisitor implements JavaFileS
   }
 
   private static boolean isOverriding(MethodTree tree) {
-    return Boolean.TRUE.equals(((MethodTreeImpl) tree).isOverriding());
+    return Boolean.TRUE.equals(tree.isOverriding());
   }
 
   private boolean hasSemantic() {

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,9 +19,10 @@
  */
 package org.sonar.java.checks;
 
+import org.assertj.core.api.Fail;
 import org.junit.Test;
+import org.sonar.java.AnalysisException;
 import org.sonar.java.checks.verifier.JavaCheckVerifier;
-import org.sonar.squidbridge.api.AnalysisException;
 
 public class DisallowedClassCheckTest {
 
@@ -31,6 +32,14 @@ public class DisallowedClassCheckTest {
     visitor.disallowedClass = "java.lang.String";
     JavaCheckVerifier.verify("src/test/files/checks/DisallowedClassCheck.java", visitor);
     JavaCheckVerifier.verifyNoIssueWithoutSemantic("src/test/files/checks/DisallowedClassCheck.java", visitor);
+  }
+
+  @Test
+  public void check_annotation() {
+    DisallowedClassCheck visitor = new DisallowedClassCheck();
+    visitor.disallowedClass = "org.foo.MyAnnotation";
+    JavaCheckVerifier.verify("src/test/files/checks/DisallowedClassCheckAnnotation.java", visitor);
+    JavaCheckVerifier.verifyNoIssueWithoutSemantic("src/test/files/checks/DisallowedClassCheckAnnotation.java", visitor);
   }
 
   @Test
@@ -45,10 +54,11 @@ public class DisallowedClassCheckTest {
     DisallowedClassCheck visitor = new DisallowedClassCheck();
     // bad regex
     visitor.disallowedClass = "java.lang(";
-      try {
-          JavaCheckVerifier.verify("src/test/files/checks/DisallowedClassCheckRegex.java", visitor);
-      } catch (AnalysisException e) {
-          throw e.getCause();
-      }
+    try {
+      JavaCheckVerifier.verify("src/test/files/checks/DisallowedClassCheckRegex.java", visitor);
+      Fail.fail("Should have failed");
+    } catch (AnalysisException e) {
+      throw e.getCause();
+    }
   }
 }

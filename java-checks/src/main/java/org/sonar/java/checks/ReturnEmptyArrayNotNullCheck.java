@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,10 +19,9 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Lists;
 import org.sonar.check.Rule;
+import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.semantic.Type;
@@ -36,7 +35,10 @@ import org.sonar.plugins.java.api.tree.ReturnStatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
 import javax.annotation.Nullable;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Deque;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 
@@ -87,7 +89,13 @@ public class ReturnEmptyArrayNotNullCheck extends IssuableSubscriptionVisitor {
     "TreeSet",
     "Vector");
 
-  private final Deque<Returns> returnType = Lists.newLinkedList();
+  private static final List<String> REQUIRES_RETURN_NULL = Collections.singletonList(
+    "org.springframework.batch.item.ItemProcessor");
+
+  private static final MethodMatcher ITEM_PROCESSOR_PROCESS_METHOD = MethodMatcher.create()
+    .name("process").withAnyParameters();
+
+  private final Deque<Returns> returnType = new LinkedList<>();
 
   private enum Returns {
     ARRAY, COLLECTION, OTHERS;
@@ -119,18 +127,20 @@ public class ReturnEmptyArrayNotNullCheck extends IssuableSubscriptionVisitor {
   }
 
   @Override
-  public void scanFile(JavaFileScannerContext context) {
-    super.scanFile(context);
+  public void leaveFile(JavaFileScannerContext context) {
     returnType.clear();
   }
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD, Tree.Kind.CONSTRUCTOR, Tree.Kind.RETURN_STATEMENT, Tree.Kind.LAMBDA_EXPRESSION);
+    return Arrays.asList(Tree.Kind.METHOD, Tree.Kind.CONSTRUCTOR, Tree.Kind.RETURN_STATEMENT, Tree.Kind.LAMBDA_EXPRESSION);
   }
 
   @Override
   public void visitNode(Tree tree) {
+    if (!hasSemantic()) {
+      return;
+    }
     if (tree.is(Tree.Kind.METHOD)) {
       MethodTree methodTree = (MethodTree) tree;
       if (isAllowingNull(methodTree)) {
@@ -154,6 +164,9 @@ public class ReturnEmptyArrayNotNullCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public void leaveNode(Tree tree) {
+    if (!hasSemantic()) {
+      return;
+    }
     if (!tree.is(Tree.Kind.RETURN_STATEMENT)) {
       returnType.pop();
     }
@@ -171,6 +184,16 @@ public class ReturnEmptyArrayNotNullCheck extends IssuableSubscriptionVisitor {
         return true;
       }
     }
-    return false;
+    return requiresReturnNull(methodTree);
+  }
+
+  private static boolean requiresReturnNull(MethodTree methodTree) {
+    return isOverriding(methodTree)
+      && REQUIRES_RETURN_NULL.stream().anyMatch(methodTree.symbol().owner().type()::isSubtypeOf)
+      && ITEM_PROCESSOR_PROCESS_METHOD.matches(methodTree);
+  }
+
+  private static boolean isOverriding(MethodTree tree) {
+    return Boolean.TRUE.equals(tree.isOverriding());
   }
 }

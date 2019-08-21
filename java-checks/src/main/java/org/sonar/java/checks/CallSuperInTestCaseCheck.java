@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,8 +19,11 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import javax.annotation.Nullable;
 import org.sonar.check.Rule;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Symbol;
@@ -33,10 +36,6 @@ import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import javax.annotation.Nullable;
-import java.util.Collection;
-import java.util.List;
-
 @Rule(key = "S2188")
 public class CallSuperInTestCaseCheck extends IssuableSubscriptionVisitor {
 
@@ -44,11 +43,14 @@ public class CallSuperInTestCaseCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD);
+    return Collections.singletonList(Tree.Kind.METHOD);
   }
 
   @Override
   public void visitNode(Tree tree) {
+    if (!hasSemantic()) {
+      return;
+    }
     MethodTree methodTree = (MethodTree) tree;
     Symbol.MethodSymbol methodSymbol = methodTree.symbol();
     boolean isMethodInJunit3 = isWithinJunit3TestCase(methodSymbol) && isSetUpOrTearDown(methodSymbol);
@@ -59,7 +61,7 @@ public class CallSuperInTestCaseCheck extends IssuableSubscriptionVisitor {
 
   private static boolean requiresSuperCall(Symbol.MethodSymbol methodSymbol) {
     Type superType = methodSymbol.owner().type().symbol().superClass();
-    Collection<Symbol> symbols = Lists.newArrayList();
+    Collection<Symbol> symbols = new ArrayList<>();
     while (superType != null && !superType.is(JUNIT_FRAMEWORK_TEST_CASE) && symbols.isEmpty()) {
       symbols = superType.symbol().lookupSymbols(methodSymbol.name());
       superType = superType.symbol().superClass();

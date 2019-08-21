@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,12 +20,16 @@
 package org.sonar.java.se.checks;
 
 import com.google.common.collect.Lists;
-
+import java.text.MessageFormat;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.List;
+import java.util.stream.Stream;
+import javax.annotation.Nullable;
 import org.sonar.check.Rule;
 import org.sonar.java.cfg.CFG;
 import org.sonar.java.model.ExpressionUtils;
 import org.sonar.java.resolve.JavaSymbol;
-import org.sonar.java.resolve.Scope;
 import org.sonar.java.se.CheckerContext;
 import org.sonar.java.se.ProgramState;
 import org.sonar.java.se.constraint.ConstraintManager;
@@ -36,39 +40,44 @@ import org.sonar.plugins.java.api.semantic.SymbolMetadata;
 import org.sonar.plugins.java.api.tree.Arguments;
 import org.sonar.plugins.java.api.tree.AssignmentExpressionTree;
 import org.sonar.plugins.java.api.tree.ClassTree;
+import org.sonar.plugins.java.api.tree.ExpressionStatementTree;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
+import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.NewClassTree;
 import org.sonar.plugins.java.api.tree.ReturnStatementTree;
+import org.sonar.plugins.java.api.tree.StatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
-import javax.annotation.CheckForNull;
-import javax.annotation.Nullable;
-
-import java.text.MessageFormat;
-import java.util.List;
-import java.util.stream.Stream;
+import static org.sonar.java.se.NullableAnnotationUtils.nonNullAnnotation;
 
 @Rule(key = "S2637")
 public class NonNullSetToNullCheck extends SECheck {
 
-  private static final String[] ANNOTATIONS = {"javax.annotation.Nonnull", "javax.validation.constraints.NotNull",
-    "edu.umd.cs.findbugs.annotations.NonNull", "org.jetbrains.annotations.NotNull", "lombok.NonNull",
-    "android.support.annotation.NonNull"};
-
   private static final String[] JPA_ANNOTATIONS = {
     "javax.persistence.Entity",
-    "javax.persistence.Embeddable"
+    "javax.persistence.Embeddable",
+    "javax.persistence.MappedSuperclass"
   };
 
-  private MethodTree methodTree;
+  private Deque<MethodTree> methodTrees = new ArrayDeque<>();
 
   @Override
   public void init(MethodTree tree, CFG cfg) {
-    methodTree = tree;
+    methodTrees.push(tree);
+  }
+
+  @Override
+  public void checkEndOfExecution(CheckerContext context) {
+    methodTrees.pop();
+  }
+
+  @Override
+  public void interruptedExecution(CheckerContext context) {
+    methodTrees.pop();
   }
 
   @Override
@@ -87,14 +96,22 @@ public class NonNullSetToNullCheck extends SECheck {
 
   @Override
   public void checkEndOfExecutionPath(CheckerContext context, ConstraintManager constraintManager) {
-    if (methodTree.is(Tree.Kind.CONSTRUCTOR) && !isDefaultConstructorForJpa(methodTree)) {
+    MethodTree methodTree = methodTrees.peek();
+    if (methodTree.is(Tree.Kind.CONSTRUCTOR)
+      && !isDefaultConstructorForJpa(methodTree)
+      && !callsThisConstructor(methodTree)
+      && !exitingWithException(context)) {
       ClassTree classTree = (ClassTree) methodTree.parent();
       classTree.members().stream()
         .filter(m -> m.is(Tree.Kind.VARIABLE))
-        .map(m-> (VariableTree) m)
-        .filter(v->v.initializer() == null)
+        .map(m -> (VariableTree) m)
+        .filter(v -> v.initializer() == null)
         .forEach(v -> checkVariable(context, methodTree, v.symbol()));
     }
+  }
+
+  private static boolean exitingWithException(CheckerContext context) {
+    return context.getState().peekValue() instanceof SymbolicValue.ExceptionalSymbolicValue;
   }
 
   private static boolean isDefaultConstructorForJpa(MethodTree methodTree) {
@@ -107,11 +124,30 @@ public class NonNullSetToNullCheck extends SECheck {
     return Stream.of(JPA_ANNOTATIONS).anyMatch(symbolMetadata::isAnnotatedWith);
   }
 
+  private static boolean callsThisConstructor(MethodTree constructor) {
+    List<StatementTree> body = constructor.block().body();
+    if (body.isEmpty()) {
+      return false;
+    }
+    StatementTree firstStatement = body.get(0);
+    if (!firstStatement.is(Tree.Kind.EXPRESSION_STATEMENT)) {
+      return false;
+    }
+    ExpressionTree expression = ((ExpressionStatementTree) firstStatement).expression();
+    if (!expression.is(Tree.Kind.METHOD_INVOCATION)) {
+      return false;
+    }
+    ExpressionTree methodSelect = ((MethodInvocationTree) expression).methodSelect();
+    return ExpressionUtils.isThis(methodSelect);
+  }
+
   private void checkVariable(CheckerContext context, MethodTree tree, final Symbol symbol) {
     String nonNullAnnotation = nonNullAnnotation(symbol);
-    if (nonNullAnnotation != null && isUndefinedOrNull(context, symbol)) {
-      context.reportIssue(tree, this,
-        MessageFormat.format("\"{0}\" is marked \"{1}\" but is not initialized in this constructor.", symbol.name(), nonNullAnnotation));
+    if (nonNullAnnotation == null || symbol.isStatic()) {
+      return;
+    }
+    if (isUndefinedOrNull(context, symbol)) {
+      context.reportIssue(tree.simpleName(), this, MessageFormat.format("\"{0}\" is marked \"{1}\" but is not initialized in this constructor.", symbol.name(), nonNullAnnotation));
     }
   }
 
@@ -119,16 +155,6 @@ public class NonNullSetToNullCheck extends SECheck {
     ProgramState programState = context.getState();
     SymbolicValue value = programState.getValue(symbol);
     return value == null;
-  }
-
-  @CheckForNull
-  private static String nonNullAnnotation(Symbol javaSymbol) {
-    for (String annotation : ANNOTATIONS) {
-      if (javaSymbol.metadata().isAnnotatedWith(annotation)) {
-        return annotation;
-      }
-    }
-    return null;
   }
 
   private abstract class AbstractStatementVisitor extends CheckerTreeNodeVisitor {
@@ -154,15 +180,16 @@ public class NonNullSetToNullCheck extends SECheck {
     @Override
     public void visitAssignmentExpression(AssignmentExpressionTree tree) {
       if (ExpressionUtils.isSimpleAssignment(tree)) {
-        IdentifierTree variable = (IdentifierTree) ExpressionUtils.skipParentheses(tree.variable());
+        IdentifierTree variable = ExpressionUtils.extractIdentifier(tree);
         Symbol symbol = variable.symbol();
         String nonNullAnnotation = nonNullAnnotation(symbol);
-        if (nonNullAnnotation != null) {
-          SymbolicValue assignedValue = programState.peekValue();
-          ObjectConstraint constraint = programState.getConstraint(assignedValue, ObjectConstraint.class);
-          if (constraint != null && constraint.isNull()) {
-            reportIssue(tree, "\"{0}\" is marked \"{1}\" but is set to null.", symbol.name(), nonNullAnnotation);
-          }
+        if (nonNullAnnotation == null) {
+          return;
+        }
+        SymbolicValue assignedValue = programState.peekValue();
+        ObjectConstraint constraint = programState.getConstraint(assignedValue, ObjectConstraint.class);
+        if (constraint != null && constraint.isNull()) {
+          reportIssue(tree, "\"{0}\" is marked \"{1}\" but is set to null.", symbol.name(), nonNullAnnotation);
         }
       }
     }
@@ -173,9 +200,7 @@ public class NonNullSetToNullCheck extends SECheck {
       if (symbol.isMethodSymbol()) {
         int peekSize = syntaxTree.arguments().size();
         List<SymbolicValue> argumentValues = Lists.reverse(programState.peekValues(peekSize));
-        JavaSymbol.MethodJavaSymbol methodSymbol = (JavaSymbol.MethodJavaSymbol) symbol;
-        checkNullArguments(syntaxTree, methodSymbol.getParameters(),
-          argumentValues, "Parameter {0} to this constructor is marked \"{1}\" but null is passed.");
+        checkNullArguments(syntaxTree, (JavaSymbol.MethodJavaSymbol) symbol, argumentValues);
       }
     }
 
@@ -186,32 +211,33 @@ public class NonNullSetToNullCheck extends SECheck {
         Arguments arguments = syntaxTree.arguments();
         int peekSize = arguments.size() + 1;
         List<SymbolicValue> argumentValues = Lists.reverse(programState.peekValues(peekSize).subList(0, peekSize - 1));
-        JavaSymbol.MethodJavaSymbol methodSymbol = (JavaSymbol.MethodJavaSymbol) symbol;
-        checkNullArguments(syntaxTree, methodSymbol.getParameters(),
-          argumentValues, "Parameter {0} to this call is marked \"{1}\" but null is passed.");
+        ExpressionTree reportTree = syntaxTree.methodSelect();
+        if (reportTree.is(Tree.Kind.MEMBER_SELECT)) {
+          reportTree = ((MemberSelectExpressionTree) reportTree).identifier();
+        }
+        checkNullArguments(reportTree, (JavaSymbol.MethodJavaSymbol) symbol, argumentValues);
       }
     }
 
-    protected void checkNullArguments(Tree syntaxTree, @Nullable Scope parameters, List<SymbolicValue> argumentValues, String message) {
-      if (parameters != null) {
-        List<JavaSymbol> scopeSymbols = parameters.scopeSymbols();
-        int parametersToTest = argumentValues.size();
-        if (scopeSymbols.size() < parametersToTest) {
-          // The last parameter is a variable length argument: the non-null condition does not apply to its values
-          parametersToTest = scopeSymbols.size() - 1;
-        }
-        for (int i = 0; i < parametersToTest; i++) {
-          checkNullArgument(syntaxTree, message, scopeSymbols, argumentValues, i);
-        }
+    private void checkNullArguments(Tree syntaxTree, JavaSymbol.MethodJavaSymbol symbol, List<SymbolicValue> argumentValues) {
+      List<JavaSymbol> scopeSymbols = symbol.getParameters().scopeSymbols();
+      int parametersToTest = argumentValues.size();
+      if (scopeSymbols.size() < parametersToTest) {
+        // The last parameter is a variable length argument: the non-null condition does not apply to its values
+        parametersToTest = scopeSymbols.size() - 1;
+      }
+      for (int i = 0; i < parametersToTest; i++) {
+        checkNullArgument(syntaxTree, symbol, scopeSymbols.get(i), argumentValues.get(i), i);
       }
     }
 
-    protected void checkNullArgument(Tree syntaxTree, String message, List<JavaSymbol> scopeSymbols, List<SymbolicValue> argumentValues, int i) {
-      String nonNullAnnotation = nonNullAnnotation(scopeSymbols.get(i));
-      if (nonNullAnnotation != null) {
-        ObjectConstraint constraint = programState.getConstraint(argumentValues.get(i), ObjectConstraint.class);
-        if (constraint != null && constraint.isNull()) {
-          reportIssue(syntaxTree, message, Integer.valueOf(i + 1), nonNullAnnotation);
+    private void checkNullArgument(Tree syntaxTree, JavaSymbol.MethodJavaSymbol symbol, JavaSymbol argumentSymbol, SymbolicValue argumentValue, int index) {
+      ObjectConstraint constraint = programState.getConstraint(argumentValue, ObjectConstraint.class);
+      if (constraint != null && constraint.isNull()) {
+        String nonNullAnnotation = nonNullAnnotation(argumentSymbol);
+        if (nonNullAnnotation != null) {
+          String message = "Parameter {0} to this {1} is marked \"{2}\" but null could be passed.";
+          reportIssue(syntaxTree, message, index + 1, (symbol.isConstructor() ? "constructor" : "call"), nonNullAnnotation);
         }
       }
     }
@@ -233,9 +259,11 @@ public class NonNullSetToNullCheck extends SECheck {
           return;
         }
       }
-      MethodTree mTree = (MethodTree) parent;
-      String nonNullAnnotation = nonNullAnnotation(mTree.symbol());
-      if (nonNullAnnotation != null && isLocalExpression(tree.expression())) {
+      String nonNullAnnotation = nonNullAnnotation(((MethodTree) parent).symbol());
+      if (nonNullAnnotation == null) {
+        return;
+      }
+      if (isLocalExpression(tree.expression())) {
         checkReturnedValue(tree, nonNullAnnotation);
       }
     }

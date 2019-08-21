@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -23,6 +23,15 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
 import org.sonar.java.ast.api.JavaKeyword;
 import org.sonar.java.model.AbstractTypedTree;
 import org.sonar.java.model.expression.ConditionalExpressionTreeImpl;
@@ -34,14 +43,6 @@ import org.sonar.plugins.java.api.tree.LambdaExpressionTree;
 import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
 import org.sonar.plugins.java.api.tree.MethodReferenceTree;
 import org.sonar.plugins.java.api.tree.Tree;
-
-import javax.annotation.CheckForNull;
-import javax.annotation.Nullable;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Routines for name resolution.
@@ -70,7 +71,6 @@ public class Resolve {
     this.symbols = symbols;
     this.bytecodeCompleter = bytecodeCompleter;
     this.typeSubstitutionSolver = new TypeSubstitutionSolver(parametrizedTypeCache, symbols);
-    ParametrizedTypeJavaType.typeSubstitutionSolver = typeSubstitutionSolver;
   }
 
   @Nullable
@@ -124,22 +124,16 @@ public class Resolve {
    */
   private Resolution findField(Env env, JavaSymbol.TypeJavaSymbol site, String name, JavaSymbol.TypeJavaSymbol c) {
     Resolution bestSoFar = unresolved();
-    Resolution resolution = new Resolution();
     for (JavaSymbol symbol : c.members().lookup(name)) {
       if (symbol.kind == JavaSymbol.VAR) {
-        if(isAccessible(env, site, symbol)) {
-          resolution.symbol = symbol;
-          resolution.type = typeSubstitutionSolver.applySiteSubstitution(symbol.type, c.type);
-          return resolution;
-        } else {
-          return Resolution.resolution(new AccessErrorJavaSymbol(symbol, Symbols.unknownType));
-        }
+        return resolveField(env, site, c, symbol);
       }
     }
+    Resolution resolution;
     if (c.getSuperclass() != null) {
       resolution = findField(env, site, name, c.getSuperclass().symbol);
       if (resolution.symbol.kind < bestSoFar.symbol.kind) {
-        resolution.type = typeSubstitutionSolver.applySiteSubstitution(resolution.symbol.type, c.getSuperclass());
+        resolution.type = typeSubstitutionSolver.applySiteSubstitution(resolution.type(), c.getSuperclass());
         bestSoFar = resolution;
       }
     }
@@ -150,6 +144,18 @@ public class Resolve {
       }
     }
     return bestSoFar;
+  }
+
+  private Resolution resolveField(Env env, JavaSymbol.TypeJavaSymbol site, JavaSymbol.TypeJavaSymbol owner, JavaSymbol field) {
+    if (isAccessible(env, site, field)) {
+      Resolution resolution = Resolution.resolution(field);
+      if (field.type != null) {
+        // type may not have been resolved yet, but will be in 2nd pass
+        resolution.type = typeSubstitutionSolver.applySiteSubstitution(field.type, owner.type);
+      }
+      return resolution;
+    }
+    return Resolution.resolution(new AccessErrorJavaSymbol(field, Symbols.unknownType));
   }
 
   /**
@@ -404,27 +410,27 @@ public class Resolve {
   private Resolution findMethodInStaticImport(Env env, String name, List<JavaType> argTypes, List<JavaType> typeParamTypes) {
     Resolution bestSoFar = unresolved();
     JavaType enclosingType = env.enclosingClass.getType();
-    bestSoFar = lookupInScope(env, enclosingType, enclosingType, name, argTypes, typeParamTypes, false, env.namedImports, bestSoFar);
+    bestSoFar = lookupInScope(env, enclosingType, enclosingType, name, argTypes, typeParamTypes, false, false, env.namedImports, bestSoFar);
     if (bestSoFar.symbol.kind < JavaSymbol.ERRONEOUS) {
       // symbol exists
       return bestSoFar;
     }
-    bestSoFar = lookupInScope(env, enclosingType, enclosingType, name, argTypes, typeParamTypes, false, env.staticStarImports, bestSoFar);
+    bestSoFar = lookupInScope(env, enclosingType, enclosingType, name, argTypes, typeParamTypes, false, false, env.staticStarImports, bestSoFar);
     if (bestSoFar.symbol.kind < JavaSymbol.ERRONEOUS) {
       // symbol exists
       return bestSoFar;
     }
-    bestSoFar = lookupInScope(env, enclosingType, enclosingType, name, argTypes, typeParamTypes, true, env.namedImports, bestSoFar);
+    bestSoFar = lookupInScope(env, enclosingType, enclosingType, name, argTypes, typeParamTypes, true, true, env.namedImports, bestSoFar);
     if (bestSoFar.symbol.kind < JavaSymbol.ERRONEOUS) {
       // symbol exists
       return bestSoFar;
     }
-    bestSoFar = lookupInScope(env, enclosingType, enclosingType, name, argTypes, typeParamTypes, true, env.staticStarImports, bestSoFar);
+    bestSoFar = lookupInScope(env, enclosingType, enclosingType, name, argTypes, typeParamTypes, true, true, env.staticStarImports, bestSoFar);
     return bestSoFar;
   }
 
   public Resolution findMethod(Env env, JavaType site, String name, List<JavaType> argTypes) {
-    return findMethod(env, site, site, name, argTypes, ImmutableList.<JavaType>of());
+    return findMethod(env, site, site, name, argTypes, Collections.emptyList());
   }
 
   public Resolution findMethod(Env env, JavaType site, String name, List<JavaType> argTypes, List<JavaType> typeParams) {
@@ -432,12 +438,11 @@ public class Resolve {
   }
 
   private Resolution findMethod(Env env, JavaType callSite, JavaType site, String name, List<JavaType> argTypes, List<JavaType> typeParams) {
-    JavaType superclass = site.getSymbol().getSuperclass();
-
     // handle constructors
     if ("this".equals(name)) {
       return findConstructor(env, site, argTypes, typeParams);
     } else if ("super".equals(name)) {
+      JavaType superclass = site.getSuperType();
       if (superclass == null) {
         return unresolved();
       }
@@ -459,35 +464,52 @@ public class Resolve {
 
   private Resolution findMethodByStrictThenLooseInvocation(Env env, JavaType callSite, JavaType site, String name, List<JavaType> argTypes, List<JavaType> typeParams) {
     // JLS8 - §5.3 searching by strict invocation, then loose invocation
-    Resolution bestSoFar = findMethod(env, callSite, site, name, argTypes, typeParams, false);
-    if (bestSoFar.symbol.kind >= JavaSymbol.ERRONEOUS && !argTypes.isEmpty()) {
+    Resolution bestSoFar = findMethod(env, callSite, site, name, argTypes, typeParams, false, false);
+    // searching for a specific method applicable with fixed arity and loose invocation
+    if (!argTypes.isEmpty() && bestSoFar.symbol.kind >= JavaSymbol.ERRONEOUS) {
       // retry with loose invocation
-      bestSoFar = findMethod(env, callSite, site, name, argTypes, typeParams, true);
+      bestSoFar = findMethod(env, callSite, site, name, argTypes, typeParams, true, false);
+    }
+    if(bestSoFar.symbol.kind >= JavaSymbol.ERRONEOUS) {
+      // loose invocation and var arity
+      bestSoFar = findMethod(env, callSite, site, name, argTypes, typeParams, true, true);
     }
     return bestSoFar;
   }
 
-  private Resolution findMethod(Env env, JavaType callSite, JavaType site, String name, List<JavaType> argTypes, List<JavaType> typeParams, boolean looseInvocation) {
-    JavaType superclass = site.getSymbol().getSuperclass();
+  private Resolution findMethod(Env env, JavaType callSite, JavaType site, String name, List<JavaType> argTypes, List<JavaType> typeParams,
+                                boolean looseInvocation, boolean varArity) {
+    return findMethod(env, callSite, site, name, argTypes, typeParams, looseInvocation, varArity, new HashSet<>());
+  }
+
+  private Resolution findMethod(Env env, JavaType callSite, JavaType site, String name, List<JavaType> argTypes, List<JavaType> typeParams,
+                                boolean looseInvocation, boolean varArity, Set<JavaType> visited) {
+
     Resolution bestSoFar = unresolved();
-
-    bestSoFar = lookupInScope(env, callSite, site, name, argTypes, typeParams, looseInvocation, site.getSymbol().members(), bestSoFar);
+    if (!visited.add(site) || argTypes.stream().anyMatch(JavaType::isUnknown)) {
+      return bestSoFar;
+    }
+    bestSoFar = lookupInScope(env, callSite, site, name, argTypes, typeParams, looseInvocation, varArity, site.getSymbol().members(), bestSoFar);
+    if (name.equals(CONSTRUCTOR_NAME) && !site.symbol.isInterface()) {
+      // Interfaces do not have constructors, but for anonymous classes of interfaces, the Object constructor should be resolved
+      return bestSoFar;
+    }
+    JavaType superclass = site.getSuperType();
     // FIXME SONARJAVA-2096: interrupt exploration if the most specific method has already been found by strict invocation context
-
     //look in supertypes for more specialized method (overloading).
     if (superclass != null) {
-      Resolution method = findMethod(env, callSite, superclass, name, argTypes, typeParams, looseInvocation);
-      method.type = typeSubstitutionSolver.applySiteSubstitution(method.type, site, superclass);
+      Resolution method = findMethod(env, callSite, superclass, name, argTypes, typeParams, looseInvocation, varArity, visited);
       Resolution best = selectBest(env, superclass, callSite, argTypes, typeParams, method.symbol, bestSoFar, looseInvocation);
       if (best.symbol == method.symbol) {
+        method.type = typeSubstitutionSolver.applySiteSubstitution(method.type, site, superclass);
         bestSoFar = method;
       }
     }
     for (JavaType interfaceType : site.getSymbol().getInterfaces()) {
-      Resolution method = findMethod(env, callSite, interfaceType, name, argTypes, typeParams, looseInvocation);
-      method.type = typeSubstitutionSolver.applySiteSubstitution(method.type, site, interfaceType);
+      Resolution method = findMethod(env, callSite, interfaceType, name, argTypes, typeParams, looseInvocation, varArity, visited);
       Resolution best = selectBest(env, interfaceType, callSite, argTypes, typeParams, method.symbol, bestSoFar, looseInvocation);
       if (best.symbol == method.symbol) {
+        method.type = typeSubstitutionSolver.applySiteSubstitution(method.type, site, interfaceType);
         bestSoFar = method;
       }
     }
@@ -495,14 +517,18 @@ public class Resolve {
   }
 
   private Resolution lookupInScope(Env env, JavaType callSite, JavaType site, String name, List<JavaType> argTypes, List<JavaType> typeParams,
-                                   boolean autoboxing, Scope scope, Resolution bestFound) {
+                                   boolean looseInvocation, boolean varArity, Scope scope, Resolution bestFound) {
     Resolution bestSoFar = bestFound;
     // look in site members
     for (JavaSymbol symbol : scope.lookup(name)) {
       if (symbol.kind == JavaSymbol.MTH) {
-        Resolution best = selectBest(env, site, callSite, argTypes, typeParams, symbol, bestSoFar, autoboxing);
-        if (best.symbol == symbol) {
-          bestSoFar = best;
+        boolean diffArity = varArity || (!((JavaSymbol.MethodJavaSymbol) symbol).isVarArgs())
+          || (argTypes.size() == ((JavaSymbol.MethodJavaSymbol) symbol).parameterTypes().size() && argTypes.get(argTypes.size() -1 ).isArray());
+        if(diffArity) {
+          Resolution best = selectBest(env, site, callSite, argTypes, typeParams, symbol, bestSoFar, looseInvocation);
+          if (best.symbol == symbol) {
+            bestSoFar = best;
+          }
         }
       }
     }
@@ -534,7 +560,7 @@ public class Resolve {
       formals = typeSubstitutionSolver.applySiteSubstitutionToFormalParameters(formals, defSite);
     }
     formals = typeSubstitutionSolver.applySubstitutionToFormalParameters(formals, substitution);
-    if (!isArgumentsAcceptable(env, argTypes, formals, methodJavaSymbol.isVarArgs(), looseInvocation)) {
+    if (!isArgumentsAcceptable(argTypes, formals, methodJavaSymbol.isVarArgs(), looseInvocation)) {
       return bestSoFar;
     }
     // TODO ambiguity, errors, ...
@@ -543,7 +569,7 @@ public class Resolve {
       resolution.type = Symbols.unknownType;
       return resolution;
     }
-    JavaSymbol mostSpecific = selectMostSpecific(env, candidate, bestSoFar.symbol, argTypes, substitution, callSite);
+    JavaSymbol mostSpecific = selectMostSpecific(candidate, bestSoFar.symbol, argTypes, substitution, callSite);
     if (mostSpecific.isKind(JavaSymbol.AMBIGUOUS)) {
       // same signature, we keep the first symbol found (overrides the other one).
       return bestSoFar;
@@ -553,22 +579,25 @@ public class Resolve {
     JavaSymbol.MethodJavaSymbol mostSpecificMethod = (JavaSymbol.MethodJavaSymbol) mostSpecific;
     List<JavaType> thrownTypes = ((MethodJavaType) mostSpecific.type).thrown;
     JavaType returnType = ((MethodJavaType) mostSpecificMethod.type).resultType;
-    if(applicableWithUncheckedConversion(mostSpecificMethod, defSite, typeParams) && !mostSpecificMethod.isConstructor()) {
+    if((substitution.isUnchecked() || applicableWithUncheckedConversion(mostSpecificMethod, defSite, typeParams)) && !mostSpecificMethod.isConstructor()) {
       returnType = returnType.erasure();
       thrownTypes = erasure(thrownTypes);
     } else {
       returnType = typeSubstitutionSolver.getReturnType(returnType, defSite, callSite, substitution, mostSpecificMethod);
+      thrownTypes = thrownTypes.stream()
+        .map(t -> typeSubstitutionSolver.applySiteSubstitution(t, callSite))
+        .map(t -> typeSubstitutionSolver.applySubstitution(t, substitution))
+        .collect(Collectors.toList());
+    }
+    if (callSite.isArray() && candidate.name().equals("clone")) {
+      returnType = callSite;
     }
     resolution.type = new MethodJavaType(formals, returnType, thrownTypes, defSite.symbol);
     return resolution;
   }
 
   private static List<JavaType> erasure(List<JavaType> types) {
-    List<JavaType> erasedTypes = new ArrayList<>(types.size());
-    for (JavaType type : types) {
-      erasedTypes.add(type.erasure());
-    }
-    return erasedTypes;
+    return types.stream().map(JavaType::erasure).collect(Collectors.toList());
   }
 
   private static boolean applicableWithUncheckedConversion(JavaSymbol.MethodJavaSymbol candidate, JavaType callSite, List<JavaType> typeParams) {
@@ -589,7 +618,7 @@ public class Resolve {
    * @param argTypes types of arguments
    * @param formals  types of formal parameters of method
    */
-  private boolean isArgumentsAcceptable(Env env, List<JavaType> argTypes, List<JavaType> formals, boolean isVarArgs, boolean autoboxing) {
+  private boolean isArgumentsAcceptable(List<JavaType> argTypes, List<JavaType> formals, boolean isVarArgs, boolean autoboxing) {
     int argsSize = argTypes.size();
     int formalsSize = formals.size();
     int nbArgToCheck = argsSize - formalsSize;
@@ -601,29 +630,29 @@ public class Resolve {
       ArrayJavaType lastFormal = (ArrayJavaType) formals.get(formalsSize - 1);
       JavaType argType = argTypes.get(argsSize - i);
       // check type of element of array or if we invoke with an array that it is a compatible array type
-      if (!isAcceptableType(env, argType, lastFormal.elementType, autoboxing) && (nbArgToCheck != 1 || !isAcceptableType(env, argType, lastFormal, autoboxing))) {
+      if (!isAcceptableType(argType, lastFormal.elementType, autoboxing) && (nbArgToCheck != 1 || !isAcceptableType(argType, lastFormal, autoboxing))) {
         return false;
       }
     }
     for (int i = 0; i < argsSize - nbArgToCheck; i++) {
       JavaType arg = argTypes.get(i);
       JavaType formal = formals.get(i);
-      if (!isAcceptableType(env, arg, formal, autoboxing)) {
+      if (!isAcceptableType(arg, formal, autoboxing)) {
         return false;
       }
     }
     return true;
   }
 
-  private boolean isAcceptableType(Env env, JavaType arg, JavaType formal, boolean autoboxing) {
+  private boolean isAcceptableType(JavaType arg, JavaType formal, boolean autoboxing) {
     if(arg.isTagged(JavaType.DEFERRED)) {
-      return isAcceptableDeferredType(env, (DeferredType) arg, formal);
+      return isAcceptableDeferredType((DeferredType) arg, formal);
     }
     if(formal.isTagged(JavaType.TYPEVAR) && !arg.isTagged(JavaType.TYPEVAR)) {
       return subtypeOfTypeVar(arg, (TypeVariableJavaType) formal);
     }
     if (formal.isArray() && arg.isArray()) {
-      return isAcceptableType(env, ((ArrayJavaType) arg).elementType(), ((ArrayJavaType) formal).elementType(), autoboxing);
+      return isAcceptableType(((ArrayJavaType) arg).elementType(), ((ArrayJavaType) formal).elementType(), autoboxing);
     }
     if (arg.isParameterized() || formal.isParameterized() || isWilcardType(arg) || isWilcardType(formal)) {
       return callWithRawType(arg, formal) || types.isSubtype(arg, formal) || isAcceptableByAutoboxing(arg, formal.erasure());
@@ -632,22 +661,13 @@ public class Resolve {
     return types.isSubtype(arg.erasure(), formal.erasure()) || (autoboxing && isAcceptableByAutoboxing(arg, formal.erasure()));
   }
 
-  private boolean isAcceptableDeferredType(Env env, DeferredType arg, JavaType formal) {
+  private boolean isAcceptableDeferredType(DeferredType arg, JavaType formal) {
     AbstractTypedTree tree = arg.tree();
-    List<JavaType> samMethodArgs = findSamMethodArgs(formal);
-    if (tree.is(Tree.Kind.METHOD_REFERENCE)) {
-      return validMethodReference(env, (MethodReferenceTree) tree, samMethodArgs);
+    if(tree.is(Tree.Kind.METHOD_REFERENCE, Tree.Kind.LAMBDA_EXPRESSION) && (!formal.symbol.isFlag(Flags.INTERFACE) || !findSamMethodArgsRecursively(formal).isPresent())) {
+      return false;
     }
     // we accept all deferred type as we will resolve this later, but reject lambdas with incorrect arity
-    return !tree.is(Tree.Kind.LAMBDA_EXPRESSION) || ((LambdaExpressionTree) tree).parameters().size() == samMethodArgs.size();
-  }
-
-  private boolean validMethodReference(Env env, MethodReferenceTree tree, List<JavaType> samMethodArgs) {
-    if (isArrayConstructor(tree)) {
-      return true;
-    }
-    Resolution resolution = findMethodReference(env, samMethodArgs, tree);
-    return !resolution.symbol.isUnknown();
+    return !tree.is(Tree.Kind.LAMBDA_EXPRESSION) || ((LambdaExpressionTree) tree).parameters().size() == findSamMethodArgs(formal).size();
   }
 
   Resolution findMethodReference(Env env, List<JavaType> samMethodArgs, MethodReferenceTree methodRefTree) {
@@ -664,12 +684,6 @@ public class Resolve {
 
   private static String getMethodReferenceMethodName(String methodName) {
     return JavaKeyword.NEW.getValue().equals(methodName) ? CONSTRUCTOR_NAME : methodName;
-  }
-
-  private static boolean isArrayConstructor(MethodReferenceTree tree) {
-    JavaType expressionType = (JavaType) ((AbstractTypedTree) tree.expression()).symbolType();
-    String methodName = tree.method().name();
-    return expressionType.isArray() && JavaKeyword.NEW.getValue().equals(methodName);
   }
 
   private static boolean secondSearchRequired(Tree expression, JavaType expressionType, JavaSymbol symbol, List<JavaType> samMethodArgs) {
@@ -722,21 +736,33 @@ public class Resolve {
   /**
    * JLS7 15.12.2.5. Choosing the Most Specific Method
    */
-  private JavaSymbol selectMostSpecific(Env env, JavaSymbol m1, JavaSymbol m2, List<JavaType> argTypes, TypeSubstitution m1Substitution, JavaType callSite) {
+  private JavaSymbol selectMostSpecific(JavaSymbol m1, JavaSymbol m2, List<JavaType> argTypes, TypeSubstitution m1Substitution, JavaType callSite) {
     // FIXME get rig of null check
     if (m2.type == null || !m2.isKind(JavaSymbol.MTH)) {
       return m1;
     }
+
+    JavaSymbol.MethodJavaSymbol m1MethodSymbol = (JavaSymbol.MethodJavaSymbol) m1;
+    JavaSymbol.MethodJavaSymbol m2MethodSymbol = (JavaSymbol.MethodJavaSymbol) m2;
+
     TypeSubstitution m2Substitution = null;
-    if (((JavaSymbol.MethodJavaSymbol) m2).isParametrized()) {
-      m2Substitution = typeSubstitutionSolver.getTypeSubstitution((JavaSymbol.MethodJavaSymbol) m2, callSite, ImmutableList.of(), argTypes);
+    boolean m1IsGeneric = m1MethodSymbol.isParametrized();
+    boolean m2IsGeneric = m2MethodSymbol.isParametrized();
+    if (m2IsGeneric) {
+      m2Substitution = typeSubstitutionSolver.getTypeSubstitution(m2MethodSymbol, callSite, Collections.emptyList(), argTypes);
     }
     if (m2Substitution == null) {
       m2Substitution = new TypeSubstitution();
     }
-    boolean m1SignatureMoreSpecific = isSignatureMoreSpecific(env, m1, m2, argTypes, m1Substitution, m2Substitution);
-    boolean m2SignatureMoreSpecific = isSignatureMoreSpecific(env, m2, m1, argTypes, m1Substitution, m2Substitution);
+    boolean m1SignatureMoreSpecific = isSignatureMoreSpecific(m1MethodSymbol, m2MethodSymbol, argTypes, m1Substitution, m2Substitution);
+    boolean m2SignatureMoreSpecific = isSignatureMoreSpecific(m2MethodSymbol, m1MethodSymbol, argTypes, m2Substitution, m1Substitution);
     if (m1SignatureMoreSpecific && m2SignatureMoreSpecific) {
+      // JLS8 18.5.4 naive implementation of most specific when inferring of parametric method is involved
+      if(!m1IsGeneric && m2IsGeneric) {
+        return m1;
+      } else if(m1IsGeneric && !m2IsGeneric) {
+        return m2;
+      }
       return new AmbiguityErrorJavaSymbol();
     } else if (m1SignatureMoreSpecific) {
       return m1;
@@ -749,12 +775,12 @@ public class Resolve {
   /**
    * @return true, if signature of m1 is more specific than signature of m2
    */
-  private boolean isSignatureMoreSpecific(Env env, JavaSymbol m1, JavaSymbol m2, List<JavaType> argTypes, TypeSubstitution m1Substitution, TypeSubstitution m2Substitution) {
+  private boolean isSignatureMoreSpecific(JavaSymbol.MethodJavaSymbol m1, JavaSymbol.MethodJavaSymbol m2, List<JavaType> argTypes,
+                                          TypeSubstitution m1Substitution, TypeSubstitution m2Substitution) {
     List<JavaType> m1ArgTypes = ((MethodJavaType) m1.type).argTypes;
     List<JavaType> m2ArgTypes = ((MethodJavaType) m2.type).argTypes;
-    JavaSymbol.MethodJavaSymbol methodJavaSymbol = (JavaSymbol.MethodJavaSymbol) m1;
-    boolean m1VarArity = methodJavaSymbol.isVarArgs();
-    boolean m2VarArity = ((JavaSymbol.MethodJavaSymbol) m2).isVarArgs();
+    boolean m1VarArity = m1.isVarArgs();
+    boolean m2VarArity = m2.isVarArgs();
     if (m1VarArity != m2VarArity) {
       // last arg is an array
       boolean lastArgIsArray = !argTypes.isEmpty() && argTypes.get(argTypes.size() -1).isArray() && (argTypes.size() == m2ArgTypes.size() || argTypes.size() == m1ArgTypes.size());
@@ -767,9 +793,16 @@ public class Resolve {
     if(!hasCompatibleArity(m1ArgTypes.size(), m2ArgTypes.size(), m2VarArity)) {
       return false;
     }
-    m1ArgTypes = typeSubstitutionSolver.applySubstitutionToFormalParameters(m1ArgTypes, m1Substitution);
-    m2ArgTypes = typeSubstitutionSolver.applySubstitutionToFormalParameters(m2ArgTypes, m2Substitution);
-    return isArgumentsAcceptable(env, m1ArgTypes, m2ArgTypes, m2VarArity, false);
+    List<JavaType> m1SubstitutedArgTypes = typeSubstitutionSolver.applySubstitutionToFormalParameters(m1ArgTypes, m1Substitution);
+    List<JavaType> m2SubstitutedArgTypes = typeSubstitutionSolver.applySubstitutionToFormalParameters(m2ArgTypes, m2Substitution);
+    if (m1SubstitutedArgTypes.equals(m2SubstitutedArgTypes)
+      // approximation for generic methods
+      || (m1.isParametrized() && m2.isParametrized() && erasure(m1SubstitutedArgTypes).equals(erasure(m2SubstitutedArgTypes)))) {
+      // Same types once substituted, so we should select the most specific one before substitution.
+      // i.e: 'T[]' is more specific than 'T', or 'List<T>' is more specific than 'T'
+      return isArgumentsAcceptable(m1ArgTypes, m2ArgTypes, m2VarArity, true);
+    }
+    return isArgumentsAcceptable(m1SubstitutedArgTypes, m2SubstitutedArgTypes, m2VarArity, true);
   }
 
   private static List<JavaType> expandVarArgsToFitSize(List<JavaType> m1ArgTypes, int size) {
@@ -839,7 +872,7 @@ public class Resolve {
     if (c == base) {
       // same class
       return true;
-    } else if ((base.flags() & Flags.INTERFACE) != 0) {
+    } else if (Flags.isFlagged(base.flags(), Flags.INTERFACE)) {
       // check if class implements base
       for (JavaType interfaceType : c.getInterfaces()) {
         if (isSubClass(interfaceType.symbol, base)) {
@@ -1005,22 +1038,36 @@ public class Resolve {
   }
 
   public Optional<JavaSymbol.MethodJavaSymbol> getSamMethod(JavaType lambdaType) {
-    for (Symbol member : lambdaType.symbol().memberSymbols()) {
-      if (isAbstractMethod(member)) {
-        JavaSymbol.MethodJavaSymbol methodJavaSymbol = (JavaSymbol.MethodJavaSymbol) member;
-        boolean isObjectMethod = isObjectMethod(methodJavaSymbol);
-        if(!isObjectMethod) {
-          return Optional.of(methodJavaSymbol);
-        }
-      }
+    List<JavaSymbol.MethodJavaSymbol> methodSymbols = abstractMethodsOfType(lambdaType);
+    if (methodSymbols.size() > 1) {
+      return Optional.empty();
     }
-    for (ClassJavaType type : lambdaType.symbol.superTypes()) {
-      Optional<JavaSymbol.MethodJavaSymbol> samMethod = getSamMethod(type);
-      if (samMethod.isPresent()) {
-        return samMethod;
+    if (methodSymbols.size() == 1) {
+      JavaSymbol.MethodJavaSymbol override = methodSymbols.get(0).overriddenSymbol();
+      Optional<JavaSymbol.MethodJavaSymbol> otherAbstractMethod = lambdaType.symbol.superTypes()
+        .stream()
+        .filter(t -> t.symbol().isInterface())
+        .flatMap(t -> abstractMethodsOfType(t).stream())
+        .filter(m -> override == null || !override.equals(m))
+        .findFirst();
+      if (otherAbstractMethod.isPresent()) {
+        return Optional.empty();
+      } else {
+        return Optional.of(methodSymbols.get(0));
       }
+    } else {
+      // FIXME if list of supertypes define multiple abstract methods we might end up with a wrong samMethod from a non-functional interface
+      return lambdaType.symbol.superTypes()
+        .stream()
+        .flatMap(t -> abstractMethodsOfType(t).stream())
+        .findFirst();
     }
-    return Optional.empty();
+  }
+
+  private List<JavaSymbol.MethodJavaSymbol> abstractMethodsOfType(JavaType javaType) {
+    return javaType.symbol().memberSymbols().stream().filter(Resolve::isAbstractMethod).map(JavaSymbol.MethodJavaSymbol.class::cast)
+      .filter(m -> !isObjectMethod(m))
+      .collect(Collectors.toList());
   }
 
   private boolean isObjectMethod(JavaSymbol.MethodJavaSymbol methodJavaSymbol) {

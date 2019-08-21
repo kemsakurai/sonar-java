@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,9 +19,9 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import org.apache.commons.lang.StringUtils;
 import org.sonar.check.Rule;
 import org.sonar.java.RspecKey;
@@ -29,11 +29,7 @@ import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.tree.SyntaxTrivia;
 import org.sonar.plugins.java.api.tree.Tree;
-import org.sonar.squidbridge.recognizer.CodeRecognizer;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import org.sonarsource.analyzer.recognizers.CodeRecognizer;
 
 @Rule(key = "CommentedOutCodeLine")
 @RspecKey("S125")
@@ -45,7 +41,7 @@ public class CommentedOutCodeLineCheck extends IssuableSubscriptionVisitor {
 
   private final CodeRecognizer codeRecognizer;
 
-  private List<SyntaxTrivia> comments;
+  private List<SyntaxTrivia> comments = new ArrayList<>();
 
   public CommentedOutCodeLineCheck() {
     codeRecognizer = new CodeRecognizer(THRESHOLD, new JavaFootprint());
@@ -53,14 +49,7 @@ public class CommentedOutCodeLineCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.TRIVIA);
-  }
-
-  @Override
-  public void scanFile(JavaFileScannerContext context) {
-    comments = Lists.newArrayList();
-    super.scanFile(context);
-    leaveFile();
+    return Collections.singletonList(Tree.Kind.TRIVIA);
   }
 
   @Override
@@ -82,8 +71,9 @@ public class CommentedOutCodeLineCheck extends IssuableSubscriptionVisitor {
   /**
    * Detects commented-out code in remaining candidates.
    */
-  private void leaveFile() {
-    List<Integer> commentedOutCodeLines = Lists.newArrayList();
+  @Override
+  public void leaveFile(JavaFileScannerContext context) {
+    List<Integer> commentedOutCodeLines = new ArrayList<>();
     for (SyntaxTrivia syntaxTrivia : comments) {
       commentedOutCodeLines.addAll(handleCommentsForTrivia(syntaxTrivia));
     }
@@ -98,14 +88,15 @@ public class CommentedOutCodeLineCheck extends IssuableSubscriptionVisitor {
       prev = commentedOutCodeLine;
     }
 
-    comments = null;
+    comments.clear();
   }
 
   private List<Integer> handleCommentsForTrivia(SyntaxTrivia syntaxTrivia) {
     List<Integer> commentedOutCodeLines = new ArrayList<>();
     String[] lines = syntaxTrivia.comment().split("\r\n?|\n");
     for (int i = 0; i < lines.length; i++) {
-      if (codeRecognizer.isLineOfCode(lines[i])) {
+      String line = lines[i];
+      if (codeRecognizer.isLineOfCode(line) && !isJavadocLink(line)) {
         // Mark all remaining lines from this comment as a commented out lines of code
         for (int j = i; j < lines.length; j++) {
           commentedOutCodeLines.add(syntaxTrivia.startLine() + j);
@@ -114,6 +105,10 @@ public class CommentedOutCodeLineCheck extends IssuableSubscriptionVisitor {
       }
     }
     return commentedOutCodeLines;
+  }
+
+  private static boolean isJavadocLink(String line) {
+    return line.contains("{@link");
   }
 
   /**

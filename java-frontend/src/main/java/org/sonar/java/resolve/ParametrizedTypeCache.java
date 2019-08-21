@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,25 +19,25 @@
  */
 package org.sonar.java.resolve;
 
-import com.google.common.collect.Maps;
-
 import org.sonar.java.resolve.WildCardType.BoundType;
 
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class ParametrizedTypeCache {
 
-  private Map<JavaSymbol, Map<TypeSubstitution, ParametrizedTypeJavaType>> typeCache = Maps.newHashMap();
-  private Map<JavaType, Map<WildCardType.BoundType, WildCardType>> wildcardCache = Maps.newHashMap();
+  private Map<JavaSymbol, Map<TypeSubstitution, ParametrizedTypeJavaType>> typeCache = new HashMap<>();
+  private Map<JavaType, Map<WildCardType.BoundType, WildCardType>> wildcardCache = new HashMap<>();
+  private TypeSubstitutionSolver typeSubstitutionSolver;
 
   public JavaType getParametrizedTypeType(JavaSymbol.TypeJavaSymbol symbol, TypeSubstitution typeSubstitution) {
     if (symbol.getType().isUnknown()) {
       return symbol.getType();
     }
     if (typeCache.get(symbol) == null) {
-      Map<TypeSubstitution, ParametrizedTypeJavaType> map = Maps.newHashMap();
+      Map<TypeSubstitution, ParametrizedTypeJavaType> map = new HashMap<>();
       typeCache.put(symbol, map);
     }
     TypeSubstitution newSubstitution = typeSubstitution;
@@ -45,7 +45,7 @@ public class ParametrizedTypeCache {
       newSubstitution = identitySubstitution(symbol.typeVariableTypes);
     }
     if (typeCache.get(symbol).get(newSubstitution) == null) {
-      typeCache.get(symbol).put(newSubstitution, new ParametrizedTypeJavaType(symbol, newSubstitution));
+      typeCache.get(symbol).put(newSubstitution, new ParametrizedTypeJavaType(symbol, newSubstitution, typeSubstitutionSolver));
     }
     return typeCache.get(symbol).get(newSubstitution);
   }
@@ -59,17 +59,11 @@ public class ParametrizedTypeCache {
   }
 
   public JavaType getWildcardType(JavaType bound, BoundType boundType) {
-    Map<WildCardType.BoundType, WildCardType> map = wildcardCache.get(bound);
-    if (map == null) {
-      map = new EnumMap<>(WildCardType.BoundType.class);
-      wildcardCache.put(bound, map);
-    }
-    WildCardType wildcardType = map.get(boundType);
-    if (wildcardType == null) {
-      wildcardType = new WildCardType(bound, boundType);
-      map.put(boundType, wildcardType);
-    }
-    return wildcardType;
+    Map<WildCardType.BoundType, WildCardType> map = wildcardCache.computeIfAbsent(bound, b -> new EnumMap<>(WildCardType.BoundType.class));
+    return map.computeIfAbsent(boundType, bt -> new WildCardType(bound, bt));
   }
 
+  public void setTypeSubstitutionSolver(TypeSubstitutionSolver typeSubstitutionSolver) {
+    this.typeSubstitutionSolver = typeSubstitutionSolver;
+  }
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,24 +19,10 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Objects;
-import java.util.Set;
-import javax.annotation.CheckForNull;
 import org.sonar.check.Rule;
 import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.java.matcher.MethodMatcherCollection;
 import org.sonar.java.matcher.TypeCriteria;
-import org.sonar.java.resolve.Flags;
-import org.sonar.java.resolve.JavaSymbol;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Symbol.MethodSymbol;
@@ -45,6 +31,18 @@ import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
+
+import javax.annotation.CheckForNull;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 
 @Rule(key = "S1711")
 public class StandardFunctionalInterfaceCheck extends IssuableSubscriptionVisitor {
@@ -123,15 +121,18 @@ public class StandardFunctionalInterfaceCheck extends IssuableSubscriptionVisito
 
   private static MethodMatcher methodMatcherWithName(String name, String... parameters) {
     MethodMatcher methodMatcher = MethodMatcher.create().typeDefinition(TypeCriteria.anyType()).name(name);
+    if(parameters.length == 0) {
+      methodMatcher.withoutParameter();
+    }
     for (String parameter : parameters) {
-      methodMatcher = methodMatcher.addParameter(parameter);
+      methodMatcher.addParameter(parameter);
     }
     return methodMatcher;
   }
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.INTERFACE);
+    return Collections.singletonList(Tree.Kind.INTERFACE);
   }
 
   @Override
@@ -169,7 +170,7 @@ public class StandardFunctionalInterfaceCheck extends IssuableSubscriptionVisito
     return interfaceTree.symbol().memberSymbols().stream()
         .filter(Symbol::isMethodSymbol)
         .map(MethodSymbol.class::cast)
-        .filter(StandardFunctionalInterfaceCheck::isNonStaticNonDefaultMethod)
+        .filter(MethodSymbol::isAbstract)
         .filter(StandardFunctionalInterfaceCheck::isNotObjectMethod)
         .findFirst();
   }
@@ -194,17 +195,9 @@ public class StandardFunctionalInterfaceCheck extends IssuableSubscriptionVisito
     }
   }
 
-  private static boolean isNonStaticNonDefaultMethod(MethodSymbol methodSymbol) {
-    return !methodSymbol.isStatic() && !isDefault(methodSymbol);
-  }
-
   private static boolean isNotObjectMethod(MethodSymbol method) {
     MethodTree declaration = method.declaration();
     return declaration == null || !OBJECT_METHODS.anyMatch(declaration);
-  }
-
-  private static boolean isDefault(MethodSymbol methodSymbol) {
-    return (((JavaSymbol.MethodJavaSymbol) methodSymbol).flags() & Flags.DEFAULT) != 0;
   }
 
   private static class FunctionalInterface {

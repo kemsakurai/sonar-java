@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,35 +21,37 @@ package org.sonar.java.se;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
-
+import java.util.List;
 import org.sonar.api.utils.log.Logger;
 import org.sonar.api.utils.log.Loggers;
 import org.sonar.java.ast.visitors.SubscriptionVisitor;
 import org.sonar.java.resolve.Flags;
 import org.sonar.java.resolve.JavaSymbol;
 import org.sonar.java.resolve.SemanticModel;
-import org.sonar.java.se.symbolicvalues.BinaryRelation;
 import org.sonar.java.se.xproc.BehaviorCache;
 import org.sonar.java.se.xproc.MethodBehavior;
 import org.sonar.plugins.java.api.JavaFileScanner;
+import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
-
-import javax.annotation.CheckForNull;
-
-import java.util.List;
 
 public class SymbolicExecutionVisitor extends SubscriptionVisitor {
   private static final Logger LOG = Loggers.get(SymbolicExecutionVisitor.class);
 
   @VisibleForTesting
-  public final BehaviorCache behaviorCache;
+  public BehaviorCache behaviorCache;
   private final ExplodedGraphWalker.ExplodedGraphWalkerFactory egwFactory;
 
-  public SymbolicExecutionVisitor(List<JavaFileScanner> executableScanners) {
-    behaviorCache = new BehaviorCache(this);
+  public SymbolicExecutionVisitor(List<JavaFileScanner> executableScanners, BehaviorCache behaviorCache) {
     egwFactory = new ExplodedGraphWalker.ExplodedGraphWalkerFactory(executableScanners);
+    this.behaviorCache = behaviorCache;
+  }
+
+  @Override
+  public void scanFile(JavaFileScannerContext context) {
+    behaviorCache.setFileContext(this, (SemanticModel) context.getSemanticModel());
+    super.scanFile(context);
   }
 
   @Override
@@ -62,28 +64,36 @@ public class SymbolicExecutionVisitor extends SubscriptionVisitor {
     execute((MethodTree) tree);
   }
 
-  @CheckForNull
-  public MethodBehavior execute(MethodTree methodTree) {
+  public void execute(MethodTree methodTree) {
+    ExplodedGraphWalker walker = getWalker();
     try {
       Symbol.MethodSymbol methodSymbol = methodTree.symbol();
-      ExplodedGraphWalker walker = egwFactory.createWalker(behaviorCache, (SemanticModel) context.getSemanticModel());
       if (methodCanNotBeOverriden(methodSymbol)) {
-        MethodBehavior methodBehavior = new MethodBehavior(methodSymbol);
-        behaviorCache.add(methodSymbol, methodBehavior);
-        methodBehavior = walker.visitMethod(methodTree, methodBehavior);
-        methodBehavior.completed();
-        return methodBehavior;
+        MethodBehavior methodBehavior = behaviorCache.methodBehaviorForSymbol(methodSymbol);
+        if (!methodBehavior.isVisited()) {
+          methodBehavior = walker.visitMethod(methodTree, methodBehavior);
+          methodBehavior.completed();
+        }
       } else {
-        return walker.visitMethod(methodTree);
+        walker.visitMethod(methodTree);
       }
-    } catch (ExplodedGraphWalker.MaximumStepsReachedException | ExplodedGraphWalker.ExplodedGraphTooBigException | BinaryRelation.TransitiveRelationExceededException exception) {
+    } catch (ExplodedGraphWalker.MaximumStepsReachedException
+      | ExplodedGraphWalker.ExplodedGraphTooBigException
+      | ExplodedGraphWalker.MaximumStartingStatesException exception) {
       LOG.debug("Could not complete symbolic execution: ", exception);
+      if (walker.methodBehavior != null) {
+        walker.methodBehavior.visited();
+      }
     }
-    return null;
+  }
+
+  @VisibleForTesting
+  protected ExplodedGraphWalker getWalker() {
+    return egwFactory.createWalker(behaviorCache, (SemanticModel) context.getSemanticModel());
   }
 
   public static boolean methodCanNotBeOverriden(Symbol.MethodSymbol methodSymbol) {
-    if ((((JavaSymbol.MethodJavaSymbol) methodSymbol).flags() & Flags.NATIVE) != 0) {
+    if (Flags.isFlagged(((JavaSymbol.MethodJavaSymbol) methodSymbol).flags(), Flags.NATIVE)) {
       return false;
     }
     return !methodSymbol.isAbstract() &&

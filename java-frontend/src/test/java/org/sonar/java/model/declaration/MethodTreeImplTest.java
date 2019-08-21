@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,24 +19,24 @@
  */
 package org.sonar.java.model.declaration;
 
-import com.google.common.collect.Lists;
 import com.sonar.sslr.api.typed.ActionParser;
+import java.util.Collections;
 import org.junit.Test;
 import org.sonar.java.ast.parser.JavaParser;
+import org.sonar.java.bytecode.loader.SquidClassLoader;
 import org.sonar.java.resolve.Flags;
 import org.sonar.java.resolve.JavaSymbol;
 import org.sonar.java.resolve.SemanticModel;
+import org.sonar.plugins.java.api.cfg.ControlFlowGraph;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.CompilationUnitTree;
-
-import java.io.File;
-import java.nio.charset.StandardCharsets;
+import org.sonar.plugins.java.api.tree.MethodTree;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class MethodTreeImplTest {
 
-  private final ActionParser p = JavaParser.createParser(StandardCharsets.UTF_8);
+  private final ActionParser p = JavaParser.createParser();
 
   @Test
   public void override_without_annotation_should_be_detected() {
@@ -118,6 +118,18 @@ public class MethodTreeImplTest {
   }
 
   @Test
+  public void compute_cfg() {
+    MethodTree methodWithoutBody = getUniqueMethod("interface A { void foo(int arg) throws Exception; }");
+    ControlFlowGraph cfg = methodWithoutBody.cfg();
+    assertThat(cfg).isNull();
+
+    MethodTree method = getUniqueMethod("class A { void foo(int arg) throws Exception { }}");
+    cfg = method.cfg();
+    assertThat(cfg).isNotNull();
+    assertThat(method.cfg()).isSameAs(cfg);
+  }
+
+  @Test
   public void has_all_syntax_token() {
     MethodTreeImpl method = getUniqueMethod("class A { public void foo(int arg) throws Exception {} }");
     assertThat(method.openParenToken()).isNotNull();
@@ -130,51 +142,6 @@ public class MethodTreeImplTest {
     assertThat(method.closeParenToken()).isNotNull();
     assertThat(method.semicolonToken()).isNotNull();
     assertThat(method.throwsToken()).isNull();
-  }
-
-  @Test
-  public void is_main_method() throws Exception {
-    assertThat(getUniqueMethod("class A { public static void main(String[] args){} }").isMainMethod()).isTrue();
-    assertThat(getUniqueMethod("class A { public static void main(String... args){} }").isMainMethod()).isTrue();
-    assertThat(getUniqueMethod("class A { public void main(String[] args){} }").isMainMethod()).isFalse();
-    assertThat(getUniqueMethod("class A { static void main(String[] args){} }").isMainMethod()).isFalse();
-    assertThat(getUniqueMethod("class A { public static void amain(String[] args){} }").isMainMethod()).isFalse();
-    assertThat(getUniqueMethod("class A { public static void main(String args){} }").isMainMethod()).isFalse();
-    assertThat(getUniqueMethod("class A { public static int main(String[] args){} }").isMainMethod()).isFalse();
-    assertThat(getUniqueMethod("class A { public static void main(String[] args, String[] second){} }").isMainMethod()).isFalse();
-  }
-
-  @Test
-  public void is_equals_method() throws Exception {
-    assertThat(getUniqueMethod("class A { public boolean equals(Object o){} }").isEqualsMethod()).isTrue();
-    assertThat(getUniqueMethod("class A { private boolean equals(Object o){} }").isEqualsMethod()).isFalse();
-    assertThat(getUniqueMethod("class A { public static boolean equals(Object o){} }").isEqualsMethod()).isFalse();
-    assertThat(getUniqueMethod("class A { public boolean equal(Object o){} }").isEqualsMethod()).isFalse();
-    assertThat(getUniqueMethod("class A { public boolean equals(Object o, int a){} }").isEqualsMethod()).isFalse();
-    assertThat(getUniqueMethod("class A { public boolean equals(int a){} }").isEqualsMethod()).isFalse();
-    assertThat(getUniqueMethod("class equals { public equals(Object o){} }").isEqualsMethod()).isFalse();
-    assertThat(getUniqueMethod("interface I { public abstract boolean equals(Object o); }").isEqualsMethod()).isTrue();
-  }
-
-  @Test
-  public void is_hashcode_method() throws Exception {
-    assertThat(getUniqueMethod("class A { public int hashCode(){} }").isHashCodeMethod()).isTrue();
-    assertThat(getUniqueMethod("class A { public static int hashCode(){} }").isHashCodeMethod()).isFalse();
-    assertThat(getUniqueMethod("class A { private int hashCode(){} }").isHashCodeMethod()).isFalse();
-    assertThat(getUniqueMethod("class A { public int hashcode(){} }").isHashCodeMethod()).isFalse();
-    assertThat(getUniqueMethod("class A { public boolean hashCode(){} }").isHashCodeMethod()).isFalse();
-    assertThat(getUniqueMethod("class A { public int hashCode(int a){} }").isHashCodeMethod()).isFalse();
-  }
-
-  @Test
-  public void is_toString_method() throws Exception {
-    assertThat(getUniqueMethod("class A { public String toString(){} }").isToStringMethod()).isTrue();
-    assertThat(getUniqueMethod("class A { public java.lang.String toString(){} }").isToStringMethod()).isTrue();
-    assertThat(getUniqueMethod("class A { public static String toString(){} }").isToStringMethod()).isFalse();
-    assertThat(getUniqueMethod("class A { private String toString(){} }").isToStringMethod()).isFalse();
-    assertThat(getUniqueMethod("class A { public String tostring(){} }").isToStringMethod()).isFalse();
-    assertThat(getUniqueMethod("class A { public int toString(){} }").isToStringMethod()).isFalse();
-    assertThat(getUniqueMethod("class A { public String toString(String foo){} }").isToStringMethod()).isFalse();
   }
 
   @Test
@@ -192,7 +159,7 @@ public class MethodTreeImplTest {
 
   private CompilationUnitTree createTree(String code) {
     CompilationUnitTree compilationUnitTree = (CompilationUnitTree) p.parse(code);
-    SemanticModel.createFor(compilationUnitTree, Lists.<File>newArrayList());
+    SemanticModel.createFor(compilationUnitTree, new SquidClassLoader(Collections.emptyList()));
     return compilationUnitTree;
   }
 

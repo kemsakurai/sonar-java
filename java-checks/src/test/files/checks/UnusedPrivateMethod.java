@@ -138,3 +138,61 @@ class ReturnTypeInference {
     foo(l.stream().sorted().collect(Collectors.toList()));
   }
 }
+
+class KillTheNoiseUnresolvedMethodCall {
+
+  static class A {
+    private A(int i) {}  // Compliant - unresolved constructor invocation
+  }
+
+  void foo(Object o, java.util.List<Object> objects) {
+    unresolvedMethod(o); // unresolved
+
+    A a;
+    a = new A(o); // unresolved
+    a = new org.sonar.java.checks.targets.KillTheNoiseUnresolvedMethodCall.A(o); // unresolved
+    A[] as = new A[0];
+
+    new Unknown<String>(o); // unresolved
+
+    objects.stream().forEach(this::unresolvedMethodRef); // unresolved
+    objects.stream().forEach(this::methodRef); // resolved
+  }
+
+  private void unresolvedMethod(int i) {} // Compliant - method with the same name not resolved
+  private void unresolvedMethodRef(int i) {} // Compliant - method ref with the same name not resolved
+  private void methodRef(Object o) {} // Compliant
+
+  static class Member {
+    private Member(String firstName, String lastName, String memberID) { // Compliant
+    }
+
+    public static LastNameBuilder member(String firstName) {
+      return lastName -> memberID -> new Member(firstName, lastName, memberID); // constructor not resolved
+    }
+
+    @FunctionalInterface
+    public interface LastNameBuilder {
+      MemberIDBuilder lastName(String lastName);
+    }
+
+    @FunctionalInterface
+    public interface MemberIDBuilder {
+      Member memberID(String memberID);
+    }
+  }
+}
+public class Bar {
+  public void print() {
+    java.util.List<String> list = java.util.Arrays.asList("x", "y", "z");
+    java.util.List<Foo> foos = list.stream().map(Foo::new).collect(Collectors.toList());
+    System.out.println(foos.get(0).foo);
+  }
+
+  public class Foo {
+    private String foo;
+    private Foo(String foo) {
+      this.foo = foo;
+    }
+  }
+}

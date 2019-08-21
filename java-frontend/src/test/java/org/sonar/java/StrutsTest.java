@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,74 +19,29 @@
  */
 package org.sonar.java;
 
-import org.apache.commons.io.FileUtils;
-import org.junit.Test;
-import org.sonar.api.batch.fs.InputFile;
-import org.sonar.api.batch.fs.internal.DefaultFileSystem;
-import org.sonar.api.batch.fs.internal.DefaultInputFile;
-import org.sonar.api.batch.sensor.internal.SensorContextTester;
-import org.sonar.api.batch.sensor.measure.Measure;
-import org.sonar.api.issue.NoSonarFilter;
-import org.sonar.plugins.java.api.JavaResourceLocator;
-import org.sonar.squidbridge.api.CodeVisitor;
-
 import java.io.File;
-import java.nio.charset.StandardCharsets;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
+import org.junit.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
 
-public class StrutsTest {
+public class StrutsTest extends MeasurerTester {
 
-  private static SensorContextTester context;
+  private static final File PROJECT_DIR = new File("target/test-projects/struts-core-1.3.9");
+  private static final File SOURCE_DIR = new File(PROJECT_DIR, "src");
 
-  private static void initAndScan() {
-    File prjDir = new File("target/test-projects/struts-core-1.3.9");
-    File srcDir = new File(prjDir, "src");
-
-    JavaConfiguration conf = new JavaConfiguration(StandardCharsets.UTF_8);
-    context = SensorContextTester.create(prjDir);
-    DefaultFileSystem fs = context.fileSystem();
-    Collection<File> files = FileUtils.listFiles(srcDir, new String[]{"java"}, true);
-    for (File file : files) {
-      fs.add(new DefaultInputFile("",file.getPath()));
-    }
-    Measurer measurer = new Measurer(fs, context, mock(NoSonarFilter.class));
-    JavaResourceLocator javaResourceLocator = mock(JavaResourceLocator.class);
-    JavaSquid squid = new JavaSquid(conf, null, measurer, javaResourceLocator, null, new CodeVisitor[0]);
-    squid.scan(files, Collections.<File>emptyList());
+  @Override
+  public File projectDir() {
+    return PROJECT_DIR;
   }
 
-  private Map<String, Double> getMetrics() {
-    Map<String, Double> metrics = new HashMap<>();
-    for (InputFile inputFile : context.fileSystem().inputFiles()) {
-      for (Measure measure : context.measures(inputFile.key())) {
-        if (measure.value() != null) {
-          String key = measure.metric().key();
-          double value = 0;
-          try {
-            value = Double.parseDouble("" + measure.value());
-          } catch (NumberFormatException nfe) {
-            //do nothing
-          }
-          if (metrics.get(key) == null) {
-            metrics.put(key, value);
-          } else {
-            metrics.put(key, metrics.get(key) + value);
-          }
-        }
-      }
-    }
-    return metrics;
+  @Override
+  public File sourceDir() {
+    return SOURCE_DIR;
   }
 
   @Test
   public void measures_on_project() throws Exception {
-    initAndScan();
     Map<String, Double> metrics = getMetrics();
 
     assertThat(metrics.get("classes").intValue()).isEqualTo(146);
@@ -94,7 +49,7 @@ public class StrutsTest {
     assertThat(metrics.get("statements").intValue()).isEqualTo(6403 /* empty statements between members of class */+ 3);
     assertThat(metrics.get("comment_lines").intValue()).isEqualTo(7605);
     assertThat(metrics.get("functions").intValue()).isEqualTo(1429);
-    assertThat(metrics.get("complexity").intValue()).isEqualTo(3068);
+    assertThat(metrics.get("complexity").intValue()).isEqualTo(3055);
   }
 
 }

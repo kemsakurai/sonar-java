@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -22,10 +22,13 @@ package org.sonar.java.filters;
 import com.google.common.collect.ContiguousSet;
 import com.google.common.collect.DiscreteDomain;
 import com.google.common.collect.HashMultimap;
-import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Range;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+import javax.annotation.Nullable;
 import org.sonar.api.scan.issue.filter.FilterableIssue;
 import org.sonar.api.utils.AnnotationUtils;
 import org.sonar.check.Rule;
@@ -34,11 +37,6 @@ import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
 import org.sonar.plugins.java.api.tree.SyntaxToken;
 import org.sonar.plugins.java.api.tree.Tree;
-
-import javax.annotation.Nullable;
-
-import java.util.Map;
-import java.util.Set;
 
 public abstract class BaseTreeVisitorIssueFilter extends BaseTreeVisitor implements JavaIssueFilter {
 
@@ -52,7 +50,7 @@ public abstract class BaseTreeVisitorIssueFilter extends BaseTreeVisitor impleme
   }
 
   private static Map<Class<? extends JavaCheck>, String> rulesKeysByRulesClass(Set<Class<? extends JavaCheck>> rules) {
-    Map<Class<? extends JavaCheck>, String> results = Maps.newHashMap();
+    Map<Class<? extends JavaCheck>, String> results = new HashMap<>();
     for (Class<? extends JavaCheck> ruleClass : rules) {
       Rule ruleAnnotation = AnnotationUtils.getAnnotation(ruleClass, Rule.class);
       if (ruleAnnotation != null) {
@@ -62,17 +60,13 @@ public abstract class BaseTreeVisitorIssueFilter extends BaseTreeVisitor impleme
     return results;
   }
 
-  @Override
-  public void setComponentKey(String componentKey) {
-    this.componentKey = componentKey;
-  }
-
   public String getComponentKey() {
     return componentKey;
   }
 
   @Override
   public void scanFile(JavaFileScannerContext context) {
+    componentKey = context.getInputFile().key();
     excludedLinesByRule.clear();
     scan(context.getTree());
   }

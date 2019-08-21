@@ -9,12 +9,15 @@
   "tags": [
     "cwe",
     "multi-threading",
-    "bug",
     "cert"
   ],
-  "standards": [
-    "CWE",
-    "CERT"
-  ],
-  "defaultSeverity": "Blocker"
+  "defaultSeverity": "Blocker",
+  "ruleSpecification": "RSPEC-2168",
+  "sqKey": "S2168",
+  "scope": "All",
+  "securityStandards": {
+    "CWE": [
+      609
+    ]
+  }
 }

@@ -7,9 +7,11 @@
     "constantCost": "5min"
   },
   "tags": [
-    "bug",
     "maven",
     "lock-in"
   ],
-  "defaultSeverity": "Critical"
+  "defaultSeverity": "Critical",
+  "ruleSpecification": "RSPEC-3422",
+  "sqKey": "S3422",
+  "scope": "All"
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,8 +19,8 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import org.sonar.check.Rule;
+import org.sonar.java.model.ExpressionUtils;
 import org.sonar.java.resolve.JavaSymbol;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Symbol;
@@ -34,6 +34,7 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 
 import javax.annotation.CheckForNull;
+import java.util.Collections;
 import java.util.List;
 
 @Rule(key = "S2445")
@@ -41,21 +42,26 @@ public class SynchronizedFieldAssignmentCheck extends IssuableSubscriptionVisito
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Kind.SYNCHRONIZED_STATEMENT);
+    return Collections.singletonList(Kind.SYNCHRONIZED_STATEMENT);
   }
 
   @Override
   public void visitNode(Tree tree) {
-    if (hasSemantic()) {
-      SynchronizedStatementTree sst = (SynchronizedStatementTree) tree;
-      Symbol field = getField(sst.expression());
-      if (field != null) {
-        sst.block().accept(new AssignmentVisitor(field, sst.expression()));
-      } else {
-        Symbol parameter = getParam(sst.expression());
-        if(parameter != null) {
-          reportIssue(tree, String.format("\"%s\" is a method parameter, and should not be used for synchronization.", parameter.name()));
-        }
+    if (!hasSemantic()) {
+      return;
+    }
+    SynchronizedStatementTree sst = (SynchronizedStatementTree) tree;
+    if(sst.expression().is(Kind.NEW_CLASS)) {
+      reportIssue(tree, "Synchronizing on a new instance is a no-op.");
+      return;
+    }
+    Symbol field = getField(sst.expression());
+    if (field != null) {
+      sst.block().accept(new AssignmentVisitor(field, sst.expression()));
+    } else {
+      Symbol parameter = getParam(sst.expression());
+      if(parameter != null) {
+        reportIssue(tree, String.format("\"%s\" is a method parameter, and should not be used for synchronization.", parameter.name()));
       }
     }
   }
@@ -94,7 +100,7 @@ public class SynchronizedFieldAssignmentCheck extends IssuableSubscriptionVisito
     } else if (tree.is(Kind.MEMBER_SELECT)) {
       MemberSelectExpressionTree mse = (MemberSelectExpressionTree) tree;
       ExpressionTree mseExpression = mse.expression();
-      if (isThis(mseExpression)) {
+      if (ExpressionUtils.isThis(mseExpression)) {
         return isField(mse.identifier());
       } else {
         return isField(mseExpression);
@@ -103,16 +109,12 @@ public class SynchronizedFieldAssignmentCheck extends IssuableSubscriptionVisito
     return false;
   }
 
-  private static boolean isThis(ExpressionTree expression) {
-    return expression.is(Kind.IDENTIFIER) && "this".equals(((IdentifierTree) expression).name());
-  }
-
   private class AssignmentVisitor extends BaseTreeVisitor {
 
     private final Symbol field;
     private final Tree synchronizedStatement;
 
-    public AssignmentVisitor(Symbol field, Tree tree) {
+    AssignmentVisitor(Symbol field, Tree tree) {
       this.field = field;
       this.synchronizedStatement = tree;
     }

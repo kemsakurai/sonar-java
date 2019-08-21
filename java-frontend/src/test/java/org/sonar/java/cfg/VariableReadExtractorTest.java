@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,8 +20,10 @@
 package org.sonar.java.cfg;
 
 import com.sonar.sslr.api.typed.ActionParser;
+import java.util.Collections;
 import org.junit.Test;
 import org.sonar.java.ast.parser.JavaParser;
+import org.sonar.java.bytecode.loader.SquidClassLoader;
 import org.sonar.java.resolve.SemanticModel;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.CompilationUnitTree;
@@ -29,20 +31,16 @@ import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.StatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import java.io.File;
-import java.nio.charset.StandardCharsets;
-import java.util.Collections;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class VariableReadExtractorTest {
 
-  public static final ActionParser<Tree> PARSER = JavaParser.createParser(StandardCharsets.UTF_8);
+  public static final ActionParser<Tree> PARSER = JavaParser.createParser();
 
 
   private static MethodTree buildMethodTree(String methodCode) {
     CompilationUnitTree cut = (CompilationUnitTree) PARSER.parse("class A { int field1; int field2; " + methodCode + " }");
-    SemanticModel.createFor(cut, Collections.<File>emptyList());
+    SemanticModel.createFor(cut, new SquidClassLoader(Collections.emptyList()));
     return (MethodTree) ((ClassTree) cut.types().get(0)).members().get(2);
   }
 
@@ -87,6 +85,16 @@ public class VariableReadExtractorTest {
     statementTree.accept(extractor);
     // local variable "a" and field "field"
     assertThat(extractor.usedVariables()).isEmpty();
+  }
+
+  @Test
+  public void should_not_extract_variable_declared() throws Exception {
+    MethodTree methodTree = buildMethodTree("void foo(boolean a) { boolean b = a; }");
+    StatementTree statementTree = methodTree.block().body().get(0);
+    VariableReadExtractor extractor = new VariableReadExtractor(methodTree.symbol(), true);
+    statementTree.accept(extractor);
+    // only "a" should be detected
+    assertThat(extractor.usedVariables()).hasSize(1);
   }
 
   @Test

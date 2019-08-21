@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,32 +19,35 @@
  */
 package org.sonar.java.checks;
 
-import org.junit.Test;
-import org.sonar.java.ast.JavaAstScanner;
-import org.sonar.java.model.VisitorsBridge;
-
 import java.io.File;
 import java.util.Set;
+import org.junit.Test;
+import org.sonar.java.checks.verifier.JavaCheckVerifier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class PackageInfoCheckTest {
 
   @Test
-  public void test() throws Exception {
+  public void with_package_info() {
     PackageInfoCheck check = new PackageInfoCheck();
-    JavaAstScanner.scanSingleFileForTests(new File("src/test/files/checks/packageInfo/HelloWorld.java"), new VisitorsBridge(check));
+    JavaCheckVerifier.verifyNoIssue("src/test/files/checks/packageInfo/HelloWorld.java", check);
     assertThat(check.directoriesWithoutPackageFile).isEmpty();
   }
 
   @Test
-  public void testNoPackageInfo() throws Exception {
+  public void no_package_info() {
     PackageInfoCheck check = new PackageInfoCheck();
-    JavaAstScanner.scanSingleFileForTests(new File("src/test/files/checks/packageInfo/nopackageinfo/nopackageinfo.java"), new VisitorsBridge(check));
-    JavaAstScanner.scanSingleFileForTests(new File("src/test/files/checks/packageInfo/nopackageinfo/HelloWorld.java"), new VisitorsBridge(check));
+    String expectedMessage = "Add a 'package-info.java' file to document the 'src/test/files/checks/packageInfo/nopackageinfo' package"
+      .replace('/', File.separatorChar);
+    JavaCheckVerifier.verifyIssueOnProject("src/test/files/checks/packageInfo/nopackageinfo/nopackageinfo.java", expectedMessage, check);
+
     Set<File> set = check.directoriesWithoutPackageFile;
     assertThat(set).hasSize(1);
     assertThat(set.iterator().next().getName()).isEqualTo("nopackageinfo");
+
+    // only one issue per package
+    JavaCheckVerifier.verifyNoIssue("src/test/files/checks/packageInfo/nopackageinfo/HelloWorld.java", check);
   }
 
 }

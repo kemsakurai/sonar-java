@@ -1,5 +1,5 @@
 {
-  "title": "Useless imports should be removed",
+  "title": "Unnecessary imports should be removed",
   "type": "CODE_SMELL",
   "status": "ready",
   "remediation": {
@@ -9,5 +9,8 @@
   "tags": [
     "unused"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-1128",
+  "sqKey": "UselessImportCheck",
+  "scope": "All"
 }

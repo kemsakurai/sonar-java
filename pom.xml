@@ -5,17 +5,17 @@
   <parent>
     <groupId>org.sonarsource.parent</groupId>
     <artifactId>parent</artifactId>
-    <version>38</version>
+    <version>52</version>
   </parent>
 
   <groupId>org.sonarsource.java</groupId>
   <artifactId>java</artifactId>
-  <version>4.6.0-SNAPSHOT</version>
+  <version>6.0.0-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>SonarJava</name>
-  <inceptionYear>2012</inceptionYear>
   <description>Code Analyzer for Java</description>
   <url>http://redirect.sonarsource.com/plugins/java.html</url>
+  <inceptionYear>2012</inceptionYear>
   <organization>
     <name>SonarSource</name>
     <url>http://www.sonarsource.com</url>
@@ -52,15 +52,14 @@
   </developers>
 
   <modules>
-    <module>java-maven-model</module>
     <module>java-frontend</module>
     <module>java-checks-testkit</module>
     <module>java-checks</module>
+    <module>external-reports</module>
     <module>sonar-java-plugin</module>
     <module>java-surefire</module>
     <module>java-jacoco</module>
     <module>sonar-jacoco-listeners</module>
-    <module>java-jacoco-previous</module>
     <module>its</module>
   </modules>
 
@@ -84,40 +83,22 @@
 
     <maven.test.redirectTestOutputToFile>true</maven.test.redirectTestOutputToFile>
 
-    <sonar.version>6.2</sonar.version>
-    <orchestrator.version>3.13</orchestrator.version>
-    <sslr.version>1.21</sslr.version>
-    <jacoco.previous.version>0.7.4.201502262128</jacoco.previous.version>
-    <jacoco.version>0.7.5.201505241946</jacoco.version>
-    <asm.version>5.0.3</asm.version>
+    <sonar.version>7.4-alpha2</sonar.version>
+    <analyzer.commons.version>1.10.2.456</analyzer.commons.version>
+    <orchestrator.version>3.26.0.2111</orchestrator.version>
+    <sslr.version>1.23</sslr.version>
+    <jacoco.version>0.8.3</jacoco.version>
+    <asm.version>7.1</asm.version>
     <argLine>-Xmx512m</argLine>
     <gitRepositoryName>sonar-java</gitRepositoryName>
 
     <!-- Release: enable publication to Bintray -->
     <artifactsToPublish>${project.groupId}:sonar-java-plugin:jar</artifactsToPublish>
-  </properties>
 
-  <build>
-    <pluginManagement>
-      <plugins>
-        <plugin>
-          <groupId>org.jacoco</groupId>
-          <artifactId>jacoco-maven-plugin</artifactId>
-          <version>${jacoco.version}</version>
-          <configuration>
-            <includes>
-              <include>org.sonar.*</include>
-            </includes>
-          </configuration>
-        </plugin>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-surefire-plugin</artifactId>
-          <configuration />
-        </plugin>
-      </plugins>
-    </pluginManagement>
-  </build>
+    <version.compiler.plugin>3.8.0</version.compiler.plugin>
+    <!-- FIXME: warnings on javadoc should be fixed -->
+    <doclint>none</doclint>
+  </properties>
 
   <dependencyManagement>
     <dependencies>
@@ -131,7 +112,21 @@
         <artifactId>sonar-testing-harness</artifactId>
         <version>${sonar.version}</version>
       </dependency>
-
+      <dependency>
+        <groupId>org.sonarsource.analyzer-commons</groupId>
+        <artifactId>sonar-analyzer-commons</artifactId>
+        <version>${analyzer.commons.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.sonarsource.analyzer-commons</groupId>
+        <artifactId>sonar-analyzer-recognizers</artifactId>
+        <version>${analyzer.commons.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.sonarsource.analyzer-commons</groupId>
+        <artifactId>sonar-xml-parsing</artifactId>
+        <version>${analyzer.commons.version}</version>
+      </dependency>
       <dependency>
         <groupId>org.sonarsource.sslr</groupId>
         <artifactId>sslr-core</artifactId>
@@ -146,33 +141,26 @@
       <dependency>
         <groupId>com.google.guava</groupId>
         <artifactId>guava</artifactId>
-        <version>19.0</version>
+        <version>26.0-jre</version>
+      </dependency>
+      <dependency>
+        <groupId>com.google.code.findbugs</groupId>
+        <artifactId>jsr305</artifactId>
+        <version>1.3.9</version>
       </dependency>
       <dependency>
         <groupId>org.sonarsource.sslr</groupId>
         <artifactId>sslr-testing-harness</artifactId>
         <version>${sslr.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>org.sonarsource.sslr-squid-bridge</groupId>
-        <artifactId>sslr-squid-bridge</artifactId>
-        <version>2.6.1</version>
         <exclusions>
           <exclusion>
-            <groupId>org.codehaus.sonar.sslr</groupId>
-            <artifactId>sslr-core</artifactId>
+            <groupId>org.easytesting</groupId>
+            <artifactId>fest-assert</artifactId>
           </exclusion>
+          <!-- junit 4.12 depends on more recent hamcrest -->
           <exclusion>
-            <groupId>org.codehaus.sonar</groupId>
-            <artifactId>sonar-plugin-api</artifactId>
-          </exclusion>
-          <exclusion>
-            <groupId>org.codehaus.sonar.sslr</groupId>
-            <artifactId>sslr-xpath</artifactId>
-          </exclusion>
-          <exclusion>
-            <groupId>org.slf4j</groupId>
-            <artifactId>jcl-over-slf4j</artifactId>
+            <artifactId>hamcrest-all</artifactId>
+            <groupId>org.hamcrest</groupId>
           </exclusion>
         </exclusions>
       </dependency>
@@ -193,21 +181,42 @@
         <version>${jacoco.version}</version>
         <classifier>runtime</classifier>
       </dependency>
+
       <dependency>
         <groupId>org.ow2.asm</groupId>
-        <artifactId>asm-debug-all</artifactId>
+        <artifactId>asm</artifactId>
+        <version>${asm.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.ow2.asm</groupId>
+        <artifactId>asm-commons</artifactId>
+        <version>${asm.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.ow2.asm</groupId>
+        <artifactId>asm-tree</artifactId>
+        <version>${asm.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.ow2.asm</groupId>
+        <artifactId>asm-analysis</artifactId>
+        <version>${asm.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.ow2.asm</groupId>
+        <artifactId>asm-util</artifactId>
         <version>${asm.version}</version>
       </dependency>
 
       <dependency>
         <groupId>junit</groupId>
         <artifactId>junit</artifactId>
-        <version>4.10</version>
+        <version>4.12</version>
       </dependency>
       <dependency>
         <groupId>org.mockito</groupId>
-        <artifactId>mockito-all</artifactId>
-        <version>1.9.0</version>
+        <artifactId>mockito-core</artifactId>
+        <version>2.21.0</version>
       </dependency>
       <dependency>
         <groupId>org.assertj</groupId>
@@ -243,7 +252,97 @@
         <version>2.6.2</version>
         <scope>compile</scope>
       </dependency>
+
+      <dependency>
+        <groupId>com.fasterxml.woodstox</groupId>
+        <artifactId>woodstox-core</artifactId>
+        <version>5.1.0</version>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.staxmate</groupId>
+        <artifactId>staxmate</artifactId>
+        <version>2.3.1</version>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.jacoco</groupId>
+          <artifactId>jacoco-maven-plugin</artifactId>
+          <version>${jacoco.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <configuration />
+        </plugin>
+      </plugins>
+    </pluginManagement>
+
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>license-maven-plugin</artifactId>
+        <configuration>
+          <!-- TODO remove this custom configuration after upgrade of parent POM - see https://jira.sonarsource.com/browse/PARENTOSS-109 -->
+          <includedLicenses>apache_v2|bsd|epl_v1|epl_v2|lgpl_v3|mit</includedLicenses>
+          <licenseMerges combine.children="append">
+            <licenseMerge>epl_v2|Eclipse Public License - v 2.0</licenseMerge>
+          </licenseMerges>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>de.thetaphi</groupId>
+        <artifactId>forbiddenapis</artifactId>
+        <version>2.6</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <configuration>
+              <failOnUnresolvableSignatures>false</failOnUnresolvableSignatures>
+              <signatures>
+                <![CDATA[
+                com.google.common.base.Preconditions#checkNotNull(java.lang.Object) @ use java.util.Objects#requireNonNull(java.lang.Object) instead
+
+                com.google.common.collect.ImmutableList#of(java.lang.Object) @ use java.util.Collections#singletonList(java.util.Objects#requireNonNull(java.lang.Object)) instead, and also consider omitting unnecessary null-checks
+                com.google.common.collect.ImmutableSet#of(java.lang.Object) @ use java.util.Collections#singleton(java.util.Objects#requireNonNull(java.lang.Object)) instead, and also consider omitting unnecessary null-checks
+
+                com.google.common.collect.ImmutableList#of() @ use java.util.Collections#emptyList() instead
+                com.google.common.collect.ImmutableSet#of() @ use java.util.Collections#emptySet() instead
+
+                # According to javadoc of following methods
+                # "for Java 7 and later: this method is now unnecessary and should be treated as deprecated"
+                @defaultMessage use diamond operator instead
+                com.google.common.collect.Lists#newArrayList()
+                com.google.common.collect.Lists#newLinkedList()
+                com.google.common.collect.Maps#newHashMap()
+                com.google.common.collect.Sets#newHashSet()
+                com.google.common.base.Objects @ use java.util.Objects instead
+                ]]>
+              </signatures>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <profile>
+      <!-- Use javac's release flag for Java 9 and higher -->
+      <id>java9+</id>
+      <activation>
+        <jdk>[9,)</jdk>
+      </activation>
+      <properties>
+        <maven.compiler.release>8</maven.compiler.release>
+      </properties>
+    </profile>
+  </profiles>
 </project>

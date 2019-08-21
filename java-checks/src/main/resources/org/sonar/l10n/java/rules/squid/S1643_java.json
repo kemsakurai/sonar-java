@@ -1,14 +1,16 @@
 {
   "title": "Strings should not be concatenated using '+' in a loop",
-  "type": "BUG",
+  "type": "CODE_SMELL",
   "status": "ready",
   "remediation": {
     "func": "Constant\/Issue",
     "constantCost": "10min"
   },
   "tags": [
-    "performance",
-    "bug"
+    "performance"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-1643",
+  "sqKey": "S1643",
+  "scope": "Main"
 }

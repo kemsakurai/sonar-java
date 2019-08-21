@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,13 +20,14 @@
 package org.sonar.java.ast.parser;
 
 import com.sonar.sslr.api.GenericTokenType;
+import java.util.Arrays;
 import org.apache.commons.lang.ArrayUtils;
 import org.sonar.java.ast.api.JavaKeyword;
+import org.sonar.java.ast.api.JavaRestrictedKeyword;
+import org.sonar.java.ast.api.JavaSpecialIdentifier;
 import org.sonar.java.ast.api.JavaTokenType;
 import org.sonar.sslr.grammar.GrammarRuleKey;
 import org.sonar.sslr.grammar.LexerlessGrammarBuilder;
-
-import java.util.Arrays;
 
 import static org.sonar.java.ast.api.JavaKeyword.ENUM;
 import static org.sonar.java.ast.api.JavaPunctuator.AND;
@@ -89,6 +90,18 @@ import static org.sonar.java.ast.api.JavaTokenType.LONG_LITERAL;
 public enum JavaLexer implements GrammarRuleKey {
 
   COMPILATION_UNIT,
+
+  MODULE_DECLARATION,
+  MODULE_NAME,
+  MODULE_NAME_LIST,
+  MODULE_DIRECTIVE,
+  REQUIRES_DIRECTIVE,
+  REQUIRES_MODIFIER,
+  EXPORTS_DIRECTIVE,
+  OPENS_DIRECTIVE,
+  USES_DIRECTIVE,
+  PROVIDES_DIRECTIVE,
+
   PACKAGE_DECLARATION,
   IMPORT_DECLARATION,
   TYPE_DECLARATION,
@@ -150,6 +163,8 @@ public enum JavaLexer implements GrammarRuleKey {
   ARGUMENTS,
 
   LOCAL_VARIABLE_DECLARATION_STATEMENT,
+  LOCAL_VARIABLE_TYPE,
+  VAR_TYPE,
   VARIABLE_DECLARATOR,
 
   FORMAL_PARAMETER,
@@ -179,6 +194,7 @@ public enum JavaLexer implements GrammarRuleKey {
   EMPTY_STATEMENT,
 
   EXPRESSION,
+  EXPRESSION_NOT_LAMBDA,
   RESOURCE,
   PAR_EXPRESSION,
   FOR_INIT,
@@ -195,8 +211,10 @@ public enum JavaLexer implements GrammarRuleKey {
   TRY_WITH_RESOURCES_STATEMENT,
   RESOURCE_SPECIFICATION,
 
+  SWITCH_EXPRESSION,
   SWITCH_BLOCK_STATEMENT_GROUP,
   SWITCH_LABEL,
+  SWITCH_CASE_EXPRESSION_LIST,
 
   BASIC_TYPE,
   TYPE_ARGUMENTS,
@@ -252,6 +270,7 @@ public enum JavaLexer implements GrammarRuleKey {
 
   LETTER_OR_DIGIT,
   KEYWORD,
+  RESTRICTED_KEYWORD,
   SPACING,
 
   METHOD_REFERENCE,
@@ -376,6 +395,25 @@ public enum JavaLexer implements GrammarRuleKey {
         keywords[1],
         ArrayUtils.subarray(keywords, 2, keywords.length)),
       b.nextNot(LETTER_OR_DIGIT));
+
+    // restricted keywords introduced with java 9 (JLS9 - §3.9)
+    for (JavaRestrictedKeyword tokenType : JavaRestrictedKeyword.values()) {
+      b.rule(tokenType).is(tokenType.getValue(), b.nextNot(LETTER_OR_DIGIT), SPACING);
+    }
+    String[] restrictedKeywords = JavaRestrictedKeyword.restrictedKeywordValues();
+    Arrays.sort(restrictedKeywords);
+    ArrayUtils.reverse(restrictedKeywords);
+    b.rule(RESTRICTED_KEYWORD).is(
+      b.firstOf(
+        restrictedKeywords[0],
+        restrictedKeywords[1],
+        ArrayUtils.subarray(restrictedKeywords, 2, restrictedKeywords.length)),
+      b.nextNot(LETTER_OR_DIGIT));
+
+    // special identifier introduced for java10: 'var'
+    for (JavaSpecialIdentifier tokenType : JavaSpecialIdentifier.values()) {
+      b.rule(tokenType).is(tokenType.getValue(), b.nextNot(LETTER_OR_DIGIT), SPACING);
+    }
   }
 
   private static void punctuator(LexerlessGrammarBuilder b, GrammarRuleKey ruleKey, String value) {

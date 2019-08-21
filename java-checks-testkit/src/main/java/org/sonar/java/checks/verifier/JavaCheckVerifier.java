@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,22 +20,10 @@
 package org.sonar.java.checks.verifier;
 
 import com.google.common.annotations.Beta;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
-import org.assertj.core.api.Fail;
-import org.sonar.java.JavaConfiguration;
-import org.sonar.java.ast.JavaAstScanner;
-import org.sonar.java.ast.visitors.SubscriptionVisitor;
-import org.sonar.java.model.JavaVersionImpl;
-import org.sonar.java.model.VisitorsBridgeForTests;
-import org.sonar.plugins.java.api.JavaFileScanner;
-import org.sonar.plugins.java.api.JavaVersion;
-import org.sonar.plugins.java.api.tree.SyntaxTrivia;
-import org.sonar.plugins.java.api.tree.Tree;
-
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.FileVisitor;
 import java.nio.file.Files;
@@ -46,7 +34,20 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
+import org.assertj.core.api.Fail;
+import org.sonar.api.batch.fs.internal.DefaultInputFile;
+import org.sonar.api.batch.fs.internal.TestInputFileBuilder;
+import org.sonar.java.SonarComponents;
+import org.sonar.java.ast.JavaAstScanner;
+import org.sonar.java.ast.visitors.SubscriptionVisitor;
+import org.sonar.java.model.JavaVersionImpl;
+import org.sonar.java.model.VisitorsBridgeForTests;
+import org.sonar.plugins.java.api.JavaFileScanner;
+import org.sonar.plugins.java.api.JavaVersion;
+import org.sonar.plugins.java.api.tree.SyntaxTrivia;
+import org.sonar.plugins.java.api.tree.Tree;
 
 /**
  * It is possible to specify the absolute line number on which the issue should appear by appending {@literal "@<line>"} to "Noncompliant".
@@ -75,7 +76,7 @@ public class JavaCheckVerifier extends CheckVerifier {
   /**
    * Default location of the jars/zips to be taken into account when performing the analysis.
    */
-  private static final String DEFAULT_TEST_JARS_DIRECTORY = "target/test-jars";
+  static final String DEFAULT_TEST_JARS_DIRECTORY = "target/test-jars";
   private String testJarsDirectory;
   private boolean providedJavaVersion = false;
   private JavaVersion javaVersion = new JavaVersionImpl();
@@ -210,16 +211,27 @@ public class JavaCheckVerifier extends CheckVerifier {
     scanFile(filename, check, javaCheckVerifier);
   }
 
+  public static void verifyIssueOnProject(String filename, String message, JavaFileScanner check) {
+    JavaCheckVerifier javaCheckVerifier = new JavaCheckVerifier();
+    javaCheckVerifier.setExpectedProjectIssue(message);
+    scanFile(filename, check, javaCheckVerifier);
+  }
+
   private static void scanFile(String filename, JavaFileScanner check, JavaCheckVerifier javaCheckVerifier) {
-    Collection<File> classpath = Lists.newLinkedList();
-    Path testJars = Paths.get(javaCheckVerifier.testJarsDirectory);
+    List<File> classpath = getClassPath(javaCheckVerifier.testJarsDirectory);
+    scanFile(filename, check, javaCheckVerifier, classpath);
+  }
+
+  static List<File> getClassPath(String jarsDirectory) {
+    List<File> classpath = new LinkedList<>();
+    Path testJars = Paths.get(jarsDirectory);
     if (testJars.toFile().exists()) {
       classpath = getFilesRecursively(testJars, new String[] {"jar", "zip"});
-    } else if (!DEFAULT_TEST_JARS_DIRECTORY.equals(javaCheckVerifier.testJarsDirectory)) {
+    } else if (!DEFAULT_TEST_JARS_DIRECTORY.equals(jarsDirectory)) {
       Fail.fail("The directory to be used to extend class path does not exists (" + testJars.toAbsolutePath() + ").");
     }
     classpath.add(new File("target/test-classes"));
-    scanFile(filename, check, javaCheckVerifier, classpath);
+    return classpath;
   }
 
   static List<File> getFilesRecursively(Path root, final String[] extensions) {
@@ -227,7 +239,7 @@ public class JavaCheckVerifier extends CheckVerifier {
 
     FileVisitor<Path> visitor = new SimpleFileVisitor<Path>() {
       @Override
-      public FileVisitResult visitFile(Path filePath, BasicFileAttributes attrs) throws IOException {
+      public FileVisitResult visitFile(Path filePath, BasicFileAttributes attrs) {
         for (String extension : extensions) {
           if (filePath.toString().endsWith("." + extension)) {
             files.add(filePath.toFile());
@@ -238,7 +250,7 @@ public class JavaCheckVerifier extends CheckVerifier {
       }
 
       @Override
-      public FileVisitResult visitFileFailed(Path file, IOException exc) throws IOException {
+      public FileVisitResult visitFileFailed(Path file, IOException exc) {
         return FileVisitResult.CONTINUE;
       }
     };
@@ -259,14 +271,14 @@ public class JavaCheckVerifier extends CheckVerifier {
   private static void scanFile(String filename, JavaFileScanner check, JavaCheckVerifier javaCheckVerifier, Collection<File> classpath, boolean withSemantic) {
     JavaFileScanner expectedIssueCollector = new ExpectedIssueCollector(javaCheckVerifier);
     VisitorsBridgeForTests visitorsBridge;
+    DefaultInputFile inputFile = new TestInputFileBuilder("", new File(filename).getPath()).setCharset(StandardCharsets.UTF_8).build();
+    SonarComponents sonarComponents = CheckVerifier.sonarComponents(inputFile);
     if (withSemantic) {
-      visitorsBridge = new VisitorsBridgeForTests(Lists.newArrayList(check, expectedIssueCollector), Lists.newArrayList(classpath), null);
+      visitorsBridge = new VisitorsBridgeForTests(Lists.newArrayList(check, expectedIssueCollector), Lists.newArrayList(classpath), sonarComponents);
     } else {
-      visitorsBridge = new VisitorsBridgeForTests(Lists.newArrayList(check, expectedIssueCollector));
+      visitorsBridge = new VisitorsBridgeForTests(Lists.newArrayList(check, expectedIssueCollector), sonarComponents);
     }
-    JavaConfiguration conf = new JavaConfiguration(Charset.forName("UTF-8"));
-    conf.setJavaVersion(javaCheckVerifier.javaVersion);
-    JavaAstScanner.scanSingleFileForTests(new File(filename), visitorsBridge, conf);
+    JavaAstScanner.scanSingleFileForTests(inputFile, visitorsBridge, javaCheckVerifier.javaVersion);
     VisitorsBridgeForTests.TestJavaFileScannerContext testJavaFileScannerContext = visitorsBridge.lastCreatedTestContext();
     if (testJavaFileScannerContext == null) {
       Fail.fail("Semantic was required but it was not possible to create it. Please checks the logs to find out the reason.");
@@ -274,17 +286,17 @@ public class JavaCheckVerifier extends CheckVerifier {
     javaCheckVerifier.checkIssues(testJavaFileScannerContext.getIssues(), javaCheckVerifier.providedJavaVersion);
   }
 
-  private static class ExpectedIssueCollector extends SubscriptionVisitor {
+  static class ExpectedIssueCollector extends SubscriptionVisitor {
 
-    private final JavaCheckVerifier verifier;
+    private final CheckVerifier verifier;
 
-    public ExpectedIssueCollector(JavaCheckVerifier verifier) {
+    public ExpectedIssueCollector(CheckVerifier verifier) {
       this.verifier = verifier;
     }
 
     @Override
     public List<Tree.Kind> nodesToVisit() {
-      return ImmutableList.of(Tree.Kind.TRIVIA);
+      return Collections.singletonList(Tree.Kind.TRIVIA);
     }
 
     @Override

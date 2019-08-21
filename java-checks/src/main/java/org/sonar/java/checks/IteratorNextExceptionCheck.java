@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,10 +19,13 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Collections;
+import java.util.List;
 import org.sonar.check.Rule;
 import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.java.matcher.TypeCriteria;
+import org.sonar.java.model.ExpressionUtils;
+import org.sonar.java.resolve.MethodJavaType;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
@@ -35,8 +38,6 @@ import org.sonar.plugins.java.api.tree.ThrowStatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 
-import java.util.List;
-
 @Rule(key = "S2272")
 public class IteratorNextExceptionCheck extends IssuableSubscriptionVisitor {
 
@@ -48,7 +49,7 @@ public class IteratorNextExceptionCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD);
+    return Collections.singletonList(Tree.Kind.METHOD);
   }
 
   @Override
@@ -95,18 +96,20 @@ public class IteratorNextExceptionCheck extends IssuableSubscriptionVisitor {
       super.visitMethodInvocation(methodInvocation);
     }
 
-    public boolean throwsNoSuchElementException(MethodInvocationTree methodInvocationTree) {
+    private static boolean throwsNoSuchElementException(MethodInvocationTree methodInvocationTree) {
       Symbol symbol = methodInvocationTree.symbol();
       if (!symbol.isMethodSymbol()) {
         return false;
       }
-      Symbol.MethodSymbol methodSymbol = (Symbol.MethodSymbol) symbol;
-      for (Type thrownType : methodSymbol.thrownTypes()) {
-        if (thrownType.is("java.util.NoSuchElementException")) {
-          return true;
-        }
+      if (throwsNoSuchElementException(((Symbol.MethodSymbol) symbol).thrownTypes())) {
+        return true;
       }
-      return false;
+      MethodJavaType methodJavaType = (MethodJavaType) ExpressionUtils.methodName(methodInvocationTree).symbolType();
+      return throwsNoSuchElementException(methodJavaType.thrownTypes());
+    }
+
+    private static boolean throwsNoSuchElementException(List<? extends Type> thrownTypes) {
+      return thrownTypes.stream().anyMatch(t -> t.is("java.util.NoSuchElementException"));
     }
 
   }

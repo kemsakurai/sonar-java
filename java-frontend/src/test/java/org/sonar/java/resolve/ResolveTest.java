@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,12 +19,13 @@
  */
 package org.sonar.java.resolve;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import org.junit.Before;
 import org.junit.Test;
+import org.sonar.java.bytecode.loader.SquidClassLoader;
 
 import java.io.File;
+import java.util.Collections;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -32,7 +33,7 @@ import static org.mockito.Mockito.mock;
 public class ResolveTest {
 
   private ParametrizedTypeCache parametrizedTypeCache = new ParametrizedTypeCache();
-  private BytecodeCompleter bytecodeCompleter = new BytecodeCompleter(Lists.newArrayList(new File("target/test-classes"), new File("target/classes")), parametrizedTypeCache);
+  private BytecodeCompleter bytecodeCompleter = new BytecodeCompleter(new SquidClassLoader(Lists.newArrayList(new File("target/test-classes"), new File("target/classes"))), parametrizedTypeCache);
   private Resolve resolve = new Resolve(new Symbols(bytecodeCompleter), bytecodeCompleter, parametrizedTypeCache);
 
   private Resolve.Env env = mock(Resolve.Env.class);
@@ -132,31 +133,31 @@ public class ResolveTest {
     c = new JavaSymbol.TypeJavaSymbol(0, "class", packageJavaSymbol);
 
     // base not implemented by class
-    ((ClassJavaType) c.type).interfaces = ImmutableList.of();
+    ((ClassJavaType) c.type).interfaces = Collections.emptyList();
     assertThat(resolve.isSubClass(c, base)).isFalse();
 
     // class implements base interface
-    ((ClassJavaType) c.type).interfaces = ImmutableList.of(base.type);
+    ((ClassJavaType) c.type).interfaces = Collections.singletonList(base.type);
     assertThat(resolve.isSubClass(c, base)).isTrue();
 
     // class implements interface, but not base interface
     JavaSymbol.TypeJavaSymbol i = new JavaSymbol.TypeJavaSymbol(Flags.INTERFACE, "class", packageJavaSymbol);
-    ((ClassJavaType) i.type).interfaces = ImmutableList.of();
-    ((ClassJavaType) c.type).interfaces = ImmutableList.of(i.type);
+    ((ClassJavaType) i.type).interfaces = Collections.emptyList();
+    ((ClassJavaType) c.type).interfaces = Collections.singletonList(i.type);
     assertThat(resolve.isSubClass(c, base)).isFalse();
 
     // class implements interface, which implements base
-    ((ClassJavaType) c.type).interfaces = ImmutableList.of(base.type);
+    ((ClassJavaType) c.type).interfaces = Collections.singletonList(base.type);
     assertThat(resolve.isSubClass(c, base)).isTrue();
 
     // class extends superclass
-    ((ClassJavaType) c.type).interfaces = ImmutableList.of();
+    ((ClassJavaType) c.type).interfaces = Collections.emptyList();
     ((ClassJavaType) c.type).supertype = new JavaSymbol.TypeJavaSymbol(0, "superclass", packageJavaSymbol).type;
-    ((ClassJavaType) ((ClassJavaType) c.type).supertype).interfaces = ImmutableList.of();
+    ((ClassJavaType) ((ClassJavaType) c.type).supertype).interfaces = Collections.emptyList();
     assertThat(resolve.isSubClass(c, base)).isFalse();
 
     // class extends superclass, which implements base
-    ((ClassJavaType) ((ClassJavaType) c.type).supertype).interfaces = ImmutableList.of(base.type);
+    ((ClassJavaType) ((ClassJavaType) c.type).supertype).interfaces = Collections.singletonList(base.type);
     assertThat(resolve.isSubClass(c, base)).isTrue();
   }
 

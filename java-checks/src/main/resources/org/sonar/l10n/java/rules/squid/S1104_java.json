@@ -7,11 +7,15 @@
     "constantCost": "10min"
   },
   "tags": [
-    "cwe",
-    "security"
+    "cwe"
   ],
-  "standards": [
-    "CWE"
-  ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-1104",
+  "sqKey": "ClassVariableVisibilityCheck",
+  "scope": "Main",
+  "securityStandards": {
+    "CWE": [
+      493
+    ]
+  }
 }

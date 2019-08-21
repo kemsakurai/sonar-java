@@ -9,12 +9,15 @@
   "tags": [
     "cwe",
     "denial-of-service",
-    "bug",
     "cert"
   ],
-  "standards": [
-    "CWE",
-    "CERT"
-  ],
-  "defaultSeverity": "Critical"
+  "defaultSeverity": "Critical",
+  "ruleSpecification": "RSPEC-3518",
+  "sqKey": "S3518",
+  "scope": "All",
+  "securityStandards": {
+    "CWE": [
+      369
+    ]
+  }
 }

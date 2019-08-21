@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,11 +19,10 @@
  */
 package org.sonar.java.ast.parser;
 
-import com.google.common.collect.Lists;
 import org.sonar.plugins.java.api.tree.SyntaxToken;
 import org.sonar.plugins.java.api.tree.Tree;
-import org.sonar.plugins.java.api.tree.TypeTree;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class BoundListTreeImpl extends ListTreeImpl<Tree> {
@@ -33,6 +32,6 @@ public class BoundListTreeImpl extends ListTreeImpl<Tree> {
   }
 
   public static BoundListTreeImpl emptyList() {
-    return new BoundListTreeImpl(Lists.<TypeTree>newArrayList(), Lists.<SyntaxToken>newArrayList());
+    return new BoundListTreeImpl(new ArrayList<>(), new ArrayList<>());
   }
 }

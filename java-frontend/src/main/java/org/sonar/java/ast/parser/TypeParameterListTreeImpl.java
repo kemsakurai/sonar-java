@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,6 @@
  */
 package org.sonar.java.ast.parser;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import org.sonar.java.model.InternalSyntaxToken;
 import org.sonar.plugins.java.api.tree.SyntaxToken;
@@ -48,7 +47,7 @@ public class TypeParameterListTreeImpl extends ListTreeImpl<TypeParameterTree> i
   }
 
   public TypeParameterListTreeImpl() {
-    super(JavaLexer.TYPE_PARAMETERS, ImmutableList.<TypeParameterTree>of(), ImmutableList.<SyntaxToken>of());
+    super(JavaLexer.TYPE_PARAMETERS, Collections.emptyList(), Collections.emptyList());
     this.openBracketToken = null;
     this.closeBracketToken = null;
   }

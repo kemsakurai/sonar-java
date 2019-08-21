@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,18 +19,19 @@
  */
 package org.sonar.java.model;
 
+import javax.annotation.Nullable;
 import org.sonar.api.utils.log.Logger;
 import org.sonar.api.utils.log.Loggers;
 import org.sonar.plugins.java.api.JavaVersion;
-
-import javax.annotation.Nullable;
 
 public class JavaVersionImpl implements JavaVersion {
 
   private static final Logger LOG = Loggers.get(JavaVersionImpl.class);
 
+  private static final int JAVA_6 = 6;
   private static final int JAVA_7 = 7;
   private static final int JAVA_8 = 8;
+  private static final int JAVA_12 = 12;
   private final int javaVersion;
 
   public JavaVersionImpl() {
@@ -42,16 +43,24 @@ public class JavaVersionImpl implements JavaVersion {
   }
 
   public static JavaVersion fromString(@Nullable String javaVersion) {
-    if (javaVersion != null) {
-      try {
-        return new JavaVersionImpl(Integer.parseInt(javaVersion.replaceAll("1.", "")));
-      } catch (NumberFormatException e) {
-        LOG.warn("Invalid java version (got \"" + javaVersion + "\"). "
-          + "The version will be ignored. Accepted formats are \"1.X\", or simply \"X\" "
-          + "(for instance: \"1.5\" or \"5\", \"1.6\" or \"6\", \"1.7\" or \"7\", etc.)");
-      }
+    if (javaVersion == null) {
+      return new JavaVersionImpl();
     }
-    return new JavaVersionImpl();
+    try {
+      String cleanedVersion = javaVersion.startsWith("1.") ? javaVersion.substring(2) : javaVersion;
+      int versionAsInt = Integer.parseInt(cleanedVersion);
+      return new JavaVersionImpl(versionAsInt);
+    } catch (NumberFormatException e) {
+      LOG.warn("Invalid java version (got \"" + javaVersion + "\"). "
+        + "The version will be ignored. Accepted formats are \"1.X\", or simply \"X\" "
+        + "(for instance: \"1.5\" or \"5\", \"1.6\" or \"6\", \"1.7\" or \"7\", etc.)");
+      return new JavaVersionImpl();
+    }
+  }
+
+  @Override
+  public boolean isJava6Compatible() {
+    return notSetOrAtLeast(JAVA_6);
   }
 
   @Override
@@ -64,8 +73,18 @@ public class JavaVersionImpl implements JavaVersion {
     return notSetOrAtLeast(JAVA_8);
   }
 
+  @Override
+  public boolean isJava12Compatible() {
+    return JAVA_12 <= javaVersion;
+  }
+
   private boolean notSetOrAtLeast(int requiredJavaVersion) {
     return isNotSet() || requiredJavaVersion <= javaVersion;
+  }
+
+  @Override
+  public String java6CompatibilityMessage() {
+    return compatibilityMessage(JAVA_6);
   }
 
   @Override

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,8 +20,10 @@
 package org.sonar.java.checks;
 
 import com.google.common.collect.ImmutableList;
+import java.util.Collections;
+import java.util.List;
 import org.sonar.check.Rule;
-import org.sonar.java.checks.helpers.MethodsHelper;
+import org.sonar.java.model.ExpressionUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
@@ -30,24 +32,26 @@ import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import java.util.List;
-
 @Rule(key = "S2186")
 public class AssertionInThreadRunCheck extends IssuableSubscriptionVisitor {
 
   private static final Iterable<String> CHECKED_TYPES = ImmutableList.of(
     "org.junit.Assert",
+    "org.junit.jupiter.api.Assertions",
     "junit.framework.Assert",
     "junit.framework.TestCase",
     "org.fest.assertions.Assertions");
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD);
+    return Collections.singletonList(Tree.Kind.METHOD);
   }
 
   @Override
   public void visitNode(Tree tree) {
+    if (!hasSemantic()) {
+      return;
+    }
     MethodTree methodTree = (MethodTree) tree;
     BlockTree block = methodTree.block();
     if (block != null && isRunMethod(methodTree)) {
@@ -65,7 +69,7 @@ public class AssertionInThreadRunCheck extends IssuableSubscriptionVisitor {
       if(tree.symbol().isMethodSymbol()) {
         Type type = tree.symbol().owner().type();
         if (isCheckedType(type)) {
-          reportIssue(MethodsHelper.methodName(tree), "Remove this assertion.");
+          reportIssue(ExpressionUtils.methodName(tree), "Remove this assertion.");
         }
       }
       super.visitMethodInvocation(tree);

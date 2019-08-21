@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,41 +19,37 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
-
-import org.apache.commons.lang.BooleanUtils;
+import java.util.Collections;
+import java.util.List;
+import javax.annotation.Nullable;
 import org.sonar.check.Rule;
 import org.sonar.java.model.ModifiersUtils;
-import org.sonar.java.model.declaration.MethodTreeImpl;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.tree.BlockTree;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
+import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Modifier;
 import org.sonar.plugins.java.api.tree.ReturnStatementTree;
 import org.sonar.plugins.java.api.tree.StatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 
-import javax.annotation.Nullable;
-
-import java.util.List;
-
 @Rule(key = "S3400")
 public class ConstantMethodCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Kind.METHOD);
+    return Collections.singletonList(Kind.METHOD);
   }
 
   @Override
   public void visitNode(Tree tree) {
-    MethodTreeImpl methodTree = (MethodTreeImpl) tree;
+    MethodTree methodTree = (MethodTree) tree;
     BlockTree body = methodTree.block();
     if (!methodTree.modifiers().annotations().isEmpty() || ModifiersUtils.hasModifier(methodTree.modifiers(), Modifier.DEFAULT)) {
       return;
     }
-    if (BooleanUtils.isFalse(methodTree.isOverriding()) && body != null && body.body().size() == 1) {
+    if (Boolean.FALSE.equals(methodTree.isOverriding()) && body != null && body.body().size() == 1) {
       StatementTree uniqueStatement = body.body().get(0);
       if (uniqueStatement.is(Kind.RETURN_STATEMENT)) {
         ExpressionTree returnedExpression = ((ReturnStatementTree) uniqueStatement).expression();

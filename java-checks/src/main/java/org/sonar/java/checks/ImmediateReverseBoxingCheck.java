@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,8 +19,12 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 import org.sonar.check.Rule;
 import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.java.matcher.MethodMatcherCollection;
@@ -37,10 +41,6 @@ import org.sonar.plugins.java.api.tree.NewClassTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 import org.sonar.plugins.java.api.tree.VariableTree;
-
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
 
 @Rule(key = "S2153")
 public class ImmediateReverseBoxingCheck extends IssuableSubscriptionVisitor {
@@ -61,29 +61,32 @@ public class ImmediateReverseBoxingCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD_INVOCATION, Tree.Kind.VARIABLE, Tree.Kind.ASSIGNMENT, Tree.Kind.NEW_CLASS);
+    return Arrays.asList(Tree.Kind.METHOD_INVOCATION, Tree.Kind.VARIABLE, Tree.Kind.ASSIGNMENT, Tree.Kind.NEW_CLASS);
   }
 
   @Override
   public void visitNode(Tree tree) {
-    if (hasSemantic()) {
-      if (tree.is(Tree.Kind.METHOD_INVOCATION)) {
-        visitMethodInvocationTree((MethodInvocationTree) tree);
-      } else if (tree.is(Tree.Kind.VARIABLE)) {
-        VariableTree variableTree = (VariableTree) tree;
-        ExpressionTree initializer = variableTree.initializer();
-        if (initializer != null) {
-          checkExpression(initializer, variableTree.type().symbolType());
-        }
-      } else if (tree.is(Tree.Kind.ASSIGNMENT)) {
-        AssignmentExpressionTree assignmentTree = (AssignmentExpressionTree) tree;
-        checkExpression(assignmentTree.expression(), assignmentTree.symbolType());
-      } else {
-        NewClassTree newClassTree = (NewClassTree) tree;
-        Symbol.TypeSymbol classSymbol = wrapperClassSymbol(newClassTree);
-        if (classSymbol != null) {
-          checkForUnboxing(newClassTree.arguments().get(0));
-        }
+    if (!hasSemantic()) {
+      return;
+    }
+    if (tree.is(Tree.Kind.METHOD_INVOCATION)) {
+      visitMethodInvocationTree((MethodInvocationTree) tree);
+    } else if (tree.is(Tree.Kind.VARIABLE)) {
+      VariableTree variableTree = (VariableTree) tree;
+      ExpressionTree initializer = variableTree.initializer();
+      if (initializer != null) {
+        checkExpression(initializer, variableTree.type().symbolType());
+      }
+    } else if (tree.is(Tree.Kind.ASSIGNMENT)) {
+      AssignmentExpressionTree assignmentTree = (AssignmentExpressionTree) tree;
+      checkExpression(assignmentTree.expression(), assignmentTree.symbolType());
+    } else {
+      NewClassTree newClassTree = (NewClassTree) tree;
+      Symbol.TypeSymbol classSymbol = wrapperClassSymbol(newClassTree);
+      if (classSymbol != null) {
+        ExpressionTree arg0 = newClassTree.arguments().get(0);
+        checkForUnboxing(arg0);
+        checkForUselessUnboxing(newClassTree.symbolType(), newClassTree.identifier(), arg0);
       }
     }
   }
@@ -96,21 +99,28 @@ public class ImmediateReverseBoxingCheck extends IssuableSubscriptionVisitor {
     }
   }
 
-  private void visitMethodInvocationTree(MethodInvocationTree methodInvocationTree) {
-    if (isValueOfInvocation(methodInvocationTree)) {
-      checkForUnboxing(methodInvocationTree.arguments().get(0));
-    } else if (isUnboxingMethodInvocation(methodInvocationTree)) {
-      ExpressionTree methodSelect = methodInvocationTree.methodSelect();
+  private void visitMethodInvocationTree(MethodInvocationTree mit) {
+    ExpressionTree methodSelect = mit.methodSelect();
+    if (isValueOfInvocation(mit)) {
+      ExpressionTree arg0 = mit.arguments().get(0);
+      checkForUnboxing(arg0);
+      checkForUselessUnboxing(mit.symbolType(), methodSelect, arg0);
+    } else if (isUnboxingMethodInvocation(mit)) {
       if (methodSelect.is(Tree.Kind.MEMBER_SELECT)) {
-        MemberSelectExpressionTree memberSelectExpressionTree = (MemberSelectExpressionTree) methodSelect;
-        checkForBoxing(memberSelectExpressionTree.expression());
+        checkForBoxing(((MemberSelectExpressionTree) methodSelect).expression());
       }
     } else {
-      Symbol symbol = methodInvocationTree.symbol();
+      Symbol symbol = mit.symbol();
       if (symbol.isMethodSymbol()) {
-        List<Type> parametersTypes = ((Symbol.MethodSymbol) symbol).parameterTypes();
-        checkMethodInvocationArguments(methodInvocationTree, parametersTypes);
+        checkMethodInvocationArguments(mit, ((Symbol.MethodSymbol) symbol).parameterTypes());
       }
+    }
+  }
+
+  private void checkForUselessUnboxing(Type targetType, Tree reportTree, ExpressionTree arg0) {
+    Type argType = arg0.symbolType();
+    if (argType.is(targetType.fullyQualifiedName())) {
+      reportIssue(reportTree, String.format("Remove the boxing to \"%s\"; The argument is already of the same type.", argType.name()));
     }
   }
 

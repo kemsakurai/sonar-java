@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -25,19 +25,24 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.sslr.grammar.LexerlessGrammarBuilder;
 
 import java.io.File;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.Deque;
+import java.util.LinkedList;
 
+/**
+ * @deprecated should be used only for tests
+ */
+@Deprecated
 public class JavaParser extends ActionParser<Tree> {
+  private Deque<JavaTree> parentList = new LinkedList<>();
 
-  private JavaParser(Charset charset, LexerlessGrammarBuilder grammarBuilder, Class<JavaGrammar> javaGrammarClass,
+  private JavaParser(LexerlessGrammarBuilder grammarBuilder, Class<JavaGrammar> javaGrammarClass,
     TreeFactory treeFactory, JavaNodeBuilder javaNodeBuilder, JavaLexer compilationUnit) {
-    super(charset, grammarBuilder, javaGrammarClass, treeFactory, javaNodeBuilder, compilationUnit);
+    super(StandardCharsets.UTF_8, grammarBuilder, javaGrammarClass, treeFactory, javaNodeBuilder, compilationUnit);
   }
 
-  public static ActionParser<Tree> createParser(Charset charset) {
-    return new JavaParser(
-      charset,
-      JavaLexer.createGrammarBuilder(),
+  public static ActionParser<Tree> createParser() {
+    return new JavaParser(JavaLexer.createGrammarBuilder(),
       JavaGrammar.class,
       new TreeFactory(),
       new JavaNodeBuilder(),
@@ -54,16 +59,20 @@ public class JavaParser extends ActionParser<Tree> {
     return createParentLink((JavaTree) super.parse(source));
   }
 
-  private static Tree createParentLink(JavaTree parent) {
-    if (!parent.isLeaf()) {
-      for (Tree nextTree : parent.getChildren()) {
-        JavaTree next = (JavaTree) nextTree;
-        if (next != null) {
-          next.setParent(parent);
-          createParentLink(next);
+  private Tree createParentLink(JavaTree topParent) {
+    parentList.push(topParent);
+    while (!parentList.isEmpty()) {
+      JavaTree parent = parentList.pop();
+      if (!parent.isLeaf()) {
+        for (Tree nextTree : parent.getChildren()) {
+          JavaTree next = (JavaTree) nextTree;
+          if (next != null) {
+            next.setParent(parent);
+            parentList.push(next);
+          }
         }
       }
     }
-    return parent;
+    return topParent;
   }
 }

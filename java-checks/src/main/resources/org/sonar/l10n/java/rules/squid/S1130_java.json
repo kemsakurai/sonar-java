@@ -7,9 +7,13 @@
     "constantCost": "5min"
   },
   "tags": [
+    "error-handling",
     "unused",
     "redundant",
     "clumsy"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-1130",
+  "sqKey": "RedundantThrowsDeclarationCheck",
+  "scope": "All"
 }

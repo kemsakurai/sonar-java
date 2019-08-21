@@ -7,8 +7,10 @@
     "constantCost": "5min"
   },
   "tags": [
-    "multi-threading",
-    "bug"
+    "multi-threading"
   ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-2204",
+  "sqKey": "S2204",
+  "scope": "All"
 }

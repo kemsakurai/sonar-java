@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,9 +19,10 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Collections;
+import java.util.List;
 import org.sonar.check.Rule;
-import org.sonar.java.checks.helpers.MethodsHelper;
+import org.sonar.java.model.ExpressionUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
@@ -32,8 +33,6 @@ import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 
-import java.util.List;
-
 @Rule(key = "S1849")
 public class HasNextCallingNextCheck extends IssuableSubscriptionVisitor {
 
@@ -41,13 +40,17 @@ public class HasNextCallingNextCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD);
+    return Collections.singletonList(Tree.Kind.METHOD);
   }
 
   @Override
   public void visitNode(Tree tree) {
     MethodTree methodTree = (MethodTree) tree;
-    if (hasSemantic() && methodTree.block() != null && isHasNextMethod(methodTree)) {
+    if (!hasSemantic()) {
+      return;
+    }
+    if (methodTree.block() != null && isHasNextMethod(methodTree)) {
+      hasNextBodyVisitor.setHasNextOwner(methodTree.symbol().owner());
       methodTree.block().accept(hasNextBodyVisitor);
     }
   }
@@ -63,13 +66,22 @@ public class HasNextCallingNextCheck extends IssuableSubscriptionVisitor {
 
   private class HasNextBodyVisitor extends BaseTreeVisitor {
 
+    private Symbol hasNextOwner;
+
     @Override
     public void visitMethodInvocation(MethodInvocationTree tree) {
       Symbol method = tree.symbol();
-      if ("next".equals(method.name()) && tree.arguments().isEmpty() && isIteratorMethod(method)) {
-        reportIssue(MethodsHelper.methodName(tree), "Refactor the implementation of this \"Iterator.hasNext()\" method to not call \"Iterator.next()\".");
+      if ("next".equals(method.name())
+        && tree.arguments().isEmpty()
+        && isIteratorMethod(method)
+        && (hasNextOwner == method.owner() || hasNextOwner.type().isSubtypeOf(method.owner().type()))) {
+        reportIssue(ExpressionUtils.methodName(tree), "Refactor the implementation of this \"Iterator.hasNext()\" method to not call \"Iterator.next()\".");
       }
       super.visitMethodInvocation(tree);
+    }
+
+    public void setHasNextOwner(Symbol hasNextOwner) {
+      this.hasNextOwner = hasNextOwner;
     }
 
     @Override

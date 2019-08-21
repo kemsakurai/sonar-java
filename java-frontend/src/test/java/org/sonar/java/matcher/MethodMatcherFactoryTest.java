@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,9 +19,19 @@
  */
 package org.sonar.java.matcher;
 
-import com.google.common.collect.ImmutableList;
+import java.io.File;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import org.junit.Assert;
 import org.junit.Test;
+import org.sonar.api.batch.fs.InputFile;
+import org.sonar.java.TestUtils;
 import org.sonar.java.ast.JavaAstScanner;
 import org.sonar.java.ast.visitors.SubscriptionVisitor;
 import org.sonar.java.model.VisitorsBridge;
@@ -29,13 +39,6 @@ import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.NewClassTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
-
-import java.io.File;
-import java.io.IOException;
-import java.io.PrintWriter;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
@@ -84,7 +87,7 @@ public class MethodMatcherFactoryTest {
     MethodMatcher anyArg = MethodMatcherFactory.methodMatcher("org.sonar.test.Outer$Inner#foo");
     MethodVisitor visitor = new MethodVisitor();
     visitor.add(anyArg);
-    JavaAstScanner.scanSingleFileForTests(new File("src/test/files/matcher/InnerClass.java"), new VisitorsBridge(visitor));
+    scanWithVisitor(visitor, TestUtils.inputFile("src/test/files/matcher/InnerClass.java"));
     assertThat(visitor.count(anyArg)).isEqualTo(1);
   }
 
@@ -103,7 +106,7 @@ public class MethodMatcherFactoryTest {
     visitor.add(intInt);
     visitor.add(onlyBoolean);
 
-    File testFile = buildTestFile(
+    InputFile testFile = buildTestFile(
       "package org.sonar.test;",
       "private class Test {",
       "   private void match(String a) {}",
@@ -118,7 +121,7 @@ public class MethodMatcherFactoryTest {
       "      match(3, 5);",
       "   }",
       "}");
-    JavaAstScanner.scanSingleFileForTests(testFile, new VisitorsBridge(visitor));
+    scanWithVisitor(visitor, testFile);
 
     assertThat(visitor.count(anyArg)).isEqualTo(6);
     assertThat(visitor.count(stringOnly)).isEqualTo(1);
@@ -139,7 +142,7 @@ public class MethodMatcherFactoryTest {
     visitor.add(stringBuilder);
     visitor.add(stringBytes);
 
-    File testFile = buildTestFile(
+    InputFile testFile = buildTestFile(
       "package org.sonar.test;",
       "private class Test {",
       "   private void caller() {",
@@ -150,7 +153,7 @@ public class MethodMatcherFactoryTest {
       "      new String(bytes, 0, 5);",
       "   }",
       "}");
-    JavaAstScanner.scanSingleFileForTests(testFile, new VisitorsBridge(visitor));
+    scanWithVisitor(visitor, testFile);
 
     assertThat(visitor.count(anyArg)).isEqualTo(4);
     assertThat(visitor.count(noArg)).isEqualTo(1);
@@ -158,7 +161,11 @@ public class MethodMatcherFactoryTest {
     assertThat(visitor.count(stringBytes)).isEqualTo(2);
   }
 
-  public static File buildTestFile(String... codeLines) {
+  private void scanWithVisitor(MethodVisitor visitor, InputFile testFile) {
+    JavaAstScanner.scanSingleFileForTests(testFile, new VisitorsBridge(Collections.singletonList(visitor), new ArrayList<>(), null));
+  }
+
+  public static InputFile buildTestFile(String... codeLines) {
     try {
       File file = File.createTempFile("InLineTest", ".java");
       file.deleteOnExit();
@@ -167,7 +174,7 @@ public class MethodMatcherFactoryTest {
           printer.println(line);
         }
       }
-      return file;
+      return TestUtils.inputFile(file);
     } catch (IOException e) {
       Assert.fail("Unable to create inline test file: " + e.getMessage());
       return null;
@@ -220,7 +227,7 @@ public class MethodMatcherFactoryTest {
 
     @Override
     public List<Kind> nodesToVisit() {
-      return ImmutableList.of(Tree.Kind.METHOD_INVOCATION, Tree.Kind.NEW_CLASS);
+      return Arrays.asList(Tree.Kind.METHOD_INVOCATION, Tree.Kind.NEW_CLASS);
     }
   }
 }

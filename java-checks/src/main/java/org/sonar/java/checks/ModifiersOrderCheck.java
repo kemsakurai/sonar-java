@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,8 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Sets;
 import org.sonar.check.Rule;
 import org.sonar.java.RspecKey;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
@@ -32,7 +30,10 @@ import org.sonar.plugins.java.api.tree.ModifiersTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.Set;
 
 @Rule(key = "ModifiersOrderCheck")
@@ -40,17 +41,17 @@ import java.util.Set;
 public class ModifiersOrderCheck extends IssuableSubscriptionVisitor {
 
 
-  private Set<Tree> alreadyReported = Sets.newHashSet();
+  private Set<Tree> alreadyReported = new HashSet<>();
 
   @Override
-  public void scanFile(JavaFileScannerContext context) {
+  public void setContext(JavaFileScannerContext context) {
     alreadyReported.clear();
-    super.scanFile(context);
+    super.setContext(context);
   }
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Kind.MODIFIERS);
+    return Collections.singletonList(Kind.MODIFIERS);
   }
 
   @Override
@@ -65,23 +66,45 @@ public class ModifiersOrderCheck extends IssuableSubscriptionVisitor {
   }
 
   private static ModifierTree getFirstBadlyOrdered(ModifiersTree modifiersTree) {
-    int modifierIndex = -1;
+    ListIterator<ModifierTree> modifiersIterator = modifiersTree.listIterator();
+    skipAnnotations(modifiersIterator);
     Modifier[] modifiers = Modifier.values();
-    for (ModifierTree modifier : modifiersTree) {
+    int modifierIndex = 0;
+    while (modifiersIterator.hasNext()){
+      ModifierTree modifier = modifiersIterator.next();
       if (modifier.is(Kind.ANNOTATION)) {
-        if (modifierIndex >= 0) {
-          return modifier;
-        }
-      } else {
-        if (modifierIndex < 0) {
-          modifierIndex = 0;
-        }
-        ModifierKeywordTree mkt = (ModifierKeywordTree) modifier;
-        for (; modifierIndex < modifiers.length && !mkt.modifier().equals(modifiers[modifierIndex]); modifierIndex++) {
-          // We're just interested in the final value of modifierIndex
-        }
-        if (modifierIndex == modifiers.length) {
-          return modifier;
+        break;
+      }
+      ModifierKeywordTree mkt = (ModifierKeywordTree) modifier;
+      for (; modifierIndex < modifiers.length && !mkt.modifier().equals(modifiers[modifierIndex]); modifierIndex++) {
+        // We're just interested in the final value of modifierIndex
+      }
+      if (modifierIndex == modifiers.length) {
+        return modifier;
+      }
+    }
+    return testOnlyAnnotationsAreLeft(modifiersIterator);
+  }
+
+  /**
+   * Move iterator on the first element which is not an annotation
+   */
+  private static void skipAnnotations(ListIterator<ModifierTree> modifiersIterator) {
+    while (modifiersIterator.hasNext() && modifiersIterator.next().is(Kind.ANNOTATION)) {
+      // skip modifiers which are annotations
+    }
+    if (modifiersIterator.hasNext()) {
+      modifiersIterator.previous();
+    }
+  }
+
+  private static ModifierTree testOnlyAnnotationsAreLeft(ListIterator<ModifierTree> modifiersIterator) {
+    while (modifiersIterator.hasNext()) {
+      ModifierTree modifier = modifiersIterator.next();
+      if (!modifier.is(Kind.ANNOTATION)) {
+        modifiersIterator.previous();
+        if (modifiersIterator.hasPrevious()) {
+          return modifiersIterator.previous();
         }
       }
     }

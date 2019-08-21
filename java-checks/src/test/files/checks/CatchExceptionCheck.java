@@ -40,6 +40,18 @@ class B {
   }
 }
 
+class TryWithResource {
+  static class A implements AutoCloseable {
+    @Override
+    public void close() throws Exception { }
+  }
+
+  void foo() {
+    try (A closeable = new A()) { }
+    catch (Exception e) { } // Compliant - exception from close method
+  }
+}
+
 class ExceptionsWithParametrizedMethods {
 
   void foo() {
@@ -103,6 +115,19 @@ class ExceptionsWithParametrizedMethods {
       }catch (Exception e){ // Noncompliant
 
       }
+    }
+  }
+
+  class ExceptionThrower {
+    ExceptionThrower() throws Exception {
+      throw new Exception("");
+    }
+  }
+  void instanceExceptionThrower() {
+    try {
+      String s = new String();
+      ExceptionThrower et = new ExceptionThrower();
+    } catch(Exception e) {
     }
   }
 }

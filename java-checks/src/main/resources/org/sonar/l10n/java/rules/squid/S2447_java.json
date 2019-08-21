@@ -7,7 +7,17 @@
     "constantCost": "20min"
   },
   "tags": [
+    "cwe",
+    "cert",
     "pitfall"
   ],
-  "defaultSeverity": "Critical"
+  "defaultSeverity": "Critical",
+  "ruleSpecification": "RSPEC-2447",
+  "sqKey": "S2447",
+  "scope": "All",
+  "securityStandards": {
+    "CWE": [
+      476
+    ]
+  }
 }

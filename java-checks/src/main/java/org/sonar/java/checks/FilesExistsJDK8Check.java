@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,17 +19,19 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import org.sonar.check.Rule;
 import org.sonar.java.JavaVersionAwareVisitor;
 import org.sonar.java.checks.methods.AbstractMethodDetection;
 import org.sonar.java.matcher.MethodMatcher;
+import org.sonar.java.model.ExpressionUtils;
 import org.sonar.plugins.java.api.JavaVersion;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
-
-import java.util.List;
-import java.util.Map;
+import org.sonar.plugins.java.api.tree.MethodReferenceTree;
 
 @Rule(key = "S3725")
 public class FilesExistsJDK8Check extends AbstractMethodDetection implements JavaVersionAwareVisitor {
@@ -51,7 +53,7 @@ public class FilesExistsJDK8Check extends AbstractMethodDetection implements Jav
 
   @Override
   protected List<MethodMatcher> getMethodInvocationMatchers() {
-    return ImmutableList.of(
+    return Arrays.asList(
       MethodMatcher.create().typeDefinition(JAVA_NIO_FILE_FILES).name(EXISTS).withAnyParameters(),
       MethodMatcher.create().typeDefinition(JAVA_NIO_FILE_FILES).name("notExists").withAnyParameters(),
       MethodMatcher.create().typeDefinition(JAVA_NIO_FILE_FILES).name("isRegularFile").withAnyParameters(),
@@ -62,6 +64,12 @@ public class FilesExistsJDK8Check extends AbstractMethodDetection implements Jav
   @Override
   protected void onMethodInvocationFound(MethodInvocationTree mit) {
     String methodName = mit.symbol().name();
-    reportIssue(mit.methodSelect(), "Replace this with a call to the \"toFile()." + messageParam.get(methodName) + "()\" method");
+    reportIssue(ExpressionUtils.methodName(mit), "Replace this with a call to the \"toFile()." + messageParam.get(methodName) + "()\" method");
+  }
+
+  @Override
+  protected void onMethodReferenceFound(MethodReferenceTree methodReferenceTree) {
+    String methodName = methodReferenceTree.method().symbol().name();
+    reportIssue(methodReferenceTree.method(), "Replace this with a call to the \"toFile()." + messageParam.get(methodName) + "()\" method");
   }
 }

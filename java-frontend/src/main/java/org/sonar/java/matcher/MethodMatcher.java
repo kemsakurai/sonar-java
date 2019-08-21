@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,8 +20,10 @@
 package org.sonar.java.matcher;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
+import java.util.ArrayList;
 import java.util.List;
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Symbol.MethodSymbol;
 import org.sonar.plugins.java.api.semantic.Type;
@@ -29,11 +31,10 @@ import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
+import org.sonar.plugins.java.api.tree.MethodReferenceTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.NewClassTree;
 import org.sonar.plugins.java.api.tree.Tree;
-
-import javax.annotation.Nullable;
 
 public class MethodMatcher {
 
@@ -46,6 +47,16 @@ public class MethodMatcher {
 
   public static MethodMatcher create() {
     return new MethodMatcher();
+  }
+
+  public MethodMatcher copy() {
+    MethodMatcher copy = new MethodMatcher();
+    copy.typeDefinition = typeDefinition;
+    copy.callSite = callSite;
+    copy.methodName = methodName;
+    copy.parameterTypes = parameterTypes == null ? null : new ArrayList<>(parameterTypes);
+    copy.parameters = parameterTypes == null ? null : ParametersCriteria.of(copy.parameterTypes);
+    return copy;
   }
 
   public MethodMatcher name(String methodName) {
@@ -83,7 +94,7 @@ public class MethodMatcher {
 
   public MethodMatcher addParameter(TypeCriteria parameterTypeCriteria) {
     if (parameters == null) {
-      parameterTypes = Lists.newArrayList();
+      parameterTypes = new ArrayList<>();
       parameters = ParametersCriteria.of(parameterTypes);
     } else {
       Preconditions.checkState(parameterTypes != null, "parameters is already initialized and doesn't support addParameter.");
@@ -139,10 +150,28 @@ public class MethodMatcher {
     return enclosingClass != null && matches(symbol, enclosingClass.type());
   }
 
-  private boolean matches(Symbol symbol, Type callSiteType) {
+  public boolean matches(MethodReferenceTree methodReferenceTree) {
+    return matches(methodReferenceTree.method().symbol(), getCallSiteType(methodReferenceTree));
+  }
+
+  public boolean matches(Symbol symbol) {
+    return matches(symbol, null);
+  }
+
+  private boolean matches(Symbol symbol, @Nullable Type callSiteType) {
     return symbol.isMethodSymbol() && isSearchedMethod((MethodSymbol) symbol, callSiteType);
   }
 
+  @CheckForNull
+  private static Type getCallSiteType(MethodReferenceTree referenceTree) {
+    Tree expression = referenceTree.expression();
+    if(expression instanceof ExpressionTree) {
+      return ((ExpressionTree) expression).symbolType();
+    }
+    return null;
+  }
+
+  @CheckForNull
   private static Type getCallSiteType(MethodInvocationTree mit) {
     ExpressionTree methodSelect = mit.methodSelect();
     // methodSelect can only be Tree.Kind.IDENTIFIER or Tree.Kind.MEMBER_SELECT

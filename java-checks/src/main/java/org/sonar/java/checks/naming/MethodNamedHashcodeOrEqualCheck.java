@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,34 +19,43 @@
  */
 package org.sonar.java.checks.naming;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Collections;
+import java.util.List;
 import org.sonar.check.Rule;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import java.util.List;
-
 @Rule(key = "S1221")
 public class MethodNamedHashcodeOrEqualCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD);
+    return Collections.singletonList(Tree.Kind.METHOD);
   }
 
   @Override
   public void visitNode(Tree tree) {
     IdentifierTree methodIdentifier = ((MethodTree) tree).simpleName();
-    String methodName = methodIdentifier.name();
-    if ("hashcode".equals(methodName) || "equal".equals(methodName)) {
-      String substitute = "hashCode()";
-      if ("equal".equals(methodName)) {
-        substitute = "equals(Object obj)";
-      }
-      reportIssue(methodIdentifier, "Either override Object." + substitute + ", or totally rename the method to prevent any confusion.");
+    switch (methodIdentifier.name()) {
+      case "hashcode":
+        report(methodIdentifier, "hashCode()");
+        break;
+      case "equal":
+        report(methodIdentifier, "equals(Object obj)");
+        break;
+      case "tostring":
+        report(methodIdentifier, "toString()");
+        break;
+      default:
+        // do nothing
+        break;
     }
+  }
+
+  private void report(IdentifierTree methodIdentifier, String substitute) {
+    reportIssue(methodIdentifier, "Either override Object." + substitute + ", or totally rename the method to prevent any confusion.");
   }
 
 }

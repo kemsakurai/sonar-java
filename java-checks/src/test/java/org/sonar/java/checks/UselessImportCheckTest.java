@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -30,8 +30,18 @@ public class UselessImportCheckTest {
   }
 
   @Test
+  public void no_semantic() {
+    JavaCheckVerifier.verifyNoIssueWithoutSemantic("src/test/files/checks/UselessImportCheck/NoSemanticWithPackage.java", new UselessImportCheck());
+  }
+
+  @Test
   public void detected_without_package() {
     JavaCheckVerifier.verify("src/test/files/checks/UselessImportCheck/WithoutPackage.java", new UselessImportCheck());
+  }
+
+  @Test
+  public void with_module() {
+    JavaCheckVerifier.verifyNoIssue("src/test/files/checks/WithModule.java", new UselessImportCheck());
   }
 
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,11 +19,10 @@
  */
 package org.sonar.java.se.checks;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
 import org.sonar.check.Rule;
 import org.sonar.java.se.CheckerContext;
 import org.sonar.java.se.ExplodedGraph;
+import org.sonar.java.se.Flow;
 import org.sonar.java.se.FlowComputation;
 import org.sonar.java.se.ProgramState;
 import org.sonar.java.se.SymbolicValueFactory;
@@ -38,11 +37,13 @@ import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 @Rule(key = "S2222")
 public class LocksNotUnlockedCheck extends SECheck {
+
+  private static final List<Class<? extends Constraint>> LOCK_CONSTRAINT_DOMAIN = Collections.singletonList(LockConstraint.class);
 
   public enum LockConstraint implements Constraint {
     LOCKED, UNLOCKED;
@@ -65,8 +66,7 @@ public class LocksNotUnlockedCheck extends SECheck {
 
     private final SymbolicValue operand;
 
-    public TryLockSymbolicValue(final int id, final SymbolicValue operand) {
-      super(id);
+    public TryLockSymbolicValue(final SymbolicValue operand) {
       this.operand = operand;
     }
 
@@ -78,9 +78,9 @@ public class LocksNotUnlockedCheck extends SECheck {
     @Override
     public List<ProgramState> setConstraint(ProgramState programState, BooleanConstraint booleanConstraint) {
       if (BooleanConstraint.TRUE.equals(booleanConstraint)) {
-        return ImmutableList.of(programState.addConstraint(operand, LockConstraint.LOCKED));
+        return Collections.singletonList(programState.addConstraintTransitively(operand, LockConstraint.LOCKED));
       } else {
-        return ImmutableList.of(programState.addConstraint(operand, LockConstraint.UNLOCKED));
+        return Collections.singletonList(programState.addConstraintTransitively(operand, LockConstraint.UNLOCKED));
       }
     }
 
@@ -99,8 +99,8 @@ public class LocksNotUnlockedCheck extends SECheck {
     }
 
     @Override
-    public SymbolicValue createSymbolicValue(int id) {
-      return new TryLockSymbolicValue(id, operand);
+    public SymbolicValue createSymbolicValue() {
+      return new TryLockSymbolicValue(operand);
     }
 
   }
@@ -153,9 +153,9 @@ public class LocksNotUnlockedCheck extends SECheck {
       if (!isMemberSelectActingOnField(target)) {
         final SymbolicValue symbolicValue = programState.getValue(target.symbol());
         if (LOCK_METHOD_NAME.equals(methodName) || TRY_LOCK_METHOD_NAME.equals(methodName)) {
-          programState = programState.addConstraint(symbolicValue, LockConstraint.LOCKED);
+          programState = programState.addConstraintTransitively(symbolicValue, LockConstraint.LOCKED);
         } else if (UNLOCK_METHOD_NAME.equals(methodName)) {
-          programState = programState.addConstraint(symbolicValue, LockConstraint.UNLOCKED);
+          programState = programState.addConstraintTransitively(symbolicValue, LockConstraint.UNLOCKED);
         }
       }
     }
@@ -181,20 +181,22 @@ public class LocksNotUnlockedCheck extends SECheck {
 
   @Override
   public void checkEndOfExecutionPath(CheckerContext context, ConstraintManager constraintManager) {
+    if (context.getState().exitingOnRuntimeException()) {
+      return;
+    }
     ExplodedGraph.Node node = context.getNode();
     context.getState().getValuesWithConstraints(LockConstraint.LOCKED).stream()
-      .flatMap(sv ->{
-        List<Class<? extends Constraint>> domains = Lists.newArrayList(LockConstraint.class);
-        return FlowComputation.flow(node, sv, LockConstraint.LOCKED::equals, LockConstraint.UNLOCKED::equals, domains).stream().flatMap(Collection::stream);
-      })
+      .flatMap(lockedSv -> FlowComputation.flowWithoutExceptions(node, lockedSv, LockConstraint.LOCKED::equals, LockConstraint.UNLOCKED::equals, LOCK_CONSTRAINT_DOMAIN).stream())
+      .flatMap(Flow::firstFlowLocation)
       .forEach(this::reportIssue);
   }
 
   private void reportIssue(JavaFileScannerContext.Location location) {
-    MethodInvocationTree syntaxNode = (MethodInvocationTree) location.syntaxNode;
-    String flowMsg = "Lock '" + SyntaxTreeNameFinder.getName(syntaxNode.methodSelect()) + "' is never unlocked.";
-    Tree tree = issueTree(syntaxNode);
-    reportIssue(tree, "Unlock this lock along all executions paths of this method.", FlowComputation.singleton(flowMsg, tree));
+    if (location.syntaxNode.is(Tree.Kind.METHOD_INVOCATION)) {
+      MethodInvocationTree syntaxNode = (MethodInvocationTree) location.syntaxNode;
+      Tree tree = issueTree(syntaxNode);
+      reportIssue(tree, "Unlock this lock along all executions paths of this method.");
+    }
   }
 
   private static Tree issueTree(MethodInvocationTree syntaxNode) {

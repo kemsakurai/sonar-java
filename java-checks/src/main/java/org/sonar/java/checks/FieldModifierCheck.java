@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,8 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
-
 import org.sonar.check.Rule;
 import org.sonar.java.model.ModifiersUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
@@ -31,15 +29,15 @@ import org.sonar.plugins.java.api.tree.ModifiersTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
+import java.util.Arrays;
 import java.util.List;
 
 @Rule(key = "S2039")
 public class FieldModifierCheck extends IssuableSubscriptionVisitor {
 
-  private static final String GUAVA_FQCN = "com.google.common.annotations.VisibleForTesting";
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.CLASS, Tree.Kind.ENUM);
+    return Arrays.asList(Tree.Kind.CLASS, Tree.Kind.ENUM);
   }
 
   @Override
@@ -70,6 +68,8 @@ public class FieldModifierCheck extends IssuableSubscriptionVisitor {
   }
 
   private static boolean isVisibleForTesting(VariableTree variableTree) {
-    return variableTree.symbol().metadata().isAnnotatedWith(GUAVA_FQCN);
+    return variableTree.modifiers().annotations().stream()
+      .anyMatch(annotation -> "VisibleForTesting".equals(annotation.annotationType().lastToken().text()));
   }
+
 }

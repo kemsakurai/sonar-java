@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,53 +19,39 @@
  */
 package org.sonar.java.checks.xml.web;
 
-import com.google.common.collect.Iterables;
-import org.sonar.check.Rule;
-import org.sonar.java.xml.XmlCheckContext;
+import org.sonarsource.analyzer.commons.xml.XmlFile;
 import org.w3c.dom.Node;
-
+import org.sonar.check.Rule;
 import javax.xml.xpath.XPathExpression;
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 
 @Rule(key = "S3355")
-public class ValidationFiltersCheck extends WebXmlCheckTemplate {
-  private XPathExpression filterNamesFromFilterExpression;
-  private XPathExpression filterNamesFromFilterMappingExpression;
+public class ValidationFiltersCheck extends AbstractWebXmlXPathBasedCheck {
+  private XPathExpression filterNamesFromFilterExpression = getXPathExpression(WEB_XML_ROOT + "/filter/filter-name");
+  private XPathExpression filterNamesFromFilterMappingExpression = getXPathExpression(WEB_XML_ROOT + "/filter-mapping/filter-name");
 
   @Override
-  public void precompileXPathExpressions(XmlCheckContext context) {
-    filterNamesFromFilterExpression = context.compile(WEB_XML_ROOT + "/filter/filter-name");
-    filterNamesFromFilterMappingExpression = context.compile(WEB_XML_ROOT + "/filter-mapping/filter-name");
-  }
-
-  @Override
-  public void scanWebXml(XmlCheckContext context) {
-    Iterable<Node> filtersDefinedInFilters = context.evaluateOnDocument(filterNamesFromFilterExpression);
-    Iterable<Node> filtersUsedInMapping = context.evaluateOnDocument(filterNamesFromFilterMappingExpression);
-    if (Iterables.isEmpty(filtersDefinedInFilters) || Iterables.isEmpty(filtersUsedInMapping)) {
-      reportIssueOnFile("Add a validation filter to this \"web.xml\".");
-    } else {
-      Set<String> filterNamesFromFilters = getFilterNames(filtersDefinedInFilters);
-      for (Node node : filtersUsedInMapping) {
-        String filterName = getStringValue(node);
-        if (!filterNamesFromFilters.contains(filterName)) {
-          reportIssue(node, "\"" + filterName + "\" is not defined in this file.");
+  public void scanWebXml(XmlFile file) {
+    Set<String> filtersInMapping = new HashSet<>();
+    evaluateAsList(filterNamesFromFilterMappingExpression, file.getNamespaceUnawareDocument())
+      .forEach(node -> getStringValue(node).ifPresent(filtersInMapping::add));
+    evaluateAsList(filterNamesFromFilterExpression, file.getNamespaceUnawareDocument())
+      .forEach(node -> {
+        Optional<String> filterName = getStringValue(node);
+        if (filterName.isPresent() && !filtersInMapping.contains(filterName.get())) {
+          reportIssue(node, "\"" + filterName.get() + "\" should have a mapping.");
         }
-      }
-    }
+      });
   }
 
-  private static Set<String> getFilterNames(Iterable<Node> nodes) {
-    Set<String> nodeByFilterName = new HashSet<>();
-    for (Node node : nodes) {
-      nodeByFilterName.add(getStringValue(node));
+  private static Optional<String> getStringValue(Node node) {
+    Node firstChild = node.getFirstChild();
+    if (firstChild == null) {
+      return Optional.empty();
     }
-    return nodeByFilterName;
-  }
-
-  private static String getStringValue(Node node) {
-    return node.getFirstChild().getNodeValue();
+    return Optional.of(firstChild.getNodeValue());
   }
 
 }

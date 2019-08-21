@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -127,6 +127,12 @@ public class LeastUpperBound {
 
     Symbol.TypeSymbol symbol = type.symbol();
     TypeSubstitution substitution = getTypeSubstitution(type);
+    if(substitution.size() == 0 && !((JavaSymbol.TypeJavaSymbol) symbol).typeVariableTypes.isEmpty()) {
+      // raw type : let's create a substitution based on erasures
+      TypeSubstitution ts = new TypeSubstitution();
+      ((JavaSymbol.TypeJavaSymbol) symbol).typeVariableTypes.forEach(t -> ts.add(t, t.erasure()));
+      substitution = ts;
+    }
 
     result.addAll(interfacesWithSubstitution(symbol, substitution));
 

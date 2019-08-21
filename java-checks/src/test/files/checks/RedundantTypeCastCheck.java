@@ -1,6 +1,8 @@
+import java.util.function.Predicate;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Comparator;
 import java.util.Set;
 
@@ -36,9 +38,9 @@ class Outer {
     int c = (int)a; // Noncompliant {{Remove this unnecessary cast to "int".}}
     int e = (int) d;
   }
-  
+
   void foo(List<List<A>> a) {}
-  
+
   List<List<B>> foo2() {
     return null;
   }
@@ -166,4 +168,152 @@ class G<T> {
     }
   }
 
+  void fun() {
+    Object test = new Object[]{"1"};
+    String[] test2 = new String[]{"1"};
+    Object[] test3 = new String[]{"1"};
+    System.out.println(((Object[])test)[0]); // compliant : target type is array access
+    System.out.println(((Object[])test2)[0]); // Noncompliant
+    System.out.println(((String[])test3)[0]); // compliant
+  }
+}
+
+interface J {
+  default void foo() { }
+  default void bar() { }
+
+  interface K extends J {
+    void foo();
+  }
+
+  interface L extends J {
+    void foobar();
+  }
+
+  static void test() {
+    J j1 = (K) () -> { }; // compliant : cast is needed for it to be used as a lambda expression
+    J j2 = (L) () -> { }; // compliant : cast is needed for it to be used as a lambda expression
+  }
+}
+
+interface M {
+  default void foo() { }
+  default void bar() { }
+  void foobar();
+
+  interface N extends M {
+    default void foobar() { }
+    void foo();
+  }
+
+  interface O extends M { }
+
+  interface P extends M {
+    void foobar();
+  }
+
+  interface Q extends M {
+    default void foo() { }
+  }
+
+  static void test() {
+    M m1 = () -> { };
+    M m2 = (M) () -> { }; // Noncompliant {{Remove this unnecessary cast to "M".}}
+    M m3 = (N) () -> { }; // compliant : cast changes method associated to lambda expression
+    M m4 = (O) () -> { }; // Noncompliant {{Remove this unnecessary cast to "O".}}
+    M m5 = (P) () -> { }; // Noncompliant {{Remove this unnecessary cast to "P".}}
+    M m6 = (Q) () -> { }; // compliant : cast changes default definition of method foo
+  }
+}
+
+interface R {
+  void foo();
+  void bar();
+
+  interface S extends R {
+    default void foo();
+  }
+
+  static void test() {
+    R r1 = (S) () -> {  }; // compliant : cast is needed for it to be used as a lambda expression
+  }
+}
+
+class T {
+  Predicate<Object> methodReferenceCastNeeded() {
+    return ((Predicate<Object>) Objects::nonNull).negate(); // Compliant : cannot call Predicate#negate() without casting it first
+  }
+
+  Comparator<Integer> methodReferenceCastNeeded2() {
+    return (((Comparator<Integer>) Integer::compare)).reversed();   // Compliant : cannot call Comparator#reversed() without casting it first
+  }
+
+  Predicate<Object> methodReferenceCastNotNeeded() {
+    return (((Predicate<Object>) Objects::nonNull)); // Noncompliant
+  }
+
+  Comparator<Integer> methodReferenceCastNotNeeded2() {
+    return (Comparator<Integer>) Integer::compare; // Noncompliant
+  }
+}
+
+interface U<A extends Iterable> {
+  A foo(A param);
+
+  default void test() {
+    U u1 = (U<List>) (param) -> param.subList(0,1); // Compliant : cast needed to access sublist method
+  }
+}
+
+abstract class MyClass {
+  public String field;
+  abstract <U extends MyClass> U foo();
+
+  String qix() {
+    return ((MyOtherClass) foo()).field; // Compliant - FN
+  }
+
+  String qix0() {
+    return ((MyOtherClass) foo()).otherField; // Compliant
+  }
+
+  String qix1() {
+    return ((MyOtherClass) foo()).bar(); // Compliant
+  }
+
+  String qix2() {
+    return ((MyOtherClass) unknown()).bar(); // Compliant
+  }
+
+  MyClass qix3() {
+    return ((MyOtherClass) foo()); // Noncompliant
+  }
+}
+abstract class MyOtherClass extends MyClass {
+  public String otherField;
+  abstract String bar();
+}
+
+class AWT {
+  private static java.awt.event.AWTEventListener deProxyAWTEventListener(java.awt.event.AWTEventListener l) {
+    java.awt.event.AWTEventListener localL = l;
+
+    if (localL == null) {
+      return null;
+    }
+    if (l instanceof java.awt.event.AWTEventListenerProxy) {
+      localL = (java.awt.event.AWTEventListener) // Noncompliant
+        ((java.awt.event.AWTEventListenerProxy) l).getListener(); // Compliant
+    }
+    return localL;
+  }
+
+  void foo() {
+    byte a = 42;
+    a = (byte) -a; // FP, cast is required
+  }
+}
+
+class CastIntersectionType {
+  public static final Comparator<Object> UNIQUE_ID_COMPARATOR =  (Comparator<Object> & java.io.Serializable) (o1, o2) -> o1.toString().compareTo(o2.toString());
 }

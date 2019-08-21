@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,11 +20,8 @@
 package org.sonar.plugins.java.api.tree;
 
 import com.google.common.annotations.Beta;
-import org.sonar.java.model.expression.TypeArgumentListTreeImpl;
-
-import javax.annotation.Nullable;
-
 import java.util.List;
+import javax.annotation.Nullable;
 
 /**
  * Default implementation of {@link TreeVisitor}.
@@ -53,6 +50,7 @@ public class BaseTreeVisitor implements TreeVisitor {
     scan(tree.packageDeclaration());
     scan(tree.imports());
     scan(tree.types());
+    scan(tree.moduleDeclaration());
   }
 
   @Override
@@ -63,6 +61,7 @@ public class BaseTreeVisitor implements TreeVisitor {
   @Override
   public void visitClass(ClassTree tree) {
     scan(tree.modifiers());
+    scan(tree.simpleName());
     scan(tree.typeParameters());
     scan(tree.superClass());
     scan(tree.superInterfaces());
@@ -74,6 +73,7 @@ public class BaseTreeVisitor implements TreeVisitor {
     scan(tree.modifiers());
     scan(tree.typeParameters());
     scan(tree.returnType());
+    scan(tree.simpleName());
     scan(tree.parameters());
     scan(tree.defaultValue());
     scan(tree.throwsClauses());
@@ -116,6 +116,11 @@ public class BaseTreeVisitor implements TreeVisitor {
 
   @Override
   public void visitSwitchStatement(SwitchStatementTree tree) {
+    scan(tree.asSwitchExpression());
+  }
+
+  @Override
+  public void visitSwitchExpression(SwitchExpressionTree tree) {
     scan(tree.expression());
     scan(tree.cases());
   }
@@ -128,7 +133,7 @@ public class BaseTreeVisitor implements TreeVisitor {
 
   @Override
   public void visitCaseLabel(CaseLabelTree tree) {
-    scan(tree.expression());
+    scan(tree.expressions());
   }
 
   @Override
@@ -186,7 +191,7 @@ public class BaseTreeVisitor implements TreeVisitor {
 
   @Override
   public void visitTryStatement(TryStatementTree tree) {
-    scan(tree.resources());
+    scan(tree.resourceList());
     scan(tree.block());
     scan(tree.catches());
     scan(tree.finallyBlock());
@@ -205,8 +210,8 @@ public class BaseTreeVisitor implements TreeVisitor {
 
   @Override
   public void visitBinaryExpression(BinaryExpressionTree tree) {
-    scan(tree.leftOperand());
-    scan(tree.rightOperand());
+    tree.leftOperand().accept(this);
+    tree.rightOperand().accept(this);
   }
 
   @Override
@@ -286,9 +291,15 @@ public class BaseTreeVisitor implements TreeVisitor {
   }
 
   @Override
+  public void visitVarType(VarTypeTree tree) {
+    scan(tree.annotations());
+  }
+
+  @Override
   public void visitVariable(VariableTree tree) {
     scan(tree.modifiers());
     scan(tree.type());
+    scan(tree.simpleName());
     scan(tree.initializer());
   }
 
@@ -305,6 +316,7 @@ public class BaseTreeVisitor implements TreeVisitor {
   @Override
   public void visitEnumConstant(EnumConstantTree tree) {
     scan(tree.modifiers());
+    scan(tree.simpleName());
     scan(tree.initializer());
   }
 
@@ -350,7 +362,7 @@ public class BaseTreeVisitor implements TreeVisitor {
   }
 
   @Override
-  public void visitTypeArguments(TypeArgumentListTreeImpl trees) {
+  public void visitTypeArguments(TypeArguments trees) {
     scan((List<Tree>)trees);
   }
 
@@ -375,6 +387,42 @@ public class BaseTreeVisitor implements TreeVisitor {
   public void visitPackage(PackageDeclarationTree tree) {
     scan(tree.annotations());
     scan(tree.packageName());
+  }
+
+  @Override
+  public void visitModule(ModuleDeclarationTree module) {
+    scan(module.annotations());
+    scan(module.moduleName());
+    scan(module.moduleDirectives());
+  }
+
+  @Override
+  public void visitRequiresDirectiveTree(RequiresDirectiveTree tree) {
+    scan(tree.modifiers());
+    scan(tree.moduleName());
+  }
+
+  @Override
+  public void visitExportsDirectiveTree(ExportsDirectiveTree tree) {
+    scan(tree.packageName());
+    scan(tree.moduleNames());
+  }
+
+  @Override
+  public void visitOpensDirective(OpensDirectiveTree tree) {
+    scan(tree.packageName());
+    scan(tree.moduleNames());
+  }
+
+  @Override
+  public void visitUsesDirective(UsesDirectiveTree tree) {
+    scan(tree.typeName());
+  }
+
+  @Override
+  public void visitProvidesDirective(ProvidesDirectiveTree tree) {
+    scan(tree.typeName());
+    scan(tree.typeNames());
   }
 
   @Override

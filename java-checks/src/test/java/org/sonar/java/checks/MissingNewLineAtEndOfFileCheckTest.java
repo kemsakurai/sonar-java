@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -32,6 +32,7 @@ public class MissingNewLineAtEndOfFileCheckTest {
   @Test
   public void test2() {
     JavaCheckVerifier.verifyIssueOnFile("src/test/files/checks/EmptyFile.java", "Add a new line at the end of this file.", new MissingNewLineAtEndOfFileCheck());
+    JavaCheckVerifier.verifyIssueOnFile("src/test/files/checks/CompletelyEmptyFile.java", "Add a new line at the end of this file.", new MissingNewLineAtEndOfFileCheck());
   }
 
   @Test

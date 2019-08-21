@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import org.sonar.check.Rule;
 import org.sonar.java.model.LiteralUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
@@ -28,6 +27,7 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
@@ -44,15 +44,15 @@ public class EscapedUnicodeCharactersCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Kind.STRING_LITERAL);
+    return Collections.singletonList(Kind.STRING_LITERAL);
   }
 
   @Override
   public void visitNode(Tree node) {
-    String value = LiteralUtils.trimQuotes(((LiteralTree) node).value());
-    if (value.isEmpty()) {
+    if (LiteralUtils.isEmptyString(node)) {
       return;
     }
+    String value = LiteralUtils.trimQuotes(((LiteralTree) node).value());
     // replace \\ with nothing just to differentiate \u0000 and \\u0000
     Matcher matcher = UNICODE_ESCAPED_CHAR.matcher(value.replaceAll("\\\\\\\\",""));
     List<String> matches = getAllMatches(matcher);

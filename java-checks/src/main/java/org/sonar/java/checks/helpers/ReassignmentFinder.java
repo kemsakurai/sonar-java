@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,6 +21,7 @@ package org.sonar.java.checks.helpers;
 
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.tree.AssignmentExpressionTree;
+import org.sonar.plugins.java.api.tree.EnumConstantTree;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.SyntaxToken;
@@ -58,21 +59,27 @@ public final class ReassignmentFinder {
       }
     }
 
-    return getInitializerOrExpression(result);
+    ExpressionTree initializerOrExpression = getInitializerOrExpression(result);
+    if (initializerOrExpression == startingPoint) {
+      return getClosestReassignmentOrDeclarationExpression(result, referenceSymbol);
+    }
+    return initializerOrExpression;
   }
 
   @CheckForNull
-  private static ExpressionTree getInitializerOrExpression(@Nullable Tree tree) {
+  public static ExpressionTree getInitializerOrExpression(@Nullable Tree tree) {
     if (tree == null) {
       return null;
     }
     if (tree.is(Tree.Kind.VARIABLE)) {
       return ((VariableTree) tree).initializer();
+    } else if (tree.is(Tree.Kind.ENUM_CONSTANT)) {
+      return ((EnumConstantTree) tree).initializer();
     }
     return ((AssignmentExpressionTree) tree).expression();
   }
 
-  private static List<AssignmentExpressionTree> getReassignments(@Nullable Tree ownerDeclaration, List<IdentifierTree> usages) {
+  public static List<AssignmentExpressionTree> getReassignments(@Nullable Tree ownerDeclaration, List<IdentifierTree> usages) {
     if (ownerDeclaration != null) {
       List<AssignmentExpressionTree> assignments = new ArrayList<>();
       for (IdentifierTree usage : usages) {

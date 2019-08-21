@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,7 +20,6 @@
 package org.sonar.plugins.java.api.tree;
 
 import com.google.common.annotations.Beta;
-import org.sonar.java.model.expression.TypeArgumentListTreeImpl;
 
 /**
  * @see BaseTreeVisitor
@@ -49,6 +48,8 @@ public interface TreeVisitor {
   void visitAssertStatement(AssertStatementTree tree);
 
   void visitSwitchStatement(SwitchStatementTree tree);
+
+  void visitSwitchExpression(SwitchExpressionTree tree);
 
   void visitCaseGroup(CaseGroupTree tree);
 
@@ -104,6 +105,8 @@ public interface TreeVisitor {
 
   void visitIdentifier(IdentifierTree tree);
 
+  void visitVarType(VarTypeTree tree);
+
   void visitVariable(VariableTree tree);
 
   void visitEnumConstant(EnumConstantTree tree);
@@ -126,7 +129,7 @@ public interface TreeVisitor {
 
   void visitTypeParameter(TypeParameterTree typeParameter);
 
-  void visitTypeArguments(TypeArgumentListTreeImpl trees);
+  void visitTypeArguments(TypeArguments trees);
 
   void visitTypeParameters(TypeParameters trees);
 
@@ -135,6 +138,18 @@ public interface TreeVisitor {
   void visitMethodReference(MethodReferenceTree methodReferenceTree);
 
   void visitPackage(PackageDeclarationTree tree);
+
+  void visitModule(ModuleDeclarationTree module);
+
+  void visitRequiresDirectiveTree(RequiresDirectiveTree tree);
+
+  void visitExportsDirectiveTree(ExportsDirectiveTree tree);
+
+  void visitOpensDirective(OpensDirectiveTree tree);
+
+  void visitUsesDirective(UsesDirectiveTree tree);
+
+  void visitProvidesDirective(ProvidesDirectiveTree tree);
 
   void visitArrayDimension(ArrayDimensionTree tree);
 }

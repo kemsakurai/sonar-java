@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,19 +19,20 @@
  */
 package org.sonar.java.resolve;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
-import org.sonar.java.resolve.JavaSymbol.TypeJavaSymbol;
-import org.sonar.plugins.java.api.semantic.Type;
-
-import javax.annotation.CheckForNull;
-import javax.annotation.Nullable;
-
 import java.util.Deque;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
+import org.sonar.java.resolve.JavaSymbol.TypeJavaSymbol;
+import org.sonar.plugins.java.api.semantic.Type;
 
 public class TypeSubstitutionSolver {
 
@@ -46,6 +47,7 @@ public class TypeSubstitutionSolver {
     this.symbols = symbols;
     this.leastUpperBound = new LeastUpperBound(this, parametrizedTypeCache, symbols);
     this.typeInferenceSolver = new TypeInferenceSolver(leastUpperBound, symbols, this);
+    parametrizedTypeCache.setTypeSubstitutionSolver(this);
   }
 
   Type leastUpperBound(Set<Type> refTypes) {
@@ -66,12 +68,21 @@ public class TypeSubstitutionSolver {
         formals = applySiteSubstitutionToFormalParameters(formals, site);
         substitution = typeInferenceSolver.inferTypeSubstitution(method, formals, argTypes);
       }
-      if (!isValidSubtitution(substitution, site)) {
-        // substitution discarded
-        return null;
+      if (!isValidSubstitution(substitution, site)) {
+        // check for valid substitution in supertypes, null if no valid substitution is found
+        return getTypeSubstitutionFromSuperTypes(method, site, typeParams, argTypes);
       }
     }
     return substitution;
+  }
+
+  @CheckForNull
+  private TypeSubstitution getTypeSubstitutionFromSuperTypes(JavaSymbol.MethodJavaSymbol method, JavaType site, List<JavaType> typeParams, List<JavaType> argTypes) {
+    return site.directSuperTypes().stream()
+      .filter(Objects::nonNull)
+      .map(superType -> getTypeSubstitution(method, superType, typeParams, argTypes))
+      .filter(Objects::nonNull)
+      .findFirst().orElse(null);
   }
 
   private static boolean constructParametrizedTypeWithoutSubstitution(JavaSymbol.MethodJavaSymbol method, JavaType site) {
@@ -127,6 +138,16 @@ public class TypeSubstitutionSolver {
   }
 
   List<JavaType> applySiteSubstitutionToFormalParameters(List<JavaType> formals, JavaType site) {
+    if(formals.isEmpty()) {
+      return formals;
+    }
+    Set<Type> visited = new HashSet<>();
+    visited.add(site);
+    return applySiteSubstitutionToFormalParameters(formals, site, visited);
+  }
+
+  @VisibleForTesting
+  List<JavaType> applySiteSubstitutionToFormalParameters(List<JavaType> formals, JavaType site, Set<Type> visited) {
     TypeSubstitution typeSubstitution = new TypeSubstitution();
     if (site.isParameterized()) {
       typeSubstitution = ((ParametrizedTypeJavaType) site).typeSubstitution;
@@ -136,11 +157,15 @@ public class TypeSubstitutionSolver {
     Type superClass = siteSymbol.superClass();
     if (superClass != null) {
       JavaType newSuperClass = applySubstitution((JavaType) superClass, typeSubstitution);
-      newFormals = applySiteSubstitutionToFormalParameters(newFormals, newSuperClass);
+      if(visited.add(newSuperClass)) {
+        newFormals = applySiteSubstitutionToFormalParameters(newFormals, newSuperClass, visited);
+      }
     }
     for (Type interfaceType : siteSymbol.interfaces()) {
       JavaType newInterfaceType = applySubstitution((JavaType) interfaceType, typeSubstitution);
-      newFormals = applySiteSubstitutionToFormalParameters(newFormals, newInterfaceType);
+      if(visited.add(newInterfaceType)) {
+        newFormals = applySiteSubstitutionToFormalParameters(newFormals, newInterfaceType, visited);
+      }
     }
     return applySubstitutionToFormalParameters(newFormals, typeSubstitution);
   }
@@ -168,6 +193,9 @@ public class TypeSubstitutionSolver {
   }
 
   List<JavaType> applySubstitutionToFormalParameters(List<JavaType> types, TypeSubstitution substitution) {
+    if(substitution.isUnchecked()) {
+      return types.stream().map(JavaType::erasure).collect(Collectors.toList());
+    }
     if (substitution.size() == 0 || types.isEmpty()) {
       return types;
     }
@@ -203,17 +231,19 @@ public class TypeSubstitutionSolver {
   }
 
   private JavaType substituteInTypeVar(TypeVariableJavaType typevar, TypeSubstitution substitution) {
-    if(typevarExplored.contains(typevar.symbol)) {
+    // completing owner of type var to ensure type var's bounds have been computed
+    typevar.symbol.owner().complete();
+    if(typevarExplored.contains(typevar.symbol) || typevar.bounds == null) {
       return typevar;
     }
     typevarExplored.push((JavaSymbol.TypeVariableJavaSymbol) typevar.symbol);
-    List<JavaType> subtitutedBounds = typevar.bounds.stream().map(t -> applySubstitution(t, substitution)).collect(Collectors.toList());
+    List<JavaType> substitutedBounds = typevar.bounds.stream().map(t -> applySubstitution(t, substitution)).collect(Collectors.toList());
     typevarExplored.pop();
-    if(subtitutedBounds.equals(typevar.bounds)) {
+    if(substitutedBounds.equals(typevar.bounds)) {
       return typevar;
     }
     TypeVariableJavaType typeVariableJavaType = new TypeVariableJavaType((JavaSymbol.TypeVariableJavaSymbol) typevar.symbol);
-    typeVariableJavaType.bounds = subtitutedBounds;
+    typeVariableJavaType.bounds = substitutedBounds;
     return typeVariableJavaType;
   }
 
@@ -257,7 +287,7 @@ public class TypeSubstitutionSolver {
     return substitution;
   }
 
-  private boolean isValidSubtitution(TypeSubstitution substitutions, JavaType site) {
+  private boolean isValidSubstitution(TypeSubstitution substitutions, JavaType site) {
     for (Map.Entry<TypeVariableJavaType, JavaType> substitution : substitutions.substitutionEntries()) {
       if (!isValidSubstitution(substitutions, substitution.getKey(), substitution.getValue(), site)) {
         return false;

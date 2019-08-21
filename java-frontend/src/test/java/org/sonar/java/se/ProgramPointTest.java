@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,6 +20,8 @@
 package org.sonar.java.se;
 
 import org.junit.Test;
+import org.objectweb.asm.Opcodes;
+import org.sonar.java.bytecode.cfg.Instructions;
 import org.sonar.java.cfg.CFG;
 import org.sonar.java.cfg.CFGTest;
 
@@ -36,4 +38,11 @@ public class ProgramPointTest {
     assertThat(pp.toString()).isEqualTo("B1.2  ");
   }
 
+  @Test
+  public void test_program_point_on_bytecode_cfg() throws Exception {
+    ProgramPoint pp = new ProgramPoint(new Instructions().visitInsn(Opcodes.NOP).cfg().entry());
+    assertThat(pp.toString()).isEqualTo("B1.0  ");
+    assertThat(pp.syntaxTree()).isNull();
+    assertThat(pp.equals("")).isFalse();
+  }
 }

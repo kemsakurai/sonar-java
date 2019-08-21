@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -46,7 +46,24 @@ public class TryStatementTest {
     // Java 7: try-with-resources
     assertThat(JavaLexer.STATEMENT)
       .matches("try (Resource resource = new Resource()) {}")
-      .matches("try (Resource resource = new Resource()) {} catch (Expception e) {} finally {}");
+      .matches("try (final Resource resource = new Resource()) {}")
+      .matches("try (@Nonnull Resource resource[] = new Resource()) {}")
+      .matches("try (Resource resource = new Resource()) {} catch (Exception e) {} finally {}");
   }
 
+  @Test
+  public void java9_resources_without_initializer() {
+    assertThat(JavaLexer.STATEMENT)
+      .matches("try (resource) {}")
+      .matches("try (new A().field) {}")
+      .matches("try (super.resource;) {}")
+      .matches("try (super.resource; Resource resource = new Resource()) {}")
+      .matches("try (super.resource; Resource resource = new Resource();) {}");
+  }
+
+  @Test
+  public void java10_resources_declared_with_var() {
+    assertThat(JavaLexer.STATEMENT)
+      .matches("try (var resource = new Resource()) {}");
+  }
 }

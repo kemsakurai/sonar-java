@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,13 +19,12 @@
  */
 package org.sonar.java.bytecode;
 
-import com.google.common.collect.Lists;
 import org.sonar.api.utils.log.Logger;
 import org.sonar.api.utils.log.Loggers;
 import org.sonar.java.bytecode.loader.SquidClassLoader;
 
 import java.io.File;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
@@ -37,8 +36,8 @@ public final class ClassLoaderBuilder {
     // only static methods
   }
 
-  public static ClassLoader create(Collection<File> bytecodeFilesOrDirectories) {
-    List<File> files = Lists.newArrayList();
+  public static SquidClassLoader create(Collection<File> bytecodeFilesOrDirectories) {
+    List<File> files = new ArrayList<>();
     for (File file : bytecodeFilesOrDirectories) {
       if (file.isFile() && file.getPath().endsWith(".class")) {
         LOG.info("SonarQube Squid ClassLoader was expecting a JAR file instead of CLASS file : '" + file.getAbsolutePath() + "'");
@@ -61,12 +60,4 @@ public final class ClassLoaderBuilder {
       throw new IllegalStateException("Can not create ClassLoader", e);
     }
   }
-
-  /**
-   * For tests.
-   */
-  public static ClassLoader create(File bytecodeFileOrDirectory) {
-    return create(Arrays.asList(bytecodeFileOrDirectory));
-  }
-
 }

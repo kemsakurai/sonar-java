@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2013-2017 SonarSource SA
+ * Copyright (C) 2013-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -23,13 +23,13 @@ import com.google.gson.Gson;
 import com.sonar.orchestrator.Orchestrator;
 import com.sonar.orchestrator.build.BuildResult;
 import com.sonar.orchestrator.build.MavenBuild;
-import java.util.List;
-import java.util.Optional;
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.ClassRule;
 import org.junit.Test;
 import org.sonarqube.ws.client.GetRequest;
+
+import java.util.List;
+import java.util.Optional;
 
 import static com.sonar.it.java.suite.TestUtils.newAdminWsClient;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,19 +40,21 @@ public class JaCoCoControllerTest {
   public static final Orchestrator orchestrator = JavaTestSuite.ORCHESTRATOR;
   private String javaVersion;
 
-  @BeforeClass
-  public static void analyzeProject() {
-    orchestrator.resetData();
-  }
 
   @Before
   public void setUp() throws Exception {
     String json = newAdminWsClient(orchestrator).wsConnector().call(new GetRequest("api/plugins/installed")).content();
     Optional<String> javaVersion = new Gson().fromJson(json, Plugins.class).getPlugins()
       .stream()
-      .filter(plugin -> plugin.getKey().equals("java"))
-      .map(Plugins.Plugin::getVersion)
-      .findFirst();
+      .filter(plugin -> plugin.key.equals("java"))
+      .map(p -> {
+        String f = p.filename;
+        if (f.contains("SNAPSHOT")) {
+          return p.version;
+        }
+        // when executed in SonarSource QA, snapshot version is replaced by built version
+        return f.substring(f.lastIndexOf('-') + 1, f.lastIndexOf('.'));
+      }).findFirst();
     assertThat(javaVersion).isPresent();
     this.javaVersion = javaVersion.get();
   }
@@ -80,6 +82,17 @@ public class JaCoCoControllerTest {
 
   }
 
+  @Test
+  public void test_coverage_per_test_reuse_forks() throws Exception {
+    MavenBuild build = MavenBuild.create(TestUtils.projectPom("coverage_error"))
+      .setProperty("skipTests", "false")
+      .setProperty("javaPluginVersion", javaVersion)
+      .setGoals("org.jacoco:jacoco-maven-plugin:prepare-agent clean verify", "sonar:sonar").addArgument("-P coverage-per-test-forked");
+    BuildResult buildResult = orchestrator.executeBuildQuietly(build);
+    assertThat(buildResult.isSuccess()).isTrue();
+
+  }
+
   private static class Plugins {
     List<Plugin> plugins;
 
@@ -90,14 +103,7 @@ public class JaCoCoControllerTest {
     static class Plugin {
       String key;
       String version;
-
-      String getKey() {
-        return key;
-      }
-
-      String getVersion() {
-        return version;
-      }
+      String filename;
     }
   }
 }

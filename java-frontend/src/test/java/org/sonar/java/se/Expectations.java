@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -22,29 +22,17 @@ package org.sonar.java.se;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Strings;
 import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ListMultimap;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Multimap;
-import com.google.common.collect.Multimaps;
 import com.google.common.collect.Sets;
-import org.apache.commons.lang.StringUtils;
-import org.assertj.core.api.Fail;
-import org.sonar.api.utils.log.Logger;
-import org.sonar.api.utils.log.Loggers;
-import org.sonar.java.AnalyzerMessage;
-import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
-import org.sonar.plugins.java.api.tree.SyntaxTrivia;
-import org.sonar.plugins.java.api.tree.Tree;
-
-import javax.annotation.CheckForNull;
-import javax.annotation.Nullable;
+import com.google.common.collect.SortedSetMultimap;
+import com.google.common.collect.TreeMultimap;
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
@@ -60,8 +48,15 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
+import org.apache.commons.lang.StringUtils;
+import org.assertj.core.api.Fail;
+import org.sonar.java.AnalyzerMessage;
+import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
+import org.sonar.plugins.java.api.tree.SyntaxTrivia;
+import org.sonar.plugins.java.api.tree.Tree;
 
-import static java.util.stream.Collectors.collectingAndThen;
 import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 import static org.sonar.java.se.Expectations.IssueAttribute.EFFORT_TO_FIX;
@@ -75,8 +70,6 @@ import static org.sonar.java.se.Expectations.IssueAttribute.SECONDARY_LOCATIONS;
 import static org.sonar.java.se.Expectations.IssueAttribute.START_COLUMN;
 
 class Expectations {
-
-  private static final Logger LOG = Loggers.get(Expectations.class);
 
   private static final Map<String, IssueAttribute> ATTRIBUTE_MAP = ImmutableMap.<String, IssueAttribute>builder()
     .put("message", MESSAGE)
@@ -140,26 +133,41 @@ class Expectations {
     final String id;
     final int line;
     final Map<IssueAttribute, Object> attributes;
+    final int startColumn;
 
-    public FlowComment(String id, int line, Map<IssueAttribute, Object> attributes) {
+    public FlowComment(String id, int line, int startColumn, Map<IssueAttribute, Object> attributes) {
       this.id = id;
       this.line = line;
+      this.startColumn = startColumn;
       this.attributes = Collections.unmodifiableMap(attributes);
     }
 
-    <T> T get(IssueAttribute attribute) {
-      return (T) attribute.get(attributes);
-    }
-
-
-    int order() {
-      Integer order = ORDER.get(attributes);
-      return order == null ? 0 : order;
+    int compareTo(FlowComment other) {
+      if (this == other) {
+        return 0;
+      }
+      Integer thisOrder = ORDER.get(attributes);
+      Integer otherOrder = ORDER.get(other.attributes);
+      if (thisOrder != null && otherOrder != null) {
+        if(thisOrder.equals(otherOrder)) {
+          Fail.fail("Same explicit ORDER=%s provided for two comments.\n%s\n%s", thisOrder, this, other);
+        }
+        return thisOrder.compareTo(otherOrder);
+      }
+      if (thisOrder == null && otherOrder == null) {
+        int compareLines = Integer.compare(line, other.line);
+        return compareLines != 0 ? compareLines : Integer.compare(startColumn, other.startColumn);
+      }
+      throw new AssertionError("Mixed explicit and implicit order in same flow.\n" + this + "\n" + other);
     }
 
     @CheckForNull
     String message() {
       return MESSAGE.get(attributes);
+    }
+
+    int line() {
+      return line;
     }
 
     @Override
@@ -169,13 +177,11 @@ class Expectations {
   }
 
   final Multimap<Integer, Issue> issues = ArrayListMultimap.create();
-  final ListMultimap<String, FlowComment> flows = ArrayListMultimap.create();
+  final SortedSetMultimap<String, FlowComment> flows = TreeMultimap.create(String::compareTo, Collections.reverseOrder(FlowComment::compareTo));
   final boolean expectNoIssues;
   final String expectFileIssue;
   final Integer expectFileIssueOnLine;
 
-  //initialized lazily in #containFlow
-  private Map<ImmutableList<Integer>, String> flowLines = null;
   private Set<String> seenFlowIds = new HashSet<>();
 
   Expectations() {
@@ -188,36 +194,42 @@ class Expectations {
     this.expectFileIssueOnLine = expectFileIssueOnLine;
   }
 
-  void reverseFlows() {
-    Multimaps.asMap(flows).forEach((id, flow) -> Collections.reverse(flow));
+
+  Optional<String> containFlow(List<AnalyzerMessage> actual) {
+    List<Integer> actualLines = flowToLines(actual, AnalyzerMessage::getLine);
+    Set<String> expectedFlows = flows.keySet().stream()
+      .filter(flowId -> !seenFlowIds.contains(flowId))
+      .filter(flowId -> flowToLines(flows.get(flowId), FlowComment::line).equals(actualLines))
+      .collect(Collectors.toSet());
+    if (expectedFlows.isEmpty()) {
+      return Optional.empty();
+    }
+    if (expectedFlows.size() == 1) {
+      String flowId = Iterables.getOnlyElement(expectedFlows);
+      seenFlowIds.add(flowId);
+      return Optional.of(flowId);
+    }
+    // more than 1 flow with same lines, let's check messages
+    List<String> actualMessages = actual.stream().map(AnalyzerMessage::getMessage).collect(toList());
+    Optional<String> foundFlow = expectedFlows.stream().filter(flowId -> hasSameMessages(flowId, actualMessages)).findFirst();
+    foundFlow.ifPresent(flowId -> seenFlowIds.add(flowId));
+    return foundFlow;
   }
 
-  Optional<String> containFlow(List<AnalyzerMessage> flow) {
-    if (flowLines == null) {
-      flowLines = computeFlowLines();
-    }
-    ImmutableList<Integer> actualLines = flowToLines(flow, AnalyzerMessage::getLine);
-    Optional<String> flowId = Optional.ofNullable(flowLines.get(actualLines));
-    flowId.ifPresent(id -> seenFlowIds.add(id));
-    return flowId;
+  private boolean hasSameMessages(String flowId, List<String> actualMessages) {
+    List<String> expectedMessages = flows.get(flowId).stream().map(FlowComment::message).collect(toList());
+    return expectedMessages.equals(actualMessages);
   }
 
   Set<String> unseenFlowIds() {
     return Sets.difference(flows.keySet(), seenFlowIds);
   }
 
-  private Map<ImmutableList<Integer>, String> computeFlowLines() {
-    Map<String, List<FlowComment>> flows = Multimaps.asMap(this.flows);
-    flows.forEach((id, flow) -> flow.sort(Comparator.comparingInt(FlowComment::order)));
-    return flows.entrySet().stream()
-      .collect(Collectors.toMap(e -> flowToLines(e.getValue(), flowComment -> flowComment.line), Map.Entry::getKey));
-  }
-
-  private static <T> ImmutableList<Integer> flowToLines(Collection<T> flow, ToIntFunction<T> toLineFunction) {
+  private static <T> List<Integer> flowToLines(Collection<T> flow, ToIntFunction<T> toLineFunction) {
     return flow.stream()
       .mapToInt(toLineFunction)
-      .sorted().boxed()
-      .collect(collectingAndThen(toList(), ImmutableList::copyOf));
+      .boxed()
+      .collect(toList());
   }
 
   String flowToLines(String flowId) {
@@ -245,7 +257,7 @@ class Expectations {
 
     @Override
     public List<Tree.Kind> nodesToVisit() {
-      return ImmutableList.of(Tree.Kind.TRIVIA);
+      return Collections.singletonList(Tree.Kind.TRIVIA);
     }
 
     @Override
@@ -285,17 +297,17 @@ class Expectations {
       flowStarts.add(comment.length());
 
       return IntStream.range(0, flowIds.size())
-        .mapToObj(i -> createFlows(flowIds.get(i), line, comment.substring(flowStarts.get(i), flowStarts.get(i + 1))))
+        .mapToObj(i -> createFlows(flowIds.get(i), line, flowStarts.get(i), comment.substring(flowStarts.get(i), flowStarts.get(i + 1))))
         .flatMap(Function.identity())
         .collect(Collectors.toList());
     }
 
-    private static Stream<FlowComment> createFlows(List<String> ids, int line, String flow) {
+    private static Stream<FlowComment> createFlows(List<String> ids, int line, int startColumn, String flow) {
       Map<IssueAttribute, Object> attributes = new EnumMap<>(IssueAttribute.class);
       attributes.putAll(parseAttributes(flow));
       String message = parseMessage(flow, flow.length());
       attributes.put(MESSAGE, message);
-      return ids.stream().map(id -> new FlowComment(id, line, attributes));
+      return ids.stream().map(id -> new FlowComment(id, line, startColumn, attributes));
     }
 
 

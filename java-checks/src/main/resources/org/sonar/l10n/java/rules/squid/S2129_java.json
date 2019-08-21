@@ -1,14 +1,16 @@
 {
-  "title": "Constructors should not be used to instantiate \"String\" and primitive-wrapper classes",
-  "type": "BUG",
+  "title": "Constructors should not be used to instantiate \"String\", \"BigInteger\", \"BigDecimal\" and primitive-wrapper classes",
+  "type": "CODE_SMELL",
   "status": "ready",
   "remediation": {
     "func": "Constant\/Issue",
     "constantCost": "5min"
   },
   "tags": [
-    "performance",
-    "bug"
+    "performance"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-2129",
+  "sqKey": "S2129",
+  "scope": "All"
 }

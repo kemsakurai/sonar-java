@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,46 +19,70 @@
  */
 package org.sonar.java.checks;
 
+import java.util.Arrays;
+import java.util.List;
+import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.sonar.api.utils.log.LogTester;
+import org.sonar.api.utils.log.LoggerLevel;
 import org.sonar.java.checks.verifier.JavaCheckVerifier;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class AssertionsInTestsCheckTest {
 
+  public static final List<String> FRAMEWORKS = Arrays.asList(
+    "Junit3",
+    "Junit4",
+    "Junit5",
+    "AssertJ",
+    "Hamcrest",
+    "Spring",
+    "EasyMock",
+    "Truth",
+    "ReactiveX1",
+    "ReactiveX2",
+    "RestAssured",
+    "Mockito",
+    "JMock",
+    "WireMock",
+    "VertX",
+    "Selenide",
+    "JMockit",
+    "Custom"
+  );
   private AssertionsInTestsCheck check = new AssertionsInTestsCheck();
 
-  @Test
-  public void junit3() {
-    JavaCheckVerifier.verify("src/test/files/checks/AssertionsInTestsCheckJunit3.java", check);
+  @Rule
+  public LogTester logTester = new LogTester();
+
+  @Before
+  public void setup() {
+    check.customAssertionMethods = "org.sonarsource.helper.AssertionsHelper$ConstructorAssertion#<init>,org.sonarsource.helper.AssertionsHelper#customAssertionAsRule*," +
+      "org.sonarsource.helper.AssertionsHelper#customInstanceAssertionAsRuleParameter,blabla,bla# , #bla";
   }
 
   @Test
-  public void junit4() {
-    JavaCheckVerifier.verify("src/test/files/checks/AssertionsInTestsCheckJunit4.java", check);
+  public void test() {
+    FRAMEWORKS.forEach(framework -> {
+      JavaCheckVerifier.verify("src/test/files/checks/AssertionsInTestsCheck/" + framework + ".java", check);
+      assertThat(logTester.logs(LoggerLevel.WARN)).contains(
+        "Unable to create a corresponding matcher for custom assertion method, please check the format of the following symbol: 'blabla'",
+        "Unable to create a corresponding matcher for custom assertion method, please check the format of the following symbol: 'bla# '",
+        "Unable to create a corresponding matcher for custom assertion method, please check the format of the following symbol: ' #bla'");
+    });
   }
 
   @Test
-  public void assertJ() {
-    JavaCheckVerifier.verify("src/test/files/checks/AssertionsInTestsCheckAssertJ.java", check);
+  public void testNoIssuesWithout() {
+    JavaCheckVerifier.verifyNoIssueWithoutSemantic("src/test/files/checks/AssertionsInTestsCheck/Junit3.java", check);
   }
 
   @Test
-  public void hamcrest() {
-    JavaCheckVerifier.verify("src/test/files/checks/AssertionsInTestsCheckHamcrest.java", check);
+  public void testWithEmptyCustomAssertionMethods() {
+    check.customAssertionMethods = "";
+    JavaCheckVerifier.verify("src/test/files/checks/AssertionsInTestsCheck/Junit3.java", check);
+    assertThat(logTester.logs(LoggerLevel.WARN)).doesNotContain("Unable to create a corresponding matcher for custom assertion method, please check the format of the following symbol: ''");
   }
-
-  @Test
-  public void spring() {
-    JavaCheckVerifier.verify("src/test/files/checks/AssertionsInTestsCheckSpring.java", check);
-  }
-
-  @Test
-  public void easyMock() {
-    JavaCheckVerifier.verify("src/test/files/checks/AssertionsInTestsCheckEasyMock.java", check);
-  }
-
-  @Test
-  public void truth() {
-    JavaCheckVerifier.verifyNoIssue("src/test/files/checks/AssertionsInTestsCheckTruth.java", check);
-  }
-
 }

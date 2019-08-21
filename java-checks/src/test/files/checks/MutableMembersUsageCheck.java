@@ -1,11 +1,5 @@
-import java.util.Date;
-import java.util.Hashtable;
-import java.util.List;
-import java.util.LinkedList;
-import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.*;
 import com.google.common.collect.ImmutableCollection;
-import java.util.Collections;
 
 class A {
   private String[] strings;
@@ -94,7 +88,7 @@ class MutableClass2 {
   }
 
   public Date[] getDate() {
-    return date; // Noncompliant {{Return a copy of "date".}}
+    return this.date; // Noncompliant {{Return a copy of "date".}}
   }
 
   public Date[] getDateOK() {
@@ -104,6 +98,16 @@ class MutableClass2 {
     }
     return dates;
   }
+
+  public Date[] getDateOk() {
+    MutableClass2 mc2 = new MutableClass2();
+    return mc2.date;
+  }
+
+  public Date[] getDateOk2() {
+    return new MutableClass2().date;
+  }
+
 }
 
 class ReturnRef {
@@ -127,6 +131,10 @@ class Fields {
   private static final List<String> UNMODIFIABLE = Collections.unmodifiableList(Arrays.asList("A", "B", "C"));
   private static final List<String> UNMODIFIABLE2;
   private static final Object UNMODIFIABLE_OBJECT;
+
+  private static final List<String> IMMUTABLE_LIST = List.of(1, 2, 3);
+  private static final Set<String> IMMUTABLE_SET = Set.of("a");
+
   static {
     UNMODIFIABLE2 = Collections.unmodifiableList(Arrays.asList("A", "B", "C"));
     UNMODIFIABLE_OBJECT = UNMODIFIABLE2;
@@ -155,6 +163,14 @@ class Fields {
 
   public List<String> bar1() {
     return unmodifiable_not_final; // Noncompliant
+  }
+
+  public List<String> immutableList() {
+    return IMMUTABLE_LIST;
+  }
+
+  public Set<String> immutableSet() {
+    return IMMUTABLE_SET;
   }
 
   public List<String> bar2() {
@@ -196,9 +212,54 @@ class Fields {
     public int[] getValues6() {
       return PLUS_SIGN; // Noncompliant
     }
+  }
 
+  class ImmutableInsideConstructors {
+    private final List<String> list;
 
+    ImmutableInsideConstructors(List<String> list) {
+      this.list = Collections.unmodifiableList(list);
+    }
 
+    ImmutableInsideConstructors() {
+      this.list = getImmutableCollection();
+    }
+
+    ImmutableInsideConstructors(String element) {
+      this(Arrays.asList(element));
+    }
+
+    public List<String> getList() {
+      return list; // Compliant - field is immutable
+    }
+
+    private static ImmutableCollection getImmutableCollection() {
+      return null;
+    }
+  }
+
+  class ImmutableOnlyInOneConstructor {
+    private final List<String> list;
+
+    ImmutableOnlyInOneConstructor(List<String> list) {
+      this.list = Collections.unmodifiableList(list);
+    }
+
+    ImmutableOnlyInOneConstructor() {
+      this.list = new ArrayList();
+    }
+
+    public List<String> getList() {
+      return list; // Noncompliant
+    }
+  }
+
+  class CollectionSingleton {
+    private final static java.util.Set<String> singletonSet = Collections.singleton("Test");
+
+    public java.util.Set<String> getSet() {
+      return singletonSet;
+    }
   }
 
 }

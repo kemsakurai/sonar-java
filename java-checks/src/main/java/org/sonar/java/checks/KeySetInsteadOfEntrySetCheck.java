@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import org.sonar.check.Rule;
 import org.sonar.java.matcher.MethodMatcher;
@@ -36,6 +35,7 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 
 import javax.annotation.CheckForNull;
+import java.util.Collections;
 import java.util.List;
 
 @Rule(key = "S2864")
@@ -53,7 +53,7 @@ public class KeySetInsteadOfEntrySetCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.FOR_EACH_STATEMENT);
+    return Collections.singletonList(Tree.Kind.FOR_EACH_STATEMENT);
   }
 
   @Override

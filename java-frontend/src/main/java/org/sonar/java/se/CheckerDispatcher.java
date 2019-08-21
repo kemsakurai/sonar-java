@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,25 +19,27 @@
  */
 package org.sonar.java.se;
 
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
 import org.sonar.java.cfg.CFG;
 import org.sonar.java.se.checks.SECheck;
 import org.sonar.java.se.constraint.ConstraintManager;
 import org.sonar.java.se.symbolicvalues.SymbolicValue;
+import org.sonar.java.se.xproc.MethodBehavior;
 import org.sonar.java.se.xproc.MethodYield;
-import org.sonar.plugins.java.api.JavaFileScannerContext;
+import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
-
-import javax.annotation.Nullable;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
 
 public class CheckerDispatcher implements CheckerContext {
   private final ExplodedGraphWalker explodedGraphWalker;
   private final List<SECheck> checks;
   private int currentCheckerIndex = -1;
   private boolean transition = false;
+  private Exception interruptionCause = null;
   Tree syntaxNode;
   // used by walker to store chosen yield when adding a transition from MIT
   @Nullable
@@ -79,11 +81,11 @@ public class CheckerDispatcher implements CheckerContext {
 
   @Override
   public void reportIssue(Tree tree, SECheck check, String message) {
-    reportIssue(tree, check, message, new HashSet<>());
+    reportIssue(tree, check, message, Collections.emptySet());
   }
 
   @Override
-  public void reportIssue(Tree tree, SECheck check, String message, Set<List<JavaFileScannerContext.Location>> flows) {
+  public void reportIssue(Tree tree, SECheck check, String message, Set<Flow> flows) {
     check.reportIssue(tree, message, flows);
   }
 
@@ -103,8 +105,9 @@ public class CheckerDispatcher implements CheckerContext {
     if (currentCheckerIndex < checks.size()) {
       explodedGraphWalker.programState = checks.get(currentCheckerIndex).checkPostStatement(this, syntaxNode);
     } else {
-      if (explodedGraphWalker.programPosition.i< explodedGraphWalker.programPosition.block.elements().size()) {
-        explodedGraphWalker.clearStack(explodedGraphWalker.programPosition.block.elements().get(explodedGraphWalker.programPosition.i));
+      CFG.Block block = (CFG.Block) explodedGraphWalker.programPosition.block;
+      if (explodedGraphWalker.programPosition.i< block.elements().size()) {
+        explodedGraphWalker.clearStack(block.elements().get(explodedGraphWalker.programPosition.i));
       }
       explodedGraphWalker.enqueue(
         explodedGraphWalker.programPosition.next(),
@@ -150,7 +153,33 @@ public class CheckerDispatcher implements CheckerContext {
     return explodedGraphWalker.constraintManager;
   }
 
-  public void interruptedExecution() {
+  public void interruptedExecution(Exception interruptionCause) {
+    this.interruptionCause = interruptionCause;
     checks.forEach(c -> c.interruptedExecution(this));
+    this.interruptionCause = null;
+  }
+
+  /**
+   * Will be not null only when the execution is interrupted, and only during handling of {@link SECheck#interruptedExecution(CheckerContext)}.
+   * Rest of the time, returns null
+   */
+  @CheckForNull
+  public Exception interruptionCause() {
+    return interruptionCause;
+  }
+
+  @Override
+  public AlwaysTrueOrFalseExpressionCollector alwaysTrueOrFalseExpressions() {
+    return explodedGraphWalker.alwaysTrueOrFalseExpressionCollector();
+  }
+
+  @CheckForNull
+  public MethodBehavior methodBehavior() {
+    return explodedGraphWalker.methodBehavior;
+  }
+
+  @CheckForNull
+  public MethodBehavior peekMethodBehavior(Symbol.MethodSymbol symbol) {
+    return explodedGraphWalker.peekMethodBehavior(symbol);
   }
 }

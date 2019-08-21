@@ -10,12 +10,15 @@
     "cwe",
     "leak",
     "denial-of-service",
-    "bug",
     "cert"
   ],
-  "standards": [
-    "CWE",
-    "CERT"
-  ],
-  "defaultSeverity": "Blocker"
+  "defaultSeverity": "Blocker",
+  "ruleSpecification": "RSPEC-2095",
+  "sqKey": "S2095",
+  "scope": "All",
+  "securityStandards": {
+    "CWE": [
+      459
+    ]
+  }
 }

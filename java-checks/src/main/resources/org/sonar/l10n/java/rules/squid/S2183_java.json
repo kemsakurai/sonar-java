@@ -7,8 +7,10 @@
     "constantCost": "5min"
   },
   "tags": [
-    "bug",
-    "cert"
+    
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-2183",
+  "sqKey": "S2183",
+  "scope": "All"
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -32,8 +32,8 @@ public final class EmptyFileCheck implements JavaFileScanner {
   @Override
   public void scanFile(JavaFileScannerContext context) {
     if (context.fileParsed()) {
-      CompilationUnitTree tree = context.getTree();
-      if (tree.packageDeclaration() == null && tree.types().isEmpty()) {
+      CompilationUnitTree cut = context.getTree();
+      if (cut.moduleDeclaration() == null && cut.packageDeclaration() == null && cut.types().isEmpty()) {
         context.addIssueOnFile(this, "This file has 0 lines of code.");
       }
     }

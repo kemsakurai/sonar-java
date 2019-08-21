@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,10 +19,9 @@
  */
 package org.sonar.java.checks.naming;
 
-import com.google.common.collect.ImmutableList;
-
 import org.sonar.check.Rule;
 import org.sonar.check.RuleProperty;
+import org.sonar.java.checks.helpers.UnitTestUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.tree.ClassTree;
@@ -32,6 +31,7 @@ import org.sonar.plugins.java.api.tree.Tree;
 
 import javax.annotation.Nullable;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -50,15 +50,15 @@ public class BadTestClassNameCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.CLASS);
+    return Collections.singletonList(Tree.Kind.CLASS);
   }
 
   @Override
-  public void scanFile(JavaFileScannerContext context) {
+  public void setContext(JavaFileScannerContext context) {
     if (pattern == null) {
       pattern = Pattern.compile(format, Pattern.DOTALL);
     }
-    super.scanFile(context);
+    super.setContext(context);
   }
 
   @Override
@@ -80,8 +80,8 @@ public class BadTestClassNameCheck extends IssuableSubscriptionVisitor {
   private static boolean hasTestMethod(List<Tree> members) {
     return members.stream()
       .filter(member -> member.is(Tree.Kind.METHOD))
-      .map(tree -> ((MethodTree) tree).symbol().metadata())
-      .anyMatch(metadata -> metadata.isAnnotatedWith("org.junit.Test") || metadata.isAnnotatedWith("org.testng.annotations.Test"));
+      .map(MethodTree.class::cast)
+      .anyMatch(UnitTestUtils::hasTestAnnotation);
   }
 
 }

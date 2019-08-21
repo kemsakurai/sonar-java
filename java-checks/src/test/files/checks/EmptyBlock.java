@@ -78,6 +78,7 @@ class EmptyBlock {
       doSomething();
     }
 
+    // Noncompliant@+1
     synchronized (this) {
       // comment
     }
@@ -95,5 +96,13 @@ class EmptyBlock {
     // Noncompliant@+1
     catch (IOException cannotHappen) {
     }
+  }
+}
+
+class EmptyLambda {
+  java.util.function.Consumer<String> c = s -> {};
+
+  void foo(java.util.function.Consumer<String> c){
+    foo(s ->{});
   }
 }

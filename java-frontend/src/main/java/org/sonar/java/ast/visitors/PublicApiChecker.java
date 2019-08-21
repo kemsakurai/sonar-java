@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,6 @@
  */
 package org.sonar.java.ast.visitors;
 
-import com.google.common.base.Preconditions;
 import org.sonar.java.model.ModifiersUtils;
 import org.sonar.plugins.java.api.tree.AnnotationTree;
 import org.sonar.plugins.java.api.tree.ArrayTypeTree;
@@ -42,6 +41,7 @@ import org.sonar.plugins.java.api.tree.VariableTree;
 import javax.annotation.Nullable;
 import java.util.Deque;
 import java.util.LinkedList;
+import java.util.Objects;
 
 public class PublicApiChecker extends BaseTreeVisitor {
 
@@ -135,7 +135,7 @@ public class PublicApiChecker extends BaseTreeVisitor {
     }
   }
 
-  public boolean isPublicApi(@Nullable Tree currentParent, Tree tree) {
+  public static boolean isPublicApi(@Nullable Tree currentParent, Tree tree) {
     if (currentParent == null) {
       return tree.is(CLASS_KINDS) && isPublicApi((ClassTree) tree);
     } else if (tree.is(CLASS_KINDS) && currentParent.is(PublicApiChecker.CLASS_KINDS)) {
@@ -165,7 +165,7 @@ public class PublicApiChecker extends BaseTreeVisitor {
   }
 
   private static boolean isPublicApi(ClassTree classTree, MethodTree methodTree) {
-    Preconditions.checkNotNull(classTree);
+    Objects.requireNonNull(classTree);
     if (isPublicInterface(classTree)) {
       return !hasOverrideAnnotation(methodTree);
     } else if (isEmptyDefaultConstructor(methodTree)

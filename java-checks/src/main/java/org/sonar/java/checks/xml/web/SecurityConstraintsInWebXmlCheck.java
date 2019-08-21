@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,30 +19,24 @@
  */
 package org.sonar.java.checks.xml.web;
 
-import com.google.common.collect.Iterables;
-import org.sonar.check.Rule;
-import org.sonar.java.xml.XmlCheckContext;
-
+import java.util.Collections;
 import javax.xml.xpath.XPathExpression;
+import org.sonar.check.Rule;
+import org.sonarsource.analyzer.commons.xml.XmlFile;
 
 @Rule(key = "S3369")
-public class SecurityConstraintsInWebXmlCheck extends WebXmlCheckTemplate {
+public class SecurityConstraintsInWebXmlCheck extends AbstractWebXmlXPathBasedCheck {
 
-  private XPathExpression securityConstraintExpression;
+  private XPathExpression securityConstraintExpression = getXPathExpression(WEB_XML_ROOT + "/security-constraint");
 
-  @Override
-  public void precompileXPathExpressions(XmlCheckContext context) {
-    this.securityConstraintExpression = context.compile(WEB_XML_ROOT + "/security-constraint");
+  private boolean hasNoSecurityConstraint(XmlFile file) {
+    return evaluateAsList(securityConstraintExpression, file.getNamespaceUnawareDocument()).isEmpty();
   }
 
   @Override
-  public void scanWebXml(XmlCheckContext context) {
-    if (hasNoSecurityConstraint(context)) {
-      reportIssueOnFile("Add \"security-constraint\" elements to this descriptor.");
+  public void scanWebXml(XmlFile file) {
+    if (hasNoSecurityConstraint(file)) {
+      reportIssueOnFile("Add \"security-constraint\" elements to this descriptor.", Collections.emptyList());
     }
-  }
-
-  private boolean hasNoSecurityConstraint(XmlCheckContext context) {
-    return Iterables.isEmpty(context.evaluateOnDocument(securityConstraintExpression));
   }
 }

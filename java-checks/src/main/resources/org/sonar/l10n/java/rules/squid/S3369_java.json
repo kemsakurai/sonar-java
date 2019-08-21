@@ -9,13 +9,19 @@
   "tags": [
     "cwe",
     "websphere",
-    "security",
     "jee",
-    "owasp-a7"
+    "owasp-a5"
   ],
-  "standards": [
-    "CWE",
-    "OWASP Top Ten"
-  ],
-  "defaultSeverity": "Blocker"
+  "defaultSeverity": "Blocker",
+  "ruleSpecification": "RSPEC-3369",
+  "sqKey": "S3369",
+  "scope": "Main",
+  "securityStandards": {
+    "CWE": [
+      284
+    ],
+    "OWASP": [
+      "A5"
+    ]
+  }
 }

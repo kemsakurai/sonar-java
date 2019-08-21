@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,15 +21,32 @@ package org.sonar.java.resolve;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
-
+import com.sonar.sslr.api.typed.ActionParser;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.Mockito;
+import org.sonar.java.ast.parser.JavaParser;
+import org.sonar.java.bytecode.loader.SquidClassLoader;
 import org.sonar.plugins.java.api.semantic.Type;
+import org.sonar.plugins.java.api.tree.ClassTree;
+import org.sonar.plugins.java.api.tree.CompilationUnitTree;
+import org.sonar.plugins.java.api.tree.ExpressionStatementTree;
+import org.sonar.plugins.java.api.tree.IdentifierTree;
+import org.sonar.plugins.java.api.tree.MethodInvocationTree;
+import org.sonar.plugins.java.api.tree.MethodTree;
+import org.sonar.plugins.java.api.tree.Tree;
 
+import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anySet;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 public class TypeSubstitutionSolverTest {
 
@@ -42,7 +59,7 @@ public class TypeSubstitutionSolverTest {
   @Before
   public void setUp() {
     parametrizedTypeCache = new ParametrizedTypeCache();
-    symbols = new Symbols(new BytecodeCompleter(Lists.<java.io.File>newArrayList(), parametrizedTypeCache));
+    symbols = new Symbols(new BytecodeCompleter(new SquidClassLoader(Collections.emptyList()), parametrizedTypeCache));
     typeSubstitutionSolver = new TypeSubstitutionSolver(parametrizedTypeCache, symbols);
     T = getTypeVariable("T");
   }
@@ -115,7 +132,7 @@ public class TypeSubstitutionSolverTest {
     aSubs.add(k, T);
     JavaSymbol.TypeJavaSymbol aSymbol = new JavaSymbol.TypeJavaSymbol(Flags.PUBLIC, "A", Symbols.rootPackage);
     // A<{K=T}>
-    ParametrizedTypeJavaType aRoot = new ParametrizedTypeJavaType(aSymbol, aSubs);
+    ParametrizedTypeJavaType aRoot = new ParametrizedTypeJavaType(aSymbol, aSubs, typeSubstitutionSolver);
 
     // A<...n-1...<A<T>>...>
     JavaType last = aRoot;
@@ -123,7 +140,7 @@ public class TypeSubstitutionSolverTest {
     for (int i = 0; i < n; i++) {
       TypeSubstitution newSubs = new TypeSubstitution();
       newSubs.add(k, last);
-      last = new ParametrizedTypeJavaType(aSymbol, newSubs);
+      last = new ParametrizedTypeJavaType(aSymbol, newSubs, typeSubstitutionSolver);
     }
 
     List<JavaType> formals = Lists.newArrayList(last);
@@ -165,7 +182,7 @@ public class TypeSubstitutionSolverTest {
 
   private TypeVariableJavaType getTypeVariable(String variableName) {
     TypeVariableJavaType typeVariableJavaType = new TypeVariableJavaType(new JavaSymbol.TypeVariableJavaSymbol(variableName, Symbols.unknownSymbol));
-    typeVariableJavaType.bounds = ImmutableList.of(symbols.objectType);
+    typeVariableJavaType.bounds = Collections.singletonList(symbols.objectType);
     return typeVariableJavaType;
   }
 
@@ -326,5 +343,49 @@ public class TypeSubstitutionSolverTest {
 
     ParametrizedTypeJavaType emptySubstitution = (ParametrizedTypeJavaType) parametrizedTypeCache.getParametrizedTypeType(ref.symbol, new TypeSubstitution());
     assertThat(typeSubstitutionSolver.functionType(emptySubstitution)).isEqualTo(emptySubstitution);
+  }
+
+  @Test
+  public void substitute_thrown_types() throws Exception {
+    Result result = Result.createForJavaFile("src/test/files/sym/ThrownTypeVariables");
+    IdentifierTree fooInvocation = result.referenceTree(6, 34);
+    assertThat(((MethodJavaType) fooInvocation.symbolType()).thrown).hasSize(1);
+    assertThat(((MethodJavaType) fooInvocation.symbolType()).thrown.get(0).is("java.io.IOException")).isTrue();
+
+    IdentifierTree barInvocation1 = result.referenceTree(23, 21);
+    assertThat(((MethodJavaType) barInvocation1.symbolType()).thrown).hasSize(1);
+    assertThat(((MethodJavaType) barInvocation1.symbolType()).thrown.get(0).is("java.util.NoSuchElementException")).isTrue();
+
+    IdentifierTree barInvocation2 = result.referenceTree(24, 21);
+    assertThat(((MethodJavaType) barInvocation2.symbolType()).thrown).hasSize(1);
+    assertThat(((MethodJavaType) barInvocation2.symbolType()).thrown.get(0).is("java.io.IOException")).isTrue();
+  }
+
+  @Test
+  public void type_hierarchy_visit_should_be_limited() {
+    ParametrizedTypeCache parametrizedTypeCache = new ParametrizedTypeCache();
+    BytecodeCompleter bytecodeCompleter = new BytecodeCompleter(new SquidClassLoader(new ArrayList<>()), parametrizedTypeCache);
+    Symbols symbols = new Symbols(bytecodeCompleter);
+
+    ActionParser<Tree> parser = JavaParser.createParser();
+    SemanticModel semanticModel = new SemanticModel(bytecodeCompleter);
+    Resolve resolve = new Resolve(symbols, bytecodeCompleter, parametrizedTypeCache);
+    TypeAndReferenceSolver typeAndReferenceSolver = new TypeAndReferenceSolver(semanticModel, symbols, resolve, parametrizedTypeCache);
+    CompilationUnitTree tree = (CompilationUnitTree) parser.parse(new File("src/test/files/sym/ComplexHierarchy.java"));
+    new FirstPass(semanticModel, symbols, resolve, parametrizedTypeCache, typeAndReferenceSolver).visitCompilationUnit(tree);
+    typeAndReferenceSolver.visitCompilationUnit(tree);
+
+    ClassTree classTree = (ClassTree) tree.types().get(tree.types().size() - 1);
+    JavaType site = (JavaType) classTree.symbol().type();
+    MethodInvocationTree mit = (MethodInvocationTree) ((ExpressionStatementTree) ((MethodTree) classTree.members().get(0)).block().body().get(0)).expression();
+
+    TypeSubstitutionSolver typeSubstitutionSolver = Mockito.spy(new TypeSubstitutionSolver(parametrizedTypeCache, symbols));
+    // call with empty formals should return.
+    typeSubstitutionSolver.applySiteSubstitutionToFormalParameters(new ArrayList<>(), site);
+    verify(typeSubstitutionSolver, times(0)).applySiteSubstitutionToFormalParameters(anyList(), any(JavaType.class), anySet());
+
+    JavaSymbol.MethodJavaSymbol methodJavaSymbol = (JavaSymbol.MethodJavaSymbol) mit.symbol();
+    typeSubstitutionSolver.applySiteSubstitutionToFormalParameters(((MethodJavaType) methodJavaSymbol.type).argTypes, site);
+    verify(typeSubstitutionSolver, times(11)).applySiteSubstitutionToFormalParameters(anyList(), any(JavaType.class), anySet());
   }
 }

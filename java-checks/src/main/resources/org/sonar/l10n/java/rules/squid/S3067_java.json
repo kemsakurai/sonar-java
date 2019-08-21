@@ -7,13 +7,11 @@
     "constantCost": "5min"
   },
   "tags": [
-    "security",
     "multi-threading",
-    "bug",
     "cert"
   ],
-  "standards": [
-    "CERT"
-  ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-3067",
+  "sqKey": "S3067",
+  "scope": "All"
 }

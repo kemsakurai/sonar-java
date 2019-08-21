@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -23,10 +23,16 @@ import com.google.common.annotations.Beta;
 
 /**
  * Represents the java version used by the project under analysis.
- * Destinated to be used by checks to determine if they should report issue depending on java version.
+ * Designed to be used by checks to determine if they should report issue depending on java version.
  */
 @Beta
 public interface JavaVersion {
+
+  /**
+   * Test if java version of the project is greater than or equal to 6.
+   * @return true if java version used is >= 6
+   */
+  boolean isJava6Compatible();
 
   /**
    * Test if java version of the project is greater than or equal to 7.
@@ -41,6 +47,14 @@ public interface JavaVersion {
   boolean isJava8Compatible();
 
   /**
+   * Test if java version of the project is greater than or equal to 12.
+   * Remark - Contrary to other isJava*Compatible methods, this one will NOT return true if version is not set
+   * @return true if java version used is >= 12
+   * @since SonarJava 5.12: Support of Java 12
+   */
+  boolean isJava12Compatible();
+
+  /**
    * get java version as integer
    * @return an int representing the java version
    */
@@ -51,6 +65,12 @@ public interface JavaVersion {
    * @return false if set, true otherwise.
    */
   boolean isNotSet();
+
+  /**
+   * Default compatibility message with java 6
+   * @return empty string if java version is properly set, default message otherwise.
+   */
+  String java6CompatibilityMessage();
 
   /**
    * Default compatibility message with java 7

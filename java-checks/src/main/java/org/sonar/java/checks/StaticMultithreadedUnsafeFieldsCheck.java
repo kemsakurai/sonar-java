@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import org.sonar.check.Rule;
 import org.sonar.java.model.ModifiersUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
@@ -33,6 +32,8 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
 import javax.annotation.CheckForNull;
+
+import java.util.Collections;
 import java.util.List;
 
 @Rule(key = "S2885")
@@ -43,20 +44,25 @@ public class StaticMultithreadedUnsafeFieldsCheck extends IssuableSubscriptionVi
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.VARIABLE);
+    return Collections.singletonList(Tree.Kind.VARIABLE);
   }
 
   @Override
   public void visitNode(Tree tree) {
     VariableTree variableTree = (VariableTree) tree;
     Type type = variableTree.type().symbolType();
-    if (ModifiersUtils.hasModifier(variableTree.modifiers(), Modifier.STATIC) && isForbiddenType(type)) {
+    if (ModifiersUtils.hasModifier(variableTree.modifiers(), Modifier.STATIC) && isForbiddenType(variableTree)) {
       if (type.isSubtypeOf(JAVA_TEXT_SIMPLE_DATE_FORMAT) && onlySynchronizedUsages((Symbol.VariableSymbol) variableTree.symbol())) {
         return;
       }
       IdentifierTree identifierTree = variableTree.simpleName();
       reportIssue(identifierTree, String.format("Make \"%s\" an instance variable.", identifierTree.name()));
     }
+  }
+
+  private static boolean isForbiddenType(VariableTree variableTree) {
+    ExpressionTree initializer = variableTree.initializer();
+    return isForbiddenType(variableTree.type().symbolType()) || (initializer != null && !initializer.is(Tree.Kind.NULL_LITERAL) && isForbiddenType(initializer.symbolType()));
   }
 
   private static boolean isForbiddenType(Type type) {

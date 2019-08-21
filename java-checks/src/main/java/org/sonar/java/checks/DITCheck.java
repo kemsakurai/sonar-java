@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,7 +20,7 @@
 package org.sonar.java.checks;
 
 import com.google.common.annotations.VisibleForTesting;
-
+import org.sonar.api.utils.WildcardPattern;
 import org.sonar.check.Rule;
 import org.sonar.check.RuleProperty;
 import org.sonar.java.RspecKey;
@@ -33,6 +33,8 @@ import org.sonar.plugins.java.api.tree.NewClassTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 @Rule(key = "MaximumInheritanceDepth")
 @RspecKey("S110")
@@ -48,6 +50,13 @@ public class DITCheck extends BaseTreeVisitor implements JavaFileScanner {
       defaultValue = "" + DEFAULT_MAX)
   private Integer max = DEFAULT_MAX;
 
+  @RuleProperty(
+    key = "filteredClasses",
+    description = "Classes to be filtered out of the count of inheritance. Ex : java.fwk.AbstractFwkClass, java.fwkPackage.*",
+    defaultValue = "")
+  private String filteredClasses = "";
+
+  private List<WildcardPattern> filteredPatterns;
 
   @Override
   public void scanFile(JavaFileScannerContext context) {
@@ -63,6 +72,10 @@ public class DITCheck extends BaseTreeVisitor implements JavaFileScanner {
       Type superClass = tree.symbol().superClass();
       int dit = 0;
       while (superClass != null) {
+        String fullyQualifiedName = superClass.fullyQualifiedName();
+        if (getPatterns().stream().anyMatch(wp -> wp.match(fullyQualifiedName))) {
+          break;
+        }
         dit++;
         superClass = superClass.symbol().superClass();
       }
@@ -88,4 +101,14 @@ public class DITCheck extends BaseTreeVisitor implements JavaFileScanner {
     this.max = max;
   }
 
+  private List<WildcardPattern> getPatterns() {
+    if (filteredPatterns == null) {
+      filteredPatterns = Arrays.asList(PatternUtils.createPatterns(filteredClasses));
+    }
+    return filteredPatterns;
+  }
+
+  public void setFilteredClasses(String filteredClasses) {
+    this.filteredClasses = filteredClasses;
+  }
 }

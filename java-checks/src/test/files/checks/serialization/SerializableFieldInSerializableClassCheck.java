@@ -1,11 +1,11 @@
-package javax.inject;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-@interface Inject {}
+import javax.inject.Inject;
+import javax.ejb.EJB;
 
 class Address {
 }
@@ -94,7 +94,13 @@ class Person7 implements Serializable {
 }
 
 class Person8 implements Serializable {
-  @Inject Address address; // Compliant field is injected
+  @javax.inject.Inject Address address; // Compliant field is injected
+  @javax.ejb.EJB Address address2; // Compliant
+
+  @Inject Address address3; // Compliant
+  @EJB Address address4; // Compliant
+
+  @Deprecated Address address5; // Noncompliant
 }
 
 class MyObject {
@@ -125,4 +131,13 @@ class IncompleteSerializableMethods2 implements Serializable {
   Address address; // Noncompliant - write methods is wrongly implemented
   private void writeObject(java.io.ObjectOutputStream out) throws java.lang.ClassCastException {} // wrong thrown type
   private void readObject(java.io.ObjectInputStream in) throws java.io.IOException, java.lang.ClassNotFoundException {}
+}
+public class MyServlet extends javax.servlet.http.HttpServlet {
+  private Map<String, String> nok1 = new MyNonSerializableMap<>();
+}
+
+class test implements Serializable {
+  private HashMap<Object, Object> both2; // Noncompliant
+  private ArrayList<Object> objects2; // Noncompliant
+  private ArrayList<String> lines = null; // Compliant: ArrayList, String, and null are serializable
 }

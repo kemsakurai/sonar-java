@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,6 @@
  */
 package org.sonar.java.model.statement;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import org.sonar.java.model.InternalSyntaxToken;
 import org.sonar.java.model.JavaTree;
@@ -29,6 +28,8 @@ import org.sonar.plugins.java.api.tree.SyntaxToken;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.TreeVisitor;
 import org.sonar.plugins.java.api.tree.WhileStatementTree;
+
+import java.util.Objects;
 
 public class WhileStatementTreeImpl extends JavaTree implements WhileStatementTree {
   private final ExpressionTree condition;
@@ -42,9 +43,9 @@ public class WhileStatementTreeImpl extends JavaTree implements WhileStatementTr
     super(Kind.WHILE_STATEMENT);
     this.whileKeyword = whileKeyword;
     this.openParenToken = openParenToken;
-    this.condition = Preconditions.checkNotNull(condition);
+    this.condition = Objects.requireNonNull(condition);
     this.closeParenToken = closeParenToken;
-    this.statement = Preconditions.checkNotNull(statement);
+    this.statement = Objects.requireNonNull(statement);
   }
 
   @Override

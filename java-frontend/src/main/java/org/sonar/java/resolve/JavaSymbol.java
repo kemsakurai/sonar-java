@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -25,7 +25,18 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Multiset;
-
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.LinkedHashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.ClassTree;
@@ -34,15 +45,6 @@ import org.sonar.plugins.java.api.tree.LabeledStatementTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.VariableTree;
-
-import javax.annotation.CheckForNull;
-import javax.annotation.Nullable;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 public class JavaSymbol implements Symbol {
 
@@ -71,6 +73,7 @@ public class JavaSymbol implements Symbol {
   boolean completing = false;
   private ImmutableList.Builder<IdentifierTree> usagesBuilder;
   private List<IdentifierTree> usages;
+  private List<Runnable> callbacks = new ArrayList<>();
 
   public JavaSymbol(int kind, int flags, @Nullable String name, @Nullable JavaSymbol owner) {
     this.kind = kind;
@@ -110,6 +113,7 @@ public class JavaSymbol implements Symbol {
       completing = true;
       c.complete(this);
       completing = false;
+      callbacks.forEach(Runnable::run);
     }
   }
 
@@ -202,6 +206,10 @@ public class JavaSymbol implements Symbol {
     return isFlag(Flags.INTERFACE);
   }
 
+  public boolean isAnnotation() {
+    return isFlag(Flags.ANNOTATION);
+  }
+
   @Override
   public boolean isAbstract() {
     return isFlag(Flags.ABSTRACT);
@@ -232,6 +240,10 @@ public class JavaSymbol implements Symbol {
     return isFlag(Flags.VOLATILE);
   }
 
+  public boolean isDefault() {
+    return isFlag(Flags.DEFAULT);
+  }
+
   @Override
   public boolean isUnknown() {
     return false;
@@ -244,13 +256,13 @@ public class JavaSymbol implements Symbol {
 
   protected boolean isFlag(int flag) {
     complete();
-    return (flags & flag) != 0;
+    return Flags.isFlagged(flags, flag);
   }
 
   @Override
   public boolean isPackageVisibility() {
     complete();
-    return (flags & (Flags.PROTECTED | Flags.PRIVATE | Flags.PUBLIC)) == 0;
+    return Flags.isNotFlagged(flags, Flags.PROTECTED | Flags.PRIVATE | Flags.PUBLIC);
   }
 
   public void addUsage(IdentifierTree tree) {
@@ -269,6 +281,10 @@ public class JavaSymbol implements Symbol {
   @Override
   public Tree declaration() {
     return null;
+  }
+
+  public void callbackOnceComplete(Runnable callback) {
+    callbacks.add(callback);
   }
 
   interface Completer {
@@ -312,11 +328,13 @@ public class JavaSymbol implements Symbol {
     ClassTree declaration;
     private final String internalName;
     private final Multiset<String> internalNames = HashMultiset.create();
+    private Set<ClassJavaType> superTypes;
+    private Set<ClassJavaType> interfaces;
 
     public TypeJavaSymbol(int flags, String name, JavaSymbol owner) {
       super(TYP, flags, name, owner);
       this.type = new ClassJavaType(this);
-      this.typeVariableTypes = Lists.newArrayList();
+      this.typeVariableTypes = new ArrayList<>();
       if (owner.isMethodSymbol()) {
         // declaration of a class or an anonymous class in a method
         internalName = ((TypeJavaSymbol) owner.owner).registerClassInternalName(name);
@@ -389,31 +407,55 @@ public class JavaSymbol implements Symbol {
       return fullyQualifiedName;
     }
 
+    public Set<ClassJavaType> directSuperTypes() {
+      ImmutableSet.Builder<ClassJavaType> types = ImmutableSet.builder();
+      ClassJavaType superClassType = (ClassJavaType) this.superClass();
+      if(superClassType != null) {
+        types.add(superClassType);
+      }
+      for (JavaType interfaceType : getInterfaces()) {
+        ClassJavaType classType = (ClassJavaType) interfaceType;
+        types.add(classType);
+      }
+      return types.build();
+    }
+
     /**
      * Includes superclass and super interface hierarchy.
      * @return list of classTypes.
      */
     public Set<ClassJavaType> superTypes() {
-      ImmutableSet.Builder<ClassJavaType> types = ImmutableSet.builder();
-      ClassJavaType superClassType = (ClassJavaType) this.superClass();
-      types.addAll(this.interfacesOfType());
-      while (superClassType != null) {
-        types.add(superClassType);
-        TypeJavaSymbol superClassSymbol = superClassType.getSymbol();
-        types.addAll(superClassSymbol.interfacesOfType());
-        superClassType = (ClassJavaType) superClassSymbol.superClass();
+      if (superTypes == null) {
+        ImmutableSet.Builder<ClassJavaType> types = ImmutableSet.builder();
+        ClassJavaType superClassType = (ClassJavaType) this.superClass();
+        types.addAll(this.interfacesOfType());
+        while (superClassType != null) {
+          types.add(superClassType);
+          TypeJavaSymbol superClassSymbol = superClassType.getSymbol();
+          types.addAll(superClassSymbol.interfacesOfType());
+          superClassType = (ClassJavaType) superClassSymbol.superClass();
+        }
+        superTypes = types.build();
       }
-      return types.build();
+      return superTypes;
     }
 
     private Set<ClassJavaType> interfacesOfType() {
-      ImmutableSet.Builder<ClassJavaType> builder = ImmutableSet.builder();
-      for (JavaType interfaceType : getInterfaces()) {
-        ClassJavaType classType = (ClassJavaType) interfaceType;
-        builder.add(classType);
-        builder.addAll(classType.getSymbol().interfacesOfType());
+      if (interfaces == null) {
+        Deque<ClassJavaType> todo = getInterfaces().stream().map(ClassJavaType.class::cast).distinct().collect(Collectors.toCollection(LinkedList::new));
+        Set<ClassJavaType> builder = new LinkedHashSet<>();
+        while (!todo.isEmpty()) {
+          ClassJavaType classType = todo.pop();
+          if(classType == type) {
+            continue;
+          }
+          if (builder.add(classType)) {
+            classType.symbol.getInterfaces().forEach(t -> todo.addLast((ClassJavaType) t));
+          }
+        }
+        interfaces = builder;
       }
-      return builder.build();
+      return interfaces;
     }
 
     @Override
@@ -454,18 +496,41 @@ public class JavaSymbol implements Symbol {
 
     VariableTree declaration;
 
+    @Nullable
+    private final Object value;
+
     public VariableJavaSymbol(int flags, String name, JavaSymbol owner) {
+      this(flags, name, owner, null);
+    }
+
+    public VariableJavaSymbol(int flags, String name, JavaSymbol owner, @Nullable Object value) {
       super(VAR, flags, name, owner);
+      this.value = value;
     }
 
     public VariableJavaSymbol(int flags, String name, JavaType type, JavaSymbol owner) {
+      this(flags, name, type, owner, null);
+    }
+
+    public VariableJavaSymbol(int flags, String name, JavaType type, JavaSymbol owner, @Nullable Object value) {
       super(VAR, flags, name, owner);
       this.type = type;
+      this.value = value;
     }
 
     @Override
     public VariableTree declaration() {
       return declaration;
+    }
+
+    public Optional<Object> constantValue() {
+      if (Flags.isFlagged(flags, Flags.STATIC) && Flags.isFlagged(flags, Flags.FINAL)) {
+        if (value != null && type.is("boolean")) {
+          return Optional.of(Integer.valueOf(1).equals(value) ? Boolean.TRUE : Boolean.FALSE);
+        }
+        return Optional.ofNullable(value);
+      }
+      return Optional.empty();
     }
 
     @Override
@@ -484,17 +549,78 @@ public class JavaSymbol implements Symbol {
     Scope typeParameters;
     List<TypeVariableJavaType> typeVariableTypes;
     MethodTree declaration;
+    Object defaultValue;
+    String desc;
+    String signature;
 
     public MethodJavaSymbol(int flags, String name, JavaType type, JavaSymbol owner) {
       super(MTH, flags, name, owner);
       super.type = type;
       this.returnType = ((MethodJavaType) type).resultType.symbol;
-      this.typeVariableTypes = Lists.newArrayList();
+      this.typeVariableTypes = new ArrayList<>();
     }
 
     public MethodJavaSymbol(int flags, String name, JavaSymbol owner) {
       super(MTH, flags, name, owner);
-      this.typeVariableTypes = Lists.newArrayList();
+      this.typeVariableTypes = new ArrayList<>();
+    }
+
+    @Override
+    public String signature() {
+      if (signature == null) {
+        signature = "";
+        if (owner != null) {
+          signature += owner.getType().fullyQualifiedName();
+        }
+        signature += "#" + name + desc();
+      }
+      return signature;
+    }
+
+    private String desc() {
+      if(desc == null) {
+        org.objectweb.asm.Type ret = returnType == null ? org.objectweb.asm.Type.VOID_TYPE : toAsmType(((MethodJavaType) super.type).resultType);
+        org.objectweb.asm.Type[] argTypes = new org.objectweb.asm.Type[0];
+        if(super.type != null) {
+          argTypes = getParametersTypes().stream().map(MethodJavaSymbol::toAsmType).toArray(org.objectweb.asm.Type[]::new);
+        }
+        desc = org.objectweb.asm.Type.getMethodDescriptor(ret, argTypes);
+      }
+      return desc;
+    }
+
+    private static org.objectweb.asm.Type toAsmType(JavaType javaType) {
+      switch (javaType.tag) {
+        case JavaType.BYTE:
+          return org.objectweb.asm.Type.BYTE_TYPE;
+        case JavaType.CHAR:
+          return org.objectweb.asm.Type.CHAR_TYPE;
+        case JavaType.SHORT:
+          return org.objectweb.asm.Type.SHORT_TYPE;
+        case JavaType.INT:
+          return org.objectweb.asm.Type.INT_TYPE;
+        case JavaType.LONG:
+          return org.objectweb.asm.Type.LONG_TYPE;
+        case JavaType.FLOAT:
+          return org.objectweb.asm.Type.FLOAT_TYPE;
+        case JavaType.DOUBLE:
+          return org.objectweb.asm.Type.DOUBLE_TYPE;
+        case JavaType.BOOLEAN:
+          return org.objectweb.asm.Type.BOOLEAN_TYPE;
+        case JavaType.VOID:
+          return org.objectweb.asm.Type.VOID_TYPE;
+        case JavaType.CLASS:
+        case JavaType.UNKNOWN:
+          return org.objectweb.asm.Type.getObjectType(Convert.bytecodeName(javaType.fullyQualifiedName()));
+        case JavaType.ARRAY:
+          JavaType element = ((ArrayJavaType) javaType).elementType;
+          return org.objectweb.asm.Type.getObjectType("["+toAsmType(element).getDescriptor());
+        case JavaType.PARAMETERIZED:
+        case JavaType.TYPEVAR:
+          return toAsmType(javaType.erasure());
+        default:
+          throw new IllegalStateException("Unexpected java type tag "+javaType.tag);
+      }
     }
 
     public TypeJavaSymbol getReturnType() {
@@ -521,7 +647,8 @@ public class JavaSymbol implements Symbol {
       }
     }
 
-    @CheckForNull
+    @Override
+    @Nullable
     public MethodJavaSymbol overriddenSymbol() {
       if (isStatic()) {
         return null;
@@ -643,6 +770,10 @@ public class JavaSymbol implements Symbol {
       return declaration;
     }
 
+    public boolean isOverridable() {
+      return !(isPrivate() || isStatic() || isFinal() || owner().isFinal());
+    }
+
     public boolean isParametrized() {
       return !typeVariableTypes.isEmpty();
     }
@@ -655,6 +786,11 @@ public class JavaSymbol implements Symbol {
         return String.format("!unknownOwner!#%s()", name);
       }
       return String.format("%s#%s()", owner.name, name);
+    }
+
+    @CheckForNull
+    public Object defaultValue() {
+      return defaultValue;
     }
   }
 
@@ -754,7 +890,7 @@ public class JavaSymbol implements Symbol {
 
     @Override
     public List<JavaType> getInterfaces() {
-      return ImmutableList.of();
+      return Collections.emptyList();
     }
 
     @Override

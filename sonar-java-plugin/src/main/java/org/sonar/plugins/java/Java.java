@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,10 +21,9 @@ package org.sonar.plugins.java;
 
 import com.google.common.base.Splitter;
 import com.google.common.collect.Iterables;
-import org.sonar.api.config.Settings;
-import org.sonar.api.resources.AbstractLanguage;
-
 import java.util.Arrays;
+import org.sonar.api.config.Configuration;
+import org.sonar.api.resources.AbstractLanguage;
 
 /**
  * Java language implementation
@@ -60,14 +59,19 @@ public class Java extends AbstractLanguage {
   public static final String SOURCE_VERSION = "sonar.java.source";
 
   /**
+   * Turn ON debug rules
+   */
+  public static final String DEBUG_RULE_KEY = "sonar.java.debug";
+
+  /**
    * Settings of the plugin.
    */
-  private final Settings settings;
+  private final Configuration settings;
 
   /**
    * Default constructor
    */
-  public Java(Settings settings) {
+  public Java(Configuration settings) {
     super(KEY, NAME);
     this.settings = settings;
   }

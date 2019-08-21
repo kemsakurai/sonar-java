@@ -10,5 +10,8 @@
     "convention",
     "maven"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-3423",
+  "sqKey": "S3423",
+  "scope": "Main"
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -22,16 +22,14 @@ package org.sonar.java.se;
 import org.sonar.java.se.constraint.Constraint;
 import org.sonar.java.se.symbolicvalues.SymbolicValue;
 
-import javax.annotation.CheckForNull;
-import javax.annotation.Nullable;
+import java.util.Objects;
 
 public class LearnedConstraint {
   final SymbolicValue sv;
-
-  @Nullable
   final Constraint constraint;
 
-  public LearnedConstraint(SymbolicValue sv, @Nullable Constraint constraint) {
+  public LearnedConstraint(SymbolicValue sv, Constraint constraint) {
+    Objects.requireNonNull(constraint);
     this.sv = sv;
     this.constraint = constraint;
   }
@@ -40,7 +38,6 @@ public class LearnedConstraint {
     return sv;
   }
 
-  @CheckForNull
   public Constraint constraint() {
     return constraint;
   }

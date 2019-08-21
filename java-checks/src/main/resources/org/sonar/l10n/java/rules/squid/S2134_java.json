@@ -8,8 +8,10 @@
   },
   "tags": [
     "multi-threading",
-    "bug",
     "pitfall"
   ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-2134",
+  "sqKey": "S2134",
+  "scope": "All"
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -25,6 +25,7 @@ import org.assertj.core.api.Fail;
 import org.junit.Before;
 import org.junit.Test;
 import org.sonar.java.ast.parser.JavaParser;
+import org.sonar.java.bytecode.loader.SquidClassLoader;
 import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.CompilationUnitTree;
@@ -32,7 +33,7 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
 import java.io.File;
-import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -49,7 +50,7 @@ public class LeastUpperBoundTest {
   @Before
   public void setUp() {
     ParametrizedTypeCache parametrizedTypeCache = new ParametrizedTypeCache();
-    Symbols symbols = new Symbols(new BytecodeCompleter(Lists.<File>newArrayList(), parametrizedTypeCache));
+    Symbols symbols = new Symbols(new BytecodeCompleter(new SquidClassLoader(new ArrayList<>()), parametrizedTypeCache));
     TypeSubstitutionSolver typeSubstitutionSolver = new TypeSubstitutionSolver(parametrizedTypeCache, symbols);
     intType = symbols.intType;
     longType = symbols.longType;
@@ -79,7 +80,7 @@ public class LeastUpperBoundTest {
   @Test
   public void lub_should_fail_if_no_type_provided() {
     try {
-      leastUpperBound.leastUpperBound(Sets.<Type>newHashSet());
+      leastUpperBound.leastUpperBound(new HashSet<>());
       Fail.fail("should have failed");
     } catch (Exception e) {
       assertThat(e).isInstanceOf(IllegalArgumentException.class);
@@ -234,10 +235,12 @@ public class LeastUpperBoundTest {
     a = typesFromInput.get(0);
     b = typesFromInput.get(1);
     lub = leastUpperBound(a, b);
-    assertThat(lub).isSameAs(a);
-    // FIXME : should be the other way around but we don't care about type parameter in lub for now.
-    assertThat(lub).isSameAs(b.symbol().superClass().erasure());
-    assertThat(lub).isNotSameAs(b.symbol().superClass());
+    assertThat(((JavaType) lub).isTagged(JavaType.PARAMETERIZED)).isTrue();
+    assertThat(lub.erasure()).isSameAs(a.erasure());
+    assertThat(((ParametrizedTypeJavaType) lub).typeSubstitution.substitutedTypes()).hasSize(1);
+    WildCardType substituted = (WildCardType) ((ParametrizedTypeJavaType) lub).typeSubstitution.substitutedTypes().get(0);
+    assertThat(substituted.boundType).isSameAs(WildCardType.BoundType.EXTENDS);
+    assertThat(substituted.bound.is("java.lang.Object")).isTrue();
   }
 
   @Test
@@ -467,8 +470,8 @@ public class LeastUpperBoundTest {
     for (String line : lines) {
       builder.append(line).append(System.lineSeparator());
     }
-    CompilationUnitTree cut = (CompilationUnitTree) JavaParser.createParser(StandardCharsets.UTF_8).parse(builder.toString());
-    SemanticModel.createFor(cut, Lists.newArrayList(new File("target/test-classes"), new File("target/classes")));
+    CompilationUnitTree cut = (CompilationUnitTree) JavaParser.createParser().parse(builder.toString());
+    SemanticModel.createFor(cut, new SquidClassLoader(Lists.newArrayList(new File("target/test-classes"), new File("target/classes"))));
     return cut;
   }
 }

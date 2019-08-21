@@ -10,5 +10,8 @@
     "finding",
     "clumsy"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-2333",
+  "sqKey": "S2333",
+  "scope": "All"
 }

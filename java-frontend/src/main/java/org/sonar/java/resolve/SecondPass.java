@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,8 +21,13 @@ package org.sonar.java.resolve;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import org.sonar.java.model.AbstractTypedTree;
 import org.sonar.java.model.declaration.VariableTreeImpl;
 import org.sonar.plugins.java.api.tree.ClassTree;
@@ -32,10 +37,6 @@ import org.sonar.plugins.java.api.tree.TypeParameterTree;
 import org.sonar.plugins.java.api.tree.TypeParameters;
 import org.sonar.plugins.java.api.tree.TypeTree;
 import org.sonar.plugins.java.api.tree.VariableTree;
-
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
 
 /**
  * Completes hierarchy of types.
@@ -81,7 +82,7 @@ public class SecondPass implements JavaSymbol.Completer {
     if ("".equals(symbol.name)) {
       // Anonymous Class Declaration
       // FIXME(Godin): This case avoids NPE which occurs because semanticModel has no associations for anonymous classes.
-      type.interfaces = ImmutableList.of();
+      type.interfaces = Collections.emptyList();
       return;
     }
 
@@ -110,21 +111,31 @@ public class SecondPass implements JavaSymbol.Completer {
 
     if ((symbol.flags() & Flags.INTERFACE) == 0) {
       symbol.members.enter(new JavaSymbol.VariableJavaSymbol(Flags.FINAL, "super", type.supertype, symbol));
+    } else {
+      // JLS9 - 15.12.1 : Used in form 'TypeName.super.foo()', where 'TypeName' is an interface. To support invocation
+      // of default methods from super-interfaces, 'TypeName' may also refer to a direct super-interface of the current
+      // class or interface. The method being invoked ('foo()') has to be searched in that super-interface.
+      symbol.members.enter(new JavaSymbol.VariableJavaSymbol(Flags.FINAL, "super", type, symbol));
+      // Note: The above "super" symbol will always be qualified when referenced. e.g. A.super.hashCode()
+      // because it's a compilation error to use unqualified "super" in default method. e.g. super.hashCode()
+      // Note: interface/class can extend/implement multiple interfaces containing default methods with the same
+      // signature. Mentioning the super-interfaces explicitly removes any ambiguity.
     }
 
     // Register default constructor
-    if (tree.is(Tree.Kind.CLASS) && symbol.lookupSymbols(CONSTRUCTOR_NAME).isEmpty()) {
-      List<JavaType> argTypes = ImmutableList.of();
+    if (tree.is(Tree.Kind.CLASS, Tree.Kind.ENUM) && symbol.lookupSymbols(CONSTRUCTOR_NAME).isEmpty()) {
+      List<JavaType> argTypes = Collections.emptyList();
       if (!symbol.isStatic()) {
         // JLS8 - 8.8.1 & 8.8.9 : constructors of inner class have an implicit first arg of its directly enclosing class type
         JavaSymbol owner = symbol.owner();
         if (!owner.isPackageSymbol()) {
-          argTypes = ImmutableList.of(owner.enclosingClass().type);
+          argTypes = Collections.singletonList(Objects.requireNonNull(owner.enclosingClass().type));
         }
       }
       JavaSymbol.MethodJavaSymbol defaultConstructor = new JavaSymbol.MethodJavaSymbol(symbol.flags & Flags.ACCESS_FLAGS, CONSTRUCTOR_NAME, symbol);
-      MethodJavaType defaultConstructorType = new MethodJavaType(argTypes, null, ImmutableList.of(), symbol);
+      MethodJavaType defaultConstructorType = new MethodJavaType(argTypes, null, Collections.emptyList(), symbol);
       defaultConstructor.setMethodType(defaultConstructorType);
+      defaultConstructor.parameters = new Scope(defaultConstructor);
       symbol.members.enter(defaultConstructor);
     }
   }
@@ -153,7 +164,7 @@ public class SecondPass implements JavaSymbol.Completer {
 
   private void completeTypeParameters(TypeParameters typeParameters, Resolve.Env env) {
     for (TypeParameterTree typeParameterTree : typeParameters) {
-      List<JavaType> bounds = Lists.newArrayList();
+      List<JavaType> bounds = new ArrayList<>();
       if(typeParameterTree.bounds().isEmpty()) {
         bounds.add(symbols.objectType);
       } else {
@@ -166,7 +177,7 @@ public class SecondPass implements JavaSymbol.Completer {
   }
 
   private static void checkHierarchyCycles(JavaType baseType) {
-    Set<ClassJavaType> types = Sets.newHashSet();
+    Set<ClassJavaType> types = new HashSet<>();
     ClassJavaType type = (ClassJavaType) baseType;
     while (type != null) {
       if (!types.add(type)) {
@@ -189,7 +200,7 @@ public class SecondPass implements JavaSymbol.Completer {
     }
 
     JavaType returnType = null;
-    List<JavaType> argTypes = Lists.newArrayList();
+    List<JavaType> argTypes = new ArrayList<>();
     // no return type for constructor
     if (!CONSTRUCTOR_NAME.equals(symbol.name)) {
       returnType = resolveType(env, methodTree.returnType());
@@ -249,6 +260,7 @@ public class SecondPass implements JavaSymbol.Completer {
       Tree.Kind.ARRAY_TYPE,
       Tree.Kind.UNION_TYPE,
       Tree.Kind.PRIMITIVE_TYPE,
+      Tree.Kind.VAR_TYPE,
       Tree.Kind.INFERED_TYPE);
   }
 

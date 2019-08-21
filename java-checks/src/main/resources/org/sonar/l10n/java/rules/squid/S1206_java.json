@@ -8,12 +8,15 @@
   },
   "tags": [
     "cwe",
-    "bug",
     "cert"
   ],
-  "standards": [
-    "CWE",
-    "CERT"
-  ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-1206",
+  "sqKey": "S1206",
+  "scope": "Main",
+  "securityStandards": {
+    "CWE": [
+      581
+    ]
+  }
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,17 +19,15 @@
  */
 package org.sonar.plugins.surefire.data;
 
+import java.text.ParseException;
+import java.util.Locale;
+import javax.xml.stream.XMLStreamException;
 import org.apache.commons.lang.StringUtils;
 import org.codehaus.staxmate.in.ElementFilter;
 import org.codehaus.staxmate.in.SMEvent;
 import org.codehaus.staxmate.in.SMHierarchicCursor;
 import org.codehaus.staxmate.in.SMInputCursor;
 import org.sonar.api.utils.ParsingUtils;
-
-import javax.xml.stream.XMLStreamException;
-
-import java.text.ParseException;
-import java.util.Locale;
 
 public class SurefireStaxHandler {
 
@@ -59,21 +57,24 @@ public class SurefireStaxHandler {
       if (event.compareTo(SMEvent.START_ELEMENT) == 0) {
         String testClassName = getClassname(testCase, testSuiteClassName);
         UnitTestClassReport classReport = index.index(testClassName);
-        parseTestCase(testCase, classReport);
+        parseTestCase(testCase, testSuiteClassName, classReport);
       }
     }
   }
 
   private static String getClassname(SMInputCursor testCaseCursor, String defaultClassname) throws XMLStreamException {
     String testClassName = testCaseCursor.getAttrValue("classname");
-    if(StringUtils.isNotBlank(testClassName) && testClassName.endsWith(")")) {
-      testClassName = testClassName.substring(0, testClassName.indexOf('('));
+    if (StringUtils.isNotBlank(testClassName) && testClassName.endsWith(")")) {
+      int openParenthesisIndex = testClassName.indexOf('(');
+      if (openParenthesisIndex > 0) {
+        testClassName = testClassName.substring(0, openParenthesisIndex);
+      }
     }
     return StringUtils.defaultIfBlank(testClassName, defaultClassname);
   }
 
-  private static void parseTestCase(SMInputCursor testCaseCursor, UnitTestClassReport report) throws XMLStreamException {
-    report.add(parseTestResult(testCaseCursor));
+  private static void parseTestCase(SMInputCursor testCaseCursor, String testSuiteClassName, UnitTestClassReport report) throws XMLStreamException {
+    report.add(parseTestResult(testCaseCursor, testSuiteClassName));
   }
 
   private static void setStackAndMessage(UnitTestResult result, SMInputCursor stackAndMessageCursor) throws XMLStreamException {
@@ -82,10 +83,11 @@ public class SurefireStaxHandler {
     result.setStackTrace(stack);
   }
 
-  private static UnitTestResult parseTestResult(SMInputCursor testCaseCursor) throws XMLStreamException {
+  private static UnitTestResult parseTestResult(SMInputCursor testCaseCursor, String testSuiteClassName) throws XMLStreamException {
     UnitTestResult detail = new UnitTestResult();
     String name = getTestCaseName(testCaseCursor);
     detail.setName(name);
+    detail.setTestSuiteClassName(testSuiteClassName);
 
     String status = UnitTestResult.STATUS_OK;
     String time = testCaseCursor.getAttrValue("time");

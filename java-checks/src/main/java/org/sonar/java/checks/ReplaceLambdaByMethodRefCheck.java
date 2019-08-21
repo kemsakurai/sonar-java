@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,12 +19,18 @@
  */
 package org.sonar.java.checks;
 
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.IntStream;
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
 import org.sonar.check.Rule;
 import org.sonar.java.JavaVersionAwareVisitor;
 import org.sonar.java.model.ExpressionUtils;
 import org.sonar.plugins.java.api.JavaFileScanner;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.JavaVersion;
+import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.tree.Arguments;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
 import org.sonar.plugins.java.api.tree.BinaryExpressionTree;
@@ -40,12 +46,6 @@ import org.sonar.plugins.java.api.tree.ParenthesizedTree;
 import org.sonar.plugins.java.api.tree.ReturnStatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.VariableTree;
-
-import javax.annotation.Nullable;
-
-import java.util.List;
-import java.util.Optional;
-import java.util.stream.IntStream;
 
 @Rule(key = "S1612")
 public class ReplaceLambdaByMethodRefCheck extends BaseTreeVisitor implements JavaFileScanner, JavaVersionAwareVisitor {
@@ -156,7 +156,7 @@ public class ReplaceLambdaByMethodRefCheck extends BaseTreeVisitor implements Ja
         arguments = ((NewClassTree) tree).arguments();
       } else {
         MethodInvocationTree mit = (MethodInvocationTree) tree;
-        if (hasMethodInvocationInMethodSelect(mit)) {
+        if (hasMethodInvocationInMethodSelect(mit) || hasNonFinalFieldInMethodSelect(mit)) {
           return false;
         }
         arguments = mit.arguments();
@@ -168,21 +168,50 @@ public class ReplaceLambdaByMethodRefCheck extends BaseTreeVisitor implements Ja
   }
 
   private static boolean hasMethodInvocationInMethodSelect(MethodInvocationTree mit) {
-    if (!mit.methodSelect().is(Tree.Kind.MEMBER_SELECT)) {
-      return false;
-    }
-    MemberSelectExpressionTree mse = (MemberSelectExpressionTree) mit.methodSelect();
+    MemberSelectExpressionTree mse = getMemberSelect(mit);
     while (mse != null) {
-      if (mse.expression().is(Tree.Kind.METHOD_INVOCATION)) {
+      ExpressionTree expression = mse.expression();
+      if (expression.is(Tree.Kind.METHOD_INVOCATION, Tree.Kind.NEW_CLASS)) {
         return true;
       }
-      if (mse.expression().is(Tree.Kind.MEMBER_SELECT)) {
-        mse = (MemberSelectExpressionTree) mse.expression();
+      if (expression.is(Tree.Kind.MEMBER_SELECT)) {
+        mse = (MemberSelectExpressionTree) expression;
       } else {
         mse = null;
       }
     }
     return false;
+  }
+
+  @CheckForNull
+  private static MemberSelectExpressionTree getMemberSelect(MethodInvocationTree mit) {
+    ExpressionTree methodSelect = mit.methodSelect();
+    if (!methodSelect.is(Tree.Kind.MEMBER_SELECT)) {
+      return null;
+    }
+    return (MemberSelectExpressionTree) methodSelect;
+  }
+
+  private static boolean hasNonFinalFieldInMethodSelect(MethodInvocationTree mit) {
+    MemberSelectExpressionTree mse = getMemberSelect(mit);
+    if (mse == null) {
+      return false;
+    }
+    ExpressionTree expression = ExpressionUtils.skipParentheses(mse.expression());
+    Symbol symbol = null;
+    if (expression.is(Tree.Kind.IDENTIFIER)) {
+      symbol = ((IdentifierTree) expression).symbol();
+    } else if (expression.is(Tree.Kind.MEMBER_SELECT)) {
+      symbol = ((MemberSelectExpressionTree) expression).identifier().symbol();
+    }
+    return symbol != null &&
+      symbol.owner().isTypeSymbol()
+      && !isThisOrSuper(symbol.name())
+      && !symbol.isFinal();
+  }
+
+  private static boolean isThisOrSuper(String name) {
+    return "this".equals(name) || "super".equals(name);
   }
 
   private static boolean matchingParameters(List<VariableTree> parameters, Arguments arguments) {

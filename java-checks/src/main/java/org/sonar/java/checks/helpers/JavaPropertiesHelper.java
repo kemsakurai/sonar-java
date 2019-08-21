@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -76,7 +76,7 @@ public class JavaPropertiesHelper {
 
   private static boolean isGetPropertyWithDefaultValue(MethodInvocationTree mit) {
     Symbol symbol = mit.symbol();
-    if (symbol.owner().type().is("java.util.Properties")) {
+    if (symbol.isMethodSymbol() && symbol.owner().type().is("java.util.Properties")) {
       return "getProperty".equals(symbol.name()) && mit.arguments().size() == 2;
     }
     return false;

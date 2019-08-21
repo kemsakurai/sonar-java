@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,6 +19,7 @@
  */
 package org.sonar.java.checks;
 
+import java.util.Locale;
 import org.sonar.check.Rule;
 import org.sonar.plugins.java.api.JavaFileScanner;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
@@ -32,13 +33,14 @@ import org.sonar.plugins.java.api.tree.SyntaxToken;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.WhileStatementTree;
 
-import java.util.Locale;
-
 @Rule(key = "S2681")
 public class MultilineBlocksCurlyBracesCheck extends BaseTreeVisitor implements JavaFileScanner {
 
-  private static final String LOOP_MESSAGE = "Only the first line of this %d-line block will be executed in a loop. The rest will execute only once.";
-  private static final String IF_MESSAGE = "Only the first line of this %d-line block will be executed conditionally. The rest will execute unconditionally.";
+  private static final String LOOP_MESSAGE = "This line will not be executed in a loop; only the first line of this %d-line block will be. The rest will execute only once.";
+  private static final String LOOP_MESSAGE_ONE_LINER = "This statement will not be executed in a loop; only the first statement will be. The rest will execute only once.";
+  private static final String IF_MESSAGE = "This line will not be executed conditionally; " +
+    "only the first line of this %d-line block will be. The rest will execute unconditionally.";
+  private static final String IF_MESSAGE_ONE_LINER = "This statement will not be executed conditionally; only the first statement will be. The rest will execute unconditionally.";
   private JavaFileScannerContext context;
 
   @Override
@@ -79,10 +81,20 @@ public class MultilineBlocksCurlyBracesCheck extends BaseTreeVisitor implements 
       SyntaxToken currentToken = current.firstToken();
       int currentColumn = currentToken.column();
       int currentLine = currentToken.line();
-      if (previousColumn == currentColumn) {
-        context.reportIssue(this, current, String.format(Locale.US, condition ? IF_MESSAGE : LOOP_MESSAGE, 1 + currentLine - previousLine));
+      if ((previousColumn == currentColumn && previousLine + 1 == currentLine) ||
+        (previousLine == previous.firstToken().line()
+          && previous.firstToken().column() < currentColumn)) {
+        int lines = 1 + currentLine - previousLine;
+        context.reportIssue(this, current, getMessage(condition, lines));
       }
     }
+  }
+
+  private static String getMessage(boolean ifStatementMessage, int lines) {
+    if (lines == 1) {
+      return ifStatementMessage ? IF_MESSAGE_ONE_LINER : LOOP_MESSAGE_ONE_LINER;
+    }
+    return String.format(Locale.US, ifStatementMessage ? IF_MESSAGE : LOOP_MESSAGE, lines);
   }
 
   private static StatementTree getIfStatementLastBlock(StatementTree statementTree) {

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,9 +19,9 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Arrays;
+import java.util.List;
 import org.sonar.check.Rule;
-import org.sonar.java.checks.helpers.MethodsHelper;
 import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.java.model.ExpressionUtils;
 import org.sonar.java.model.LiteralUtils;
@@ -33,8 +33,6 @@ import org.sonar.plugins.java.api.tree.LiteralTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import java.util.List;
-
 @Rule(key = "S2912")
 public class IndexOfStartPositionCheck extends IssuableSubscriptionVisitor {
 
@@ -44,7 +42,7 @@ public class IndexOfStartPositionCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(
+    return Arrays.asList(
       Tree.Kind.GREATER_THAN, Tree.Kind.GREATER_THAN_OR_EQUAL_TO,
       Tree.Kind.LESS_THAN, Tree.Kind.LESS_THAN_OR_EQUAL_TO,
       Tree.Kind.EQUAL_TO, Tree.Kind.NOT_EQUAL_TO);
@@ -74,7 +72,7 @@ public class IndexOfStartPositionCheck extends IssuableSubscriptionVisitor {
       }
       Long otherValue = LiteralUtils.longLiteralValue(other);
       if (otherValue != null && otherValue != -1 && otherValue != 0) {
-        reportIssue(MethodsHelper.methodName(mit), "Use \".indexOf(" + replaceMessage + ",n) > -1\" instead.");
+        reportIssue(ExpressionUtils.methodName(mit), "Use \".indexOf(" + replaceMessage + ",n) > -1\" instead.");
       }
     }
   }

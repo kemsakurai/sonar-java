@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
 import org.sonar.check.Rule;
@@ -27,7 +26,7 @@ import org.sonar.java.cfg.CFG;
 import org.sonar.java.cfg.LiveVariables;
 import org.sonar.java.cfg.VariableReadExtractor;
 import org.sonar.java.model.ExpressionUtils;
-import org.sonar.java.model.declaration.VariableTreeImpl;
+import org.sonar.java.model.LiteralUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.tree.AssignmentExpressionTree;
@@ -38,6 +37,7 @@ import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.LambdaExpressionTree;
+import org.sonar.plugins.java.api.tree.LiteralTree;
 import org.sonar.plugins.java.api.tree.MethodReferenceTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.NewClassTree;
@@ -47,6 +47,7 @@ import org.sonar.plugins.java.api.tree.UnaryExpressionTree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -56,7 +57,7 @@ public class DeadStoreCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD);
+    return Collections.singletonList(Tree.Kind.METHOD);
   }
 
   @Override
@@ -176,10 +177,30 @@ public class DeadStoreCheck extends IssuableSubscriptionVisitor {
 
   private void handleVariable(Set<Symbol> out, VariableTree localVar) {
     Symbol symbol = localVar.symbol();
-    if (localVar.initializer() != null && !out.contains(symbol)) {
-      createIssue(((VariableTreeImpl) localVar).equalToken(), localVar.initializer(), symbol);
+    ExpressionTree initializer = localVar.initializer();
+    if (initializer != null && !isUsualDefaultValue(initializer) && !out.contains(symbol)) {
+      createIssue(localVar.equalToken(), initializer, symbol);
     }
     out.remove(symbol);
+  }
+
+  private static boolean isUsualDefaultValue(ExpressionTree tree) {
+    ExpressionTree expr = ExpressionUtils.skipParentheses(tree);
+    switch (expr.kind()) {
+      case BOOLEAN_LITERAL:
+      case NULL_LITERAL:
+        return true;
+      case STRING_LITERAL:
+        return LiteralUtils.isEmptyString(expr);
+      case INT_LITERAL:
+        String value = ((LiteralTree) expr).value();
+        return "0".equals(value) || "1".equals(value);
+      case UNARY_MINUS:
+      case UNARY_PLUS:
+        return isUsualDefaultValue(((UnaryExpressionTree) expr).expression());
+      default:
+        return false;
+    }
   }
 
   private static void handleNewClass(Set<Symbol> out, Symbol.MethodSymbol methodSymbol, NewClassTree element) {
@@ -255,7 +276,7 @@ public class DeadStoreCheck extends IssuableSubscriptionVisitor {
     @Override
     public void visitTryStatement(TryStatementTree tree) {
       BlockTree finallyBlock = tree.finallyBlock();
-      hasTryFinally |= (finallyBlock != null && !getUsedLocalVarInSubTree(finallyBlock, methodSymbol).isEmpty()) || !tree.resources().isEmpty();
+      hasTryFinally |= (finallyBlock != null && !getUsedLocalVarInSubTree(finallyBlock, methodSymbol).isEmpty()) || !tree.resourceList().isEmpty();
       if (!hasTryFinally) {
         super.visitTryStatement(tree);
       }

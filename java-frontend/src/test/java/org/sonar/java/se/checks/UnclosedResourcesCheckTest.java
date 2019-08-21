@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -38,14 +38,14 @@ public class UnclosedResourcesCheckTest {
 
   @Test
   public void spring() {
-    JavaCheckVerifier.verifyNoIssue("src/test/files/se/SpringResource.java", new UnclosedResourcesCheck());
+    JavaCheckVerifier.verify("src/test/files/se/SpringResource.java", new UnclosedResourcesCheck());
   }
 
   @Test
   public void streams() {
     JavaCheckVerifier.verifyNoIssue("src/test/files/se/StreamResource.java", new UnclosedResourcesCheck());
   }
-  
+
   @Test
   public void testWithExcludedTypes() {
     UnclosedResourcesCheck unclosedResourcesCheck = new UnclosedResourcesCheck();
@@ -64,4 +64,13 @@ public class UnclosedResourcesCheckTest {
     assertThat(UnclosedResourcesCheck.ResourceConstraint.CLOSED.valueAsString()).isSameAs("closed");
   }
 
+  @Test
+  public void test_streams() throws Exception {
+    JavaCheckVerifier.verify("src/test/files/se/UnclosedResourcesCheckStreams.java", new UnclosedResourcesCheck());
+  }
+
+  @Test
+  public void skip_exception_messages() throws Exception {
+    JavaCheckVerifier.verify("src/test/files/se/UnclosedResourcesCheckWithoutExceptionMessages.java", new UnclosedResourcesCheck());
+  }
 }

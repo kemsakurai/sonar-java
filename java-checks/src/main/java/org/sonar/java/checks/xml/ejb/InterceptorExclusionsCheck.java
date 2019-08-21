@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,35 +19,25 @@
  */
 package org.sonar.java.checks.xml.ejb;
 
+import javax.xml.xpath.XPathExpression;
 import org.sonar.check.Rule;
-import org.sonar.java.xml.XPathXmlCheck;
-import org.sonar.java.xml.XmlCheckContext;
+import org.sonarsource.analyzer.commons.xml.XmlFile;
+import org.sonarsource.analyzer.commons.xml.checks.SimpleXPathBasedCheck;
 import org.w3c.dom.Node;
 
-import javax.xml.xpath.XPathExpression;
-
 @Rule(key = "S3282")
-public class InterceptorExclusionsCheck extends XPathXmlCheck {
+public class InterceptorExclusionsCheck extends SimpleXPathBasedCheck {
 
-  private XPathExpression notDefaultInterceptorBindingsExpression;
-  private XPathExpression exclusionsExpression;
-
-  @Override
-  public void precompileXPathExpressions(XmlCheckContext context) {
-    notDefaultInterceptorBindingsExpression = context.compile("ejb-jar/assembly-descriptor/interceptor-binding[ejb-name!=\"*\"]");
-    exclusionsExpression = context.compile("*[self::exclude-default-interceptors[text()=\"true\"] or self::exclude-class-interceptors[text()=\"true\"]]");
-  }
+  private XPathExpression notDefaultInterceptorBindingsExpression = getXPathExpression("ejb-jar/assembly-descriptor/interceptor-binding[ejb-name!=\"*\"]");
+  private XPathExpression exclusionsExpression = getXPathExpression("*[self::exclude-default-interceptors[text()=\"true\"] or self::exclude-class-interceptors[text()=\"true\"]]");
 
   @Override
-  public void scanFileWithXPathExpressions(XmlCheckContext context) {
-    for (Node interceptorBinding : context.evaluateOnDocument(notDefaultInterceptorBindingsExpression)) {
-      checkExclusions(context, interceptorBinding);
-    }
+  public void scanFile(XmlFile xmlFile) {
+    evaluateAsList(notDefaultInterceptorBindingsExpression, xmlFile.getNamespaceUnawareDocument()).forEach(this::checkExclusions);
   }
 
-  private void checkExclusions(XmlCheckContext context, Node interceptorBinding) {
-    for (Node exclusion : context.evaluate(exclusionsExpression, interceptorBinding)) {
-      reportIssue(exclusion, "Move this exclusion into the class as an annotation.");
-    }
+  private void checkExclusions(Node interceptorBinding) {
+    evaluateAsList(exclusionsExpression, interceptorBinding)
+      .forEach(node -> reportIssue(node, "Move this exclusion into the class as an annotation."));
   }
 }

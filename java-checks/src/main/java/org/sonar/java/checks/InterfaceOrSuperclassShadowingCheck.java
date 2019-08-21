@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import org.sonar.check.Rule;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Symbol;
@@ -30,6 +29,7 @@ import org.sonar.plugins.java.api.tree.Tree.Kind;
 
 import javax.annotation.Nullable;
 
+import java.util.Arrays;
 import java.util.List;
 
 @Rule(key = "S2176")
@@ -37,7 +37,7 @@ public class InterfaceOrSuperclassShadowingCheck extends IssuableSubscriptionVis
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.CLASS, Tree.Kind.INTERFACE);
+    return Arrays.asList(Tree.Kind.CLASS, Tree.Kind.INTERFACE);
   }
 
   @Override

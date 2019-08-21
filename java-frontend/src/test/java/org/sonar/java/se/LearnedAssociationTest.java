@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -32,7 +32,13 @@ public class LearnedAssociationTest {
 
   @Test
   public void test_toString() throws Exception {
-    LearnedAssociation la = new LearnedAssociation(new SymbolicValue(1), new JavaSymbol.VariableJavaSymbol(JavaSymbol.VAR, "a", mock(JavaSymbol.MethodJavaSymbol.class)));
+    SymbolicValue sv = new SymbolicValue() {
+      @Override
+      public String toString() {
+        return "SV_1";
+      }
+    };
+    LearnedAssociation la = new LearnedAssociation(sv, new JavaSymbol.VariableJavaSymbol(JavaSymbol.VAR, "a", mock(JavaSymbol.MethodJavaSymbol.class)));
     assertThat(la.toString()).isEqualTo("SV_1 - a");
   }
 

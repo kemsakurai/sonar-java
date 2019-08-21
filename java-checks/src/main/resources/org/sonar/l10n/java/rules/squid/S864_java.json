@@ -1,5 +1,5 @@
 {
-  "title": "Limited dependence should be placed on operator precedence rules in expressions",
+  "title": "Limited dependence should be placed on operator precedence",
   "type": "CODE_SMELL",
   "status": "ready",
   "remediation": {
@@ -8,12 +8,15 @@
   },
   "tags": [
     "cwe",
-    "misra",
     "cert"
   ],
-  "standards": [
-    "CWE",
-    "CERT"
-  ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-864",
+  "sqKey": "S864",
+  "scope": "All",
+  "securityStandards": {
+    "CWE": [
+      783
+    ]
+  }
 }

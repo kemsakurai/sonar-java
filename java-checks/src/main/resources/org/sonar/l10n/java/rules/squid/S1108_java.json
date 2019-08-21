@@ -9,5 +9,8 @@
   "tags": [
     "convention"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-1108",
+  "sqKey": "RightCurlyBraceDifferentLineAsNextBlockCheck",
+  "scope": "All"
 }

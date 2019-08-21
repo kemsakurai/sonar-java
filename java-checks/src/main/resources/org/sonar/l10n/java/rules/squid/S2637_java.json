@@ -7,7 +7,16 @@
     "constantCost": "15min"
   },
   "tags": [
-    "bug"
+    "cwe",
+    "cert"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-2637",
+  "sqKey": "S2637",
+  "scope": "Main",
+  "securityStandards": {
+    "CWE": [
+      476
+    ]
+  }
 }

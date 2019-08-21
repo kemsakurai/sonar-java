@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,8 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
 import org.sonar.check.Rule;
 import org.sonar.java.resolve.SemanticModel;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
@@ -38,7 +36,9 @@ import org.sonar.plugins.java.api.tree.TypeTree;
 import javax.annotation.Nullable;
 
 import java.text.MessageFormat;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 @Rule(key = "S2440")
@@ -46,14 +46,14 @@ public class ClassWithOnlyStaticMethodsInstantiationCheck extends IssuableSubscr
   private SemanticModel semanticModel;
 
   @Override
-  public void scanFile(JavaFileScannerContext context) {
+  public void setContext(JavaFileScannerContext context) {
     semanticModel = (SemanticModel) context.getSemanticModel();
-    super.scanFile(context);
+    super.setContext(context);
   }
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Kind.NEW_CLASS);
+    return Collections.singletonList(Kind.NEW_CLASS);
   }
 
   @Override
@@ -102,13 +102,18 @@ public class ClassWithOnlyStaticMethodsInstantiationCheck extends IssuableSubscr
   }
 
   private static Collection<Symbol> filterMethodsAndFields(Collection<Symbol> symbols) {
-    List<Symbol> filtered = Lists.newArrayList();
+    List<Symbol> filtered = new ArrayList<>();
     for (Symbol symbol : symbols) {
-      if ((symbol.isVariableSymbol() && symbol.declaration() != null) || (symbol.isMethodSymbol() && !isConstructor(symbol))) {
+      if ((symbol.isVariableSymbol() && !isThisOrSuper(symbol)) || (symbol.isMethodSymbol() && !isConstructor(symbol))) {
         filtered.add(symbol);
       }
     }
     return filtered;
+  }
+
+  private static boolean isThisOrSuper(Symbol symbol) {
+    String name = symbol.name();
+    return "this".equals(name) || "super".equals(name);
   }
 
   private static boolean isConstructor(Symbol symbol) {

@@ -7,8 +7,10 @@
     "constantCost": "15min"
   },
   "tags": [
-    "bug",
     "java8"
   ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-2789",
+  "sqKey": "S2789",
+  "scope": "All"
 }

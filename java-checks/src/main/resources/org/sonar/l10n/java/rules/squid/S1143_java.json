@@ -9,12 +9,15 @@
   "tags": [
     "cwe",
     "error-handling",
-    "bug",
     "cert"
   ],
-  "standards": [
-    "CWE",
-    "CERT"
-  ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Critical",
+  "ruleSpecification": "RSPEC-1143",
+  "sqKey": "S1143",
+  "scope": "All",
+  "securityStandards": {
+    "CWE": [
+      584
+    ]
+  }
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,14 +19,14 @@
  */
 package org.sonar.java.se.checks;
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 
 import org.sonar.check.Rule;
 import org.sonar.java.cfg.CFG;
+import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.java.se.CheckerContext;
 import org.sonar.java.se.ExplodedGraph;
+import org.sonar.java.se.Flow;
 import org.sonar.java.se.FlowComputation;
 import org.sonar.java.se.ProgramState;
 import org.sonar.java.se.constraint.ConstraintManager;
@@ -49,6 +49,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -56,9 +57,11 @@ import java.util.stream.Collectors;
 public class NullDereferenceCheck extends SECheck {
 
   private static final ExceptionalYieldChecker EXCEPTIONAL_YIELD_CHECKER = new ExceptionalYieldChecker(
-    "NullPointerException will be thrown when invoking method %s().");
+    "\"NullPointerException\" will be thrown when invoking method \"%s()\".");
 
   private static final String JAVA_LANG_NPE = "java.lang.NullPointerException";
+  private static final MethodMatcher OPTIONAL_OR_ELSE_GET_MATCHER = MethodMatcher.create().typeDefinition("java.util.Optional").name("orElseGet")
+    .addParameter("java.util.function.Supplier");
 
   private static class NullDereferenceIssue {
     final ExplodedGraph.Node node;
@@ -81,25 +84,37 @@ public class NullDereferenceCheck extends SECheck {
 
   @Override
   public ProgramState checkPreStatement(CheckerContext context, Tree syntaxNode) {
-    if (context.getState().peekValue() == null) {
+    SymbolicValue peekValue = context.getState().peekValue();
+    if (peekValue == null) {
       // stack is empty, nothing to do.
       return context.getState();
     }
-    if (syntaxNode.is(Tree.Kind.METHOD_INVOCATION)) {
-      MethodInvocationTree methodInvocation = (MethodInvocationTree) syntaxNode;
-      Tree methodSelect = methodInvocation.methodSelect();
-      if (methodSelect.is(Tree.Kind.MEMBER_SELECT)) {
-        SymbolicValue dereferencedSV = context.getState().peekValue(methodInvocation.arguments().size());
-        return checkConstraint(context, methodSelect, dereferencedSV);
-      }
-    }
-    if(syntaxNode.is(Tree.Kind.ARRAY_ACCESS_EXPRESSION)) {
-      Tree toCheck = ((ArrayAccessExpressionTree) syntaxNode).expression();
-      SymbolicValue currentVal = context.getState().peekValue(1);
-      return checkConstraint(context, toCheck, currentVal);
-    }
-    if (syntaxNode.is(Tree.Kind.MEMBER_SELECT)) {
-      return checkMemberSelect(context, (MemberSelectExpressionTree) syntaxNode, context.getState().peekValue());
+    switch (syntaxNode.kind()) {
+      case METHOD_INVOCATION:
+        MethodInvocationTree methodInvocation = (MethodInvocationTree) syntaxNode;
+        ExpressionTree methodSelect = methodInvocation.methodSelect();
+        ProgramState ps = context.getState();
+        if (OPTIONAL_OR_ELSE_GET_MATCHER.matches(methodInvocation)) {
+          ps = checkConstraint(context, methodInvocation.arguments().get(0), peekValue);
+          if (ps == null) {
+            return ps;
+          }
+        }
+        if (methodSelect.is(Tree.Kind.MEMBER_SELECT)) {
+          SymbolicValue dereferencedSV = context.getState().peekValue(methodInvocation.arguments().size());
+          return checkConstraint(ps, context, methodSelect, dereferencedSV);
+        }
+        break;
+      case ARRAY_ACCESS_EXPRESSION:
+        Tree arrayAccessNode = ((ArrayAccessExpressionTree) syntaxNode).expression();
+        SymbolicValue arrayAccessSV = context.getState().peekValue(1);
+        return checkConstraint(context, arrayAccessNode, arrayAccessSV);
+      case MEMBER_SELECT:
+        return checkMemberSelect(context, (MemberSelectExpressionTree) syntaxNode, peekValue);
+      case SYNCHRONIZED_STATEMENT:
+        return checkConstraint(context, syntaxNode, peekValue);
+      default:
+        // ignore
     }
     return context.getState();
   }
@@ -113,7 +128,10 @@ public class NullDereferenceCheck extends SECheck {
   }
 
   private ProgramState checkConstraint(CheckerContext context, Tree syntaxNode, SymbolicValue currentVal) {
-    ProgramState programState = context.getState();
+    return checkConstraint(context.getState(), context, syntaxNode, currentVal);
+  }
+
+  private ProgramState checkConstraint(ProgramState programState, CheckerContext context, Tree syntaxNode, SymbolicValue currentVal) {
     ObjectConstraint constraint = programState.getConstraint(currentVal, ObjectConstraint.class);
     if (constraint != null && constraint.isNull()) {
       NullDereferenceIssue issue = new NullDereferenceIssue(context.getNode(), currentVal, syntaxNode);
@@ -135,13 +153,20 @@ public class NullDereferenceCheck extends SECheck {
   }
 
   private void reportIssue(SymbolicValue currentVal, Tree syntaxNode, ExplodedGraph.Node node) {
-    String message = "NullPointerException might be thrown as '" + SyntaxTreeNameFinder.getName(syntaxNode) + "' is nullable here";
+    String message = "A \"NullPointerException\" could be thrown; ";
+    if (syntaxNode.is(Tree.Kind.MEMBER_SELECT)
+        && ((MemberSelectExpressionTree) syntaxNode).expression().is(Tree.Kind.METHOD_INVOCATION)) {
+      message += "\"" + SyntaxTreeNameFinder.getName(syntaxNode) + "()\" can return null.";
+    } else {
+      message += "\"" + SyntaxTreeNameFinder.getName(syntaxNode) + "\" is nullable here.";
+    }
     SymbolicValue val = null;
     if (!SymbolicValue.NULL_LITERAL.equals(currentVal)) {
       val = currentVal;
     }
     Symbol dereferencedSymbol = dereferencedSymbol(syntaxNode);
-    Set<List<JavaFileScannerContext.Location>> flows = FlowComputation.flow(node, val, Lists.newArrayList(ObjectConstraint.class), dereferencedSymbol).stream()
+    Set<Flow> flows = FlowComputation.flow(node, val, Lists.newArrayList(ObjectConstraint.class), dereferencedSymbol).stream()
+      .filter(f -> !f.isEmpty())
       .map(f -> addDereferenceMessage(f, syntaxNode))
       .collect(Collectors.toSet());
     reportIssue(syntaxNode, message, flows);
@@ -158,7 +183,7 @@ public class NullDereferenceCheck extends SECheck {
     return null;
   }
 
-  private static List<JavaFileScannerContext.Location> addDereferenceMessage(List<JavaFileScannerContext.Location> flow, Tree syntaxNode) {
+  private static Flow addDereferenceMessage(Flow flow, Tree syntaxNode) {
     String symbolName = SyntaxTreeNameFinder.getName(syntaxNode);
     String msg;
     if (syntaxNode.is(Tree.Kind.MEMBER_SELECT) && ((MemberSelectExpressionTree) syntaxNode).expression().is(Tree.Kind.METHOD_INVOCATION)) {
@@ -166,7 +191,7 @@ public class NullDereferenceCheck extends SECheck {
     } else {
       msg = String.format("'%s' is dereferenced.", symbolName);
     }
-    return ImmutableList.<JavaFileScannerContext.Location>builder()
+    return Flow.builder()
       .add(new JavaFileScannerContext.Location(msg, syntaxNode))
       .addAll(flow)
       .build();
@@ -190,7 +215,7 @@ public class NullDereferenceCheck extends SECheck {
   private static List<ProgramState> setNullConstraint(CheckerContext context, Tree syntaxNode) {
     SymbolicValue val = context.getState().peekValue();
     if (syntaxNode.is(Tree.Kind.METHOD_INVOCATION) && isAnnotatedCheckForNull((MethodInvocationTree) syntaxNode)) {
-      Preconditions.checkNotNull(val);
+      Objects.requireNonNull(val);
       List<ProgramState> states = new ArrayList<>();
       states.addAll(val.setConstraint(context.getState(), ObjectConstraint.NULL));
       states.addAll(val.setConstraint(context.getState(), ObjectConstraint.NOT_NULL));

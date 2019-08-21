@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,40 +19,47 @@
  */
 package org.sonar.java.resolve;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import java.io.File;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import org.assertj.core.api.AbstractObjectAssert;
 import org.junit.Before;
 import org.junit.Test;
 import org.sonar.java.ast.parser.JavaParser;
+import org.sonar.java.bytecode.loader.SquidClassLoader;
+import org.sonar.java.model.JavaTree;
 import org.sonar.java.model.declaration.ClassTreeImpl;
 import org.sonar.java.model.declaration.MethodTreeImpl;
 import org.sonar.java.model.declaration.VariableTreeImpl;
 import org.sonar.plugins.java.api.semantic.SymbolMetadata.AnnotationInstance;
 import org.sonar.plugins.java.api.semantic.Type;
+import org.sonar.plugins.java.api.tree.AnnotationTree;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.CompilationUnitTree;
 import org.sonar.plugins.java.api.tree.ExpressionStatementTree;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
+import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
+import org.sonar.plugins.java.api.tree.NewClassTree;
+import org.sonar.plugins.java.api.tree.ParameterizedTypeTree;
+import org.sonar.plugins.java.api.tree.ReturnStatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
+import org.sonar.plugins.java.api.tree.TypeTree;
 import org.sonar.plugins.java.api.tree.VariableTree;
-
-import java.io.File;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.List;
+import org.sonar.plugins.java.api.tree.WildcardTree;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 public class TypeAndReferenceSolverTest {
 
   private final ParametrizedTypeCache parametrizedTypeCache = new ParametrizedTypeCache();
-  private final BytecodeCompleter bytecodeCompleter = new BytecodeCompleter(Lists.newArrayList(new File("target/test-classes"), new File("target/classes")), parametrizedTypeCache);
+  private final BytecodeCompleter bytecodeCompleter = new BytecodeCompleter(new SquidClassLoader(Lists.newArrayList(new File("target/test-classes"), new File("target/classes"))), parametrizedTypeCache);
   private final Symbols symbols = new Symbols(bytecodeCompleter);
 
   private Resolve.Env env;
@@ -75,7 +82,7 @@ public class TypeAndReferenceSolverTest {
     classSymbol = new JavaSymbol.TypeJavaSymbol(0, "MyClass", p);
     classType = (ClassJavaType) classSymbol.type;
     classType.supertype = symbols.objectType;
-    classType.interfaces = ImmutableList.of();
+    classType.interfaces = Collections.emptyList();
     classSymbol.members = new Scope(classSymbol);
     p.members.enter(classSymbol);
     // int[][] var;
@@ -88,19 +95,19 @@ public class TypeAndReferenceSolverTest {
 
     // int method()
     methodSymbol = new JavaSymbol.MethodJavaSymbol(0, "method", classSymbol);
-    ((JavaSymbol.MethodJavaSymbol)methodSymbol).setMethodType(new MethodJavaType(ImmutableList.<JavaType>of(), symbols.intType, ImmutableList.<JavaType>of(), classSymbol));
+    ((JavaSymbol.MethodJavaSymbol)methodSymbol).setMethodType(new MethodJavaType(Collections.emptyList(), symbols.intType, Collections.emptyList(), classSymbol));
     classSymbol.members.enter(methodSymbol);
 
     // int method()
     argMethodSymbol = new JavaSymbol.MethodJavaSymbol(0, "argMethod", classSymbol);
-    ((JavaSymbol.MethodJavaSymbol)argMethodSymbol).setMethodType(new MethodJavaType(ImmutableList.of(symbols.intType), symbols.intType, ImmutableList.<JavaType>of(), classSymbol));
+    ((JavaSymbol.MethodJavaSymbol)argMethodSymbol).setMethodType(new MethodJavaType(Collections.singletonList(symbols.intType), symbols.intType, Collections.emptyList(), classSymbol));
     classSymbol.members.enter(argMethodSymbol);
 
     classSymbol.members.enter(new JavaSymbol.VariableJavaSymbol(0, "this", classType, classSymbol));
     classSymbol.members.enter(new JavaSymbol.VariableJavaSymbol(0, "super", classType.supertype, classSymbol));
 
     JavaSymbol.MethodJavaSymbol defaultConstructor = new JavaSymbol.MethodJavaSymbol(classSymbol.flags & Flags.ACCESS_FLAGS, "<init>", classSymbol);
-    MethodJavaType defaultConstructorType = new MethodJavaType(ImmutableList.<JavaType>of(), null, ImmutableList.<JavaType>of(), classSymbol);
+    MethodJavaType defaultConstructorType = new MethodJavaType(Collections.emptyList(), null, Collections.emptyList(), classSymbol);
     defaultConstructor.setMethodType(defaultConstructorType);
     classSymbol.members.enter(defaultConstructor);
 
@@ -127,15 +134,48 @@ public class TypeAndReferenceSolverTest {
   @Test
   public void SOE_on_binary_expression() throws Exception {
     String code = "class A { String foo() { return ";
-    for (int i = 0; i < 2000; i++) {
+    for (int i = 0; i < 2048; i++) {
       code += "\"i\"+";
     }
     code+="i; }}";
     try {
       treeOf(code);
     } catch (StackOverflowError soe) {
+      soe.printStackTrace();
       throw new AssertionError("Stackoverflow error was thrown !");
     }
+  }
+
+  @Test
+  public void identifier_of_variable_symbol() {
+    CompilationUnitTree compilationUnit = treeOf("class A { Object field; }");
+    ClassTreeImpl clazz = (ClassTreeImpl) compilationUnit.types().get(0);
+    VariableTree variable = (VariableTree) clazz.members().get(0);
+    assertThat(variable.symbol().isUnknown()).isFalse();
+    assertThat(variable.symbol().usages()).isEmpty();
+    assertThat(variable.simpleName().symbol().isUnknown()).isFalse();
+    assertThat(variable.simpleName().symbol()).isEqualTo(variable.symbol());
+  }
+  @Test
+  public void unary_operator() {
+    assertUnary("class A { Integer field; int foo() {return -field;} }", Type.Primitives.INT);
+    assertUnary("class A { Character field; int foo() {return -field;} }", Type.Primitives.INT);
+    assertUnary("class A { char field; int foo() {return -field;} }", Type.Primitives.INT);
+    assertUnary("class A { byte field; int foo() {return -field;} }", Type.Primitives.INT);
+    assertUnary("class A { Long field; int foo() {return -field;} }", Type.Primitives.LONG);
+    assertUnary("class A { long field; int foo() {return -field;} }", Type.Primitives.LONG);
+    assertUnary("class A { Float field; int foo() {return -field;} }", Type.Primitives.FLOAT);
+    assertUnary("class A { Double field; int foo() {return -field;} }", Type.Primitives.DOUBLE);
+    assertUnary("class A { double field; int foo() {return -field;} }", Type.Primitives.DOUBLE);
+    assertUnary("class A { Boolean field; int foo() {return ~field;} }", Type.Primitives.BOOLEAN);
+    assertUnary("class A { Integer field; int foo() {return -field;} }", Type.Primitives.INT);
+  }
+
+  private void assertUnary(String input, Type.Primitives expectedPrimitive) {
+    CompilationUnitTree compilationUnit = treeOf(input);
+    ClassTreeImpl clazz = (ClassTreeImpl) compilationUnit.types().get(0);
+    Type type = ((ReturnStatementTree) ((MethodTree) clazz.members().get(1)).block().body().get(0)).expression().symbolType();
+    assertThat(type.isPrimitive(expectedPrimitive)).isTrue();
   }
 
   @Test
@@ -169,6 +209,19 @@ public class TypeAndReferenceSolverTest {
     List<AnnotationInstance> annotations = ((JavaSymbol.TypeJavaSymbol) clazz.symbol()).metadata().annotations();
     assertThat(annotations.size()).isEqualTo(1);
     assertThat(annotations.get(0).symbol().type().is(annotation.symbol().name())).isTrue();
+  }
+
+  @Test
+  public void annotation_inside_type() {
+    CompilationUnitTree compilationUnit = treeOf("package org.foo; @interface MyAnnotation { } class MyClass<T> { MyClass<@MyAnnotation Object> field; }");
+    ClassTreeImpl annotation = (ClassTreeImpl) compilationUnit.types().get(0);
+    ClassTreeImpl clazz = (ClassTreeImpl) compilationUnit.types().get(1);
+    VariableTree field = (VariableTree) clazz.members().get(0);
+    ParameterizedTypeTree type = (ParameterizedTypeTree) field.type();
+    IdentifierTree objectType = (IdentifierTree) type.typeArguments().get(0);
+    List<AnnotationTree> annotations = objectType.annotations();
+    assertThat(annotations.size()).isEqualTo(1);
+    assertThat(annotations.get(0).symbolType().is(annotation.symbol().type().fullyQualifiedName())).isTrue();
   }
 
   @Test
@@ -352,7 +405,8 @@ public class TypeAndReferenceSolverTest {
     // method call
     assertThat(typeOf("this.method()").isTagged(JavaType.INT)).isTrue();
     assertThat(typeOf("this.argMethod(12)").isTagged(JavaType.INT)).isTrue();
-    assertThat(typeOf("var[42].clone()")).isSameAs(symbols.objectType);
+    assertThat(typeOf("var[42].clone()")).isEqualTo(new ArrayJavaType(symbols.intType, symbols.arrayClass));
+    assertThat(typeOf("var[42].toString()")).isEqualTo(symbols.stringType);
 
     // field access
     assertThat(typeOfExpression("this.var")).isSameAs(variableSymbol.type);
@@ -510,6 +564,12 @@ public class TypeAndReferenceSolverTest {
   }
 
   @Test
+  public void switch_expression() {
+    assertThat(typeOfExpression("switch(1) { default -> new Object(); }")).isSameAs(Symbols.unknownType);
+    assertThat(typeOfExpression("switch(1) { case 1 -> 42; default -> 42; }")).isSameAs(Symbols.unknownType);
+  }
+
+  @Test
   public void lambda_expression() {
     assertThat(typeOf("a -> a+1").isTagged(JavaType.DEFERRED)).isTrue();
   }
@@ -517,6 +577,21 @@ public class TypeAndReferenceSolverTest {
   @Test
   public void assignment_expression() {
     assertThat(typeOf("var = 1")).isSameAs(variableSymbol.type);
+  }
+
+  @Test
+  public void wildcard_type_tree_have_a_widlcard_type() {
+    CompilationUnitTree cut = treeOf("abstract class A<T> { abstract A<? extends Runnable> foo(); }");
+    TypeTree returnType = ((MethodTree) ((ClassTree) cut.types().get(0)).members().get(0)).returnType();
+    assertThat(returnType.is(Tree.Kind.PARAMETERIZED_TYPE)).isTrue();
+    Tree typeArg = ((ParameterizedTypeTree) returnType).typeArguments().get(0);
+    assertThat(typeArg.is(Tree.Kind.EXTENDS_WILDCARD)).isTrue();
+    JavaType javaType = (JavaType) ((WildcardTree) typeArg).symbolType();
+    assertThat(javaType).isInstanceOf(WildCardType.class);
+    WildCardType wildCardType = (WildCardType) javaType;
+    assertThat(wildCardType.isSubtypeOf("java.lang.Runnable")).isTrue();
+    assertThat(wildCardType.bound.is("java.lang.Runnable")).isTrue();
+    assertThat(wildCardType.boundType).isEqualTo(WildCardType.BoundType.EXTENDS);
   }
 
   @Test
@@ -543,6 +618,29 @@ public class TypeAndReferenceSolverTest {
     return methodInvocation.symbolType();
   }
 
+  @Test
+  public void parametrized_constructor() {
+    CompilationUnitTree compilationUnit = treeOf("class A { <T> A(T t) {} void test() { new A(\"hello\"); } }");
+    MethodTree testMethod = (MethodTree) ((ClassTreeImpl) compilationUnit.types().get(0)).members().get(1);
+    NewClassTree newClassTree = (NewClassTree) ((ExpressionStatementTree) testMethod.block().body().get(0)).expression();
+    Type identifierType = newClassTree.identifier().symbolType();
+
+    assertThat(identifierType).isInstanceOf(MethodJavaType.class);
+    assertThat(((MethodJavaType) identifierType).argTypes.get(0).is("java.lang.String")).isTrue();
+  }
+
+  @Test
+  public void visit_other() {
+    SemanticModel semanticModel = mock(SemanticModel.class);
+    when(semanticModel.getEnv(any(Tree.class))).thenReturn(env);
+    TypeAndReferenceSolver visitor = new TypeAndReferenceSolver(semanticModel, symbols, new Resolve(symbols, bytecodeCompleter, parametrizedTypeCache), parametrizedTypeCache);
+
+    JavaTree.NotImplementedTreeImpl notImplementedTree = new JavaTree.NotImplementedTreeImpl();
+    notImplementedTree.accept(visitor);
+
+    assertThat(visitor.getType(notImplementedTree)).isEqualTo(Symbols.unknownType);
+  }
+
   private static final String CHAR = "(char) 42";
   private static final String BYTE = "(byte) 42";
   private static final String SHORT = "(short) 42";
@@ -556,12 +654,12 @@ public class TypeAndReferenceSolverTest {
 
   private CompilationUnitTree treeOf(String input) {
     CompilationUnitTree tree = parse(input);
-    SemanticModel.createFor(tree, ImmutableList.<File>of());
+    SemanticModel.createFor(tree, new SquidClassLoader(Collections.emptyList()));
     return tree;
   }
 
   private static CompilationUnitTree parse(String input) {
-    return (CompilationUnitTree) JavaParser.createParser(StandardCharsets.UTF_8).parse(input);
+    return (CompilationUnitTree) JavaParser.createParser().parse(input);
   }
 
   private JavaType typeOf(String input) {

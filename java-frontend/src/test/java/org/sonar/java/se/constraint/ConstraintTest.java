@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -34,5 +34,13 @@ public class ConstraintTest {
     assertThat(ObjectConstraint.NOT_NULL.isValidWith(ObjectConstraint.NULL)).isFalse();
     assertThat(ObjectConstraint.NULL.isValidWith(ObjectConstraint.NOT_NULL)).isFalse();
     assertThat(ObjectConstraint.NULL.isValidWith(BooleanConstraint.TRUE)).isFalse();
+  }
+
+  @Test
+  public void default_methods_result() {
+    Constraint c = new Constraint() {};
+    assertThat(c.hasPreciseValue()).isFalse();
+    assertThat(c.valueAsString()).isEmpty();
+    assertThat(c.inverse()).isNull();
   }
 }

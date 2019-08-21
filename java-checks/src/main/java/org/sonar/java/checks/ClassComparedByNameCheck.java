@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,63 +19,65 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Collections;
+import java.util.List;
 import org.sonar.check.Rule;
 import org.sonar.java.checks.methods.AbstractMethodDetection;
 import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.java.matcher.MethodMatcherCollection;
+import org.sonar.java.model.ExpressionUtils;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import java.util.ArrayList;
-import java.util.List;
-
 @Rule(key = "S1872")
 public class ClassComparedByNameCheck extends AbstractMethodDetection {
 
   @Override
   protected List<MethodMatcher> getMethodInvocationMatchers() {
-    return ImmutableList.of(MethodMatcher.create().typeDefinition("java.lang.String").name("equals").withAnyParameters());
+    return Collections.singletonList(MethodMatcher.create().typeDefinition("java.lang.String").name("equals").withAnyParameters());
   }
 
   @Override
   protected void onMethodInvocationFound(MethodInvocationTree mit) {
-    List<ExpressionTree> expressionsToCheck = new ArrayList<>(2);
-    if (mit.methodSelect().is(Tree.Kind.MEMBER_SELECT)) {
-      expressionsToCheck.add(((MemberSelectExpressionTree) mit.methodSelect()).expression());
+    if (!mit.methodSelect().is(Tree.Kind.MEMBER_SELECT)) {
+      return;
     }
-    expressionsToCheck.add(mit.arguments().get(0));
 
-    ClassGetNameDetector visitor = new ClassGetNameDetector();
-    for (ExpressionTree expression : expressionsToCheck) {
-      expression.accept(visitor);
-    }
-    if (visitor.useClassGetName && !visitor.useStackTraceElementGetClassName) {
+    ExpressionTree firstOperand = ExpressionUtils.skipParentheses(((MemberSelectExpressionTree) mit.methodSelect()).expression());
+    ExpressionTree secondOperand = ExpressionUtils.skipParentheses(mit.arguments().get(0));
+
+    // Only check comparison for string literals and use of class#getName methods to avoid FP. Ref: SONARJAVA-2603
+    boolean firstOpIsClassGetNameMethod = useClassGetNameMethod(firstOperand);
+    boolean secondOpIsClassGetNameMethod = useClassGetNameMethod(secondOperand);
+
+    if (firstOpIsClassGetNameMethod && secondOpIsClassGetNameMethod) {
+      reportIssue(mit, "Use \"isAssignableFrom\" instead.");
+    } else if ((firstOpIsClassGetNameMethod && secondOperand.is(Tree.Kind.STRING_LITERAL))
+      || (secondOpIsClassGetNameMethod && firstOperand.is(Tree.Kind.STRING_LITERAL))) {
       reportIssue(mit, "Use an \"instanceof\" comparison instead.");
     }
   }
 
+  private static boolean useClassGetNameMethod(ExpressionTree expression) {
+    ClassGetNameDetector visitor = new ClassGetNameDetector();
+    expression.accept(visitor);
+    return visitor.useClassGetName;
+  }
+
   private static class ClassGetNameDetector extends BaseTreeVisitor {
-
     private boolean useClassGetName = false;
-    private boolean useStackTraceElementGetClassName = false;
 
-    private final MethodMatcherCollection methodMatchers = MethodMatcherCollection.create(
+    private static final MethodMatcherCollection METHOD_MATCHERS = MethodMatcherCollection.create(
       MethodMatcher.create().typeDefinition("java.lang.Class").name("getName").withoutParameter(),
       MethodMatcher.create().typeDefinition("java.lang.Class").name("getSimpleName").withoutParameter());
 
-    private final MethodMatcher stackTraceElementMatcher = MethodMatcher.create()
-        .typeDefinition("java.lang.StackTraceElement").name("getClassName").withoutParameter();
-
     @Override
     public void visitMethodInvocation(MethodInvocationTree tree) {
-      if (methodMatchers.anyMatch(tree)) {
+      if (METHOD_MATCHERS.anyMatch(tree)) {
         useClassGetName = true;
-      } else if (stackTraceElementMatcher.matches(tree)) {
-        useStackTraceElementGetClassName = true;
       }
       scan(tree.methodSelect());
     }

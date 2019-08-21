@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,8 +19,9 @@
  */
 package org.sonar.java;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import java.util.Collections;
+import java.util.List;
 import org.junit.Before;
 import org.junit.Test;
 import org.sonar.java.model.JavaVersionImpl;
@@ -30,19 +31,12 @@ import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.JavaVersion;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import java.io.File;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class JavaVersionAwareVisitorTest {
 
   private JavaCheck[] javaChecks;
   private List<String> messages;
-  private JavaConfiguration conf = new JavaConfiguration(StandardCharsets.UTF_8);
 
   @Before
   public void setUp() throws Exception {
@@ -57,41 +51,35 @@ public class JavaVersionAwareVisitorTest {
 
   @Test
   public void all_check_executed_when_no_java_version() {
-    checkIssues(new JavaConfiguration(StandardCharsets.UTF_8));
+    checkIssues(new JavaVersionImpl());
     assertThat(messages).containsExactly("JavaVersionCheck_7", "JavaVersionCheck_8", "SimpleCheck", "ContextualCheck");
   }
 
   @Test
   public void all_check_executed_when_invalid_java_version() {
-    conf.setJavaVersion(new JavaVersionImpl());
-    checkIssues(conf);
+    checkIssues(new JavaVersionImpl());
     assertThat(messages).containsExactly("JavaVersionCheck_7", "JavaVersionCheck_8", "SimpleCheck", "ContextualCheck");
   }
 
   @Test
   public void only_checks_with_adequate_java_version_higher_than_configuration_version_are_executed() {
-    conf.setJavaVersion(new JavaVersionImpl(7));
-    checkIssues(conf);
+    checkIssues(new JavaVersionImpl(7));
     assertThat(messages).containsExactly("JavaVersionCheck_7", "SimpleCheck", "ContextualCheck_7");
 
-    conf.setJavaVersion(new JavaVersionImpl(8));
-    checkIssues(conf);
+    checkIssues(new JavaVersionImpl(8));
     assertThat(messages).containsExactly("JavaVersionCheck_7", "JavaVersionCheck_8", "SimpleCheck", "ContextualCheck_8");
   }
 
   @Test
   public void no_java_version_matching() {
-    conf.setJavaVersion(new JavaVersionImpl(6));
-    checkIssues(conf);
+    checkIssues(new JavaVersionImpl(6));
     assertThat(messages).containsExactly("SimpleCheck", "ContextualCheck_6");
   }
 
-  private void checkIssues(JavaConfiguration conf) {
+  private void checkIssues(JavaVersion version) {
     messages.clear();
-    ArrayList<File> files = Lists.newArrayList(new File("src/test/files/JavaVersionAwareChecks.java"));
-
-    JavaSquid squid = new JavaSquid(conf, null, null, null, null, javaChecks);
-    squid.scan(files, Collections.<File>emptyList());
+    JavaSquid squid = new JavaSquid(version, null, null, null, null, javaChecks);
+    squid.scan(Collections.singletonList(TestUtils.inputFile("src/test/files/JavaVersionAwareChecks.java")), Collections.emptyList());
   }
 
   private static class SimpleCheck extends IssuableSubscriptionVisitor {
@@ -103,7 +91,7 @@ public class JavaVersionAwareVisitorTest {
 
     @Override
     public List<Tree.Kind> nodesToVisit() {
-      return ImmutableList.of(Tree.Kind.CLASS);
+      return Collections.singletonList(Tree.Kind.CLASS);
     }
 
     @Override
@@ -125,9 +113,9 @@ public class JavaVersionAwareVisitorTest {
     }
 
     @Override
-    public void scanFile(JavaFileScannerContext context) {
+    public void setContext(JavaFileScannerContext context) {
       this.javaVersion = context.getJavaVersion();
-      super.scanFile(context);
+      super.setContext(context);
     }
 
     @Override

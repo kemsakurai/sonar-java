@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import org.sonar.check.Rule;
 import org.sonar.java.model.ModifiersUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
@@ -29,6 +28,7 @@ import org.sonar.plugins.java.api.tree.Modifier;
 import org.sonar.plugins.java.api.tree.ModifierKeywordTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
+import java.util.Collections;
 import java.util.List;
 
 @Rule(key = "S2675")
@@ -36,7 +36,7 @@ public class ReadObjectSynchronizedCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.CLASS);
+    return Collections.singletonList(Tree.Kind.CLASS);
   }
 
   @Override
@@ -68,13 +68,9 @@ public class ReadObjectSynchronizedCheck extends IssuableSubscriptionVisitor {
   }
 
   private static boolean isReadObject(MethodTree methodTree) {
-    if (!"readObject".equals(methodTree.simpleName().name())) {
-      return false;
-    }
-    if (methodTree.parameters().size() != 1 || !methodTree.parameters().get(0).type().symbolType().is("java.io.ObjectInputStream")) {
-      return false;
-    }
-    return true;
+    return "readObject".equals(methodTree.simpleName().name())
+      && methodTree.parameters().size() == 1
+      && methodTree.parameters().get(0).type().symbolType().is("java.io.ObjectInputStream");
   }
 
 }

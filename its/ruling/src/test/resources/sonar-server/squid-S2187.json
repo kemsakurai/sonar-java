@@ -1,5 +1,5 @@
 {
-'org.codehaus.sonar:sonar-server:src/test/java/org/sonar/server/issue/IssueBulkChangeServiceTest.java':[
-23,
+'org.sonarsource.sonarqube:sonar-server:src/test/java/org/sonar/server/rule/ws/SearchActionMediumTest.java':[
+22,
 ],
 }

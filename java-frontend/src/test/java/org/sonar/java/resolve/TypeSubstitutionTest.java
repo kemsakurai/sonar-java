@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -198,7 +198,7 @@ public class TypeSubstitutionTest {
     JavaSymbol.TypeJavaSymbol symbol = new JavaSymbol.TypeJavaSymbol(0, name, packageJavaSymbol);
     symbol.addTypeParameter(k);
     TypeSubstitution newSubstitution = new TypeSubstitution().add(k, substitutedType);
-    return new ParametrizedTypeJavaType(symbol, newSubstitution);
+    return new ParametrizedTypeJavaType(symbol, newSubstitution, null);
   }
 
 }

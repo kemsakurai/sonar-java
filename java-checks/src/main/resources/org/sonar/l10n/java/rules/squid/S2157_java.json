@@ -1,13 +1,17 @@
 {
   "title": "\"Cloneables\" should implement \"clone\"",
-  "type": "BUG",
+  "type": "CODE_SMELL",
   "status": "ready",
   "remediation": {
     "func": "Constant\/Issue",
     "constantCost": "30min"
   },
   "tags": [
-    "bug"
+    "convention",
+    "api-design"
   ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Critical",
+  "ruleSpecification": "RSPEC-2157",
+  "sqKey": "S2157",
+  "scope": "Main"
 }

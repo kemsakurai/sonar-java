@@ -7,9 +7,13 @@
     "constantCost": "5min"
   },
   "tags": [
-    "bug",
+    "spring",
     "design",
+    "jee",
     "pitfall"
   ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-3306",
+  "sqKey": "S3306",
+  "scope": "All"
 }

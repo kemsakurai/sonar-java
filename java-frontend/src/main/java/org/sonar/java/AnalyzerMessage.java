@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,36 +20,34 @@
 package org.sonar.java;
 
 import com.google.common.base.Preconditions;
-
+import java.util.ArrayList;
+import java.util.List;
+import javax.annotation.Nullable;
+import org.sonar.api.batch.fs.InputComponent;
 import org.sonar.plugins.java.api.JavaCheck;
 import org.sonar.plugins.java.api.tree.SyntaxToken;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import javax.annotation.Nullable;
-import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
-
 /**
- * Replacement for {@link org.sonar.squidbridge.api.CheckMessage}.
+ * Class used to represent analyzer issue messages
  */
 public class AnalyzerMessage {
 
   private final JavaCheck check;
-  private final File file;
+  private final InputComponent inputComponent;
   private final String message;
   private final int cost;
   @Nullable
   private TextSpan textSpan;
   public final List<List<AnalyzerMessage>> flows = new ArrayList<>();
 
-  public AnalyzerMessage(JavaCheck check, File file, int line, String message, int cost) {
-    this(check, file, line > 0 ? new TextSpan(line) : null, message, cost);
+  public AnalyzerMessage(JavaCheck check, InputComponent inputComponent, int line, String message, int cost) {
+    this(check, inputComponent, line > 0 ? new TextSpan(line) : null, message, cost);
   }
 
-  public AnalyzerMessage(JavaCheck check, File file, @Nullable TextSpan textSpan, String message, int cost) {
+  public AnalyzerMessage(JavaCheck check, InputComponent inputComponent, @Nullable TextSpan textSpan, String message, int cost) {
     this.check = check;
-    this.file = file;
+    this.inputComponent = inputComponent;
     this.message = message;
     this.cost = cost;
     this.textSpan = textSpan;
@@ -59,8 +57,8 @@ public class AnalyzerMessage {
     return check;
   }
 
-  public File getFile() {
-    return file;
+  public InputComponent getInputComponent() {
+    return inputComponent;
   }
 
   /**
@@ -120,14 +118,14 @@ public class AnalyzerMessage {
   }
 
   public static AnalyzerMessage.TextSpan textSpanFor(Tree syntaxNode) {
-    SyntaxToken firstSyntaxToken = syntaxNode.firstToken();
-    SyntaxToken lastSyntaxToken = syntaxNode.lastToken();
+    SyntaxToken firstSyntaxToken = getNonEmptyTree(syntaxNode).firstToken();
+    SyntaxToken lastSyntaxToken = getNonEmptyTree(syntaxNode).lastToken();
     return textSpanBetween(firstSyntaxToken, lastSyntaxToken);
   }
 
   public static AnalyzerMessage.TextSpan textSpanBetween(Tree startTree, Tree endTree) {
-    SyntaxToken firstSyntaxToken = startTree.firstToken();
-    SyntaxToken lastSyntaxToken = endTree.lastToken();
+    SyntaxToken firstSyntaxToken = getNonEmptyTree(startTree).firstToken();
+    SyntaxToken lastSyntaxToken = getNonEmptyTree(endTree).lastToken();
     return textSpanBetween(firstSyntaxToken, lastSyntaxToken);
   }
 
@@ -144,8 +142,26 @@ public class AnalyzerMessage {
     return location;
   }
 
+  /**
+   * It's possible that tree has no source code to match, thus no tokens. For example {@code InferedTypeTree}.
+   * In this case we will report on a parent tree.
+   * @return tree itself if it's not empty or its first non-empty ancestor
+   */
+  private static Tree getNonEmptyTree(Tree tree) {
+    if (tree.firstToken() != null) {
+      return tree;
+    }
+
+    Tree parent = tree.parent();
+    if (parent != null) {
+      return getNonEmptyTree(parent);
+    }
+
+    throw new IllegalStateException("Trying to report on an empty tree with no parent");
+  }
+
   @Override
   public String toString() {
-    return String.format("'%s' in %s:%d", getMessage(), getFile(), getLine());
+    return String.format("'%s' in %s:%d", message, inputComponent, getLine());
   }
 }

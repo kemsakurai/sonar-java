@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,27 +19,24 @@
  */
 package org.sonar.java.ast.visitors;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Sets;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import org.sonar.plugins.java.api.tree.CompilationUnitTree;
 import org.sonar.plugins.java.api.tree.SyntaxToken;
 import org.sonar.plugins.java.api.tree.SyntaxTrivia;
 import org.sonar.plugins.java.api.tree.Tree;
-import org.sonar.squidbridge.CommentAnalyser;
-
-import java.util.List;
-import java.util.Set;
 
 public class CommentLinesVisitor extends SubscriptionVisitor {
 
-  private Set<Integer> comments = Sets.newHashSet();
-  private Set<Integer> noSonarLines = Sets.newHashSet();
+  private Set<Integer> comments = new HashSet<>();
+  private Set<Integer> noSonarLines = new HashSet<>();
   private boolean seenFirstToken;
-  private JavaCommentAnalyser commentAnalyser = new JavaCommentAnalyser();
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.TOKEN);
+    return Collections.singletonList(Tree.Kind.TOKEN);
   }
 
   public void analyzeCommentLines(CompilationUnitTree tree) {
@@ -62,12 +59,12 @@ public class CommentLinesVisitor extends SubscriptionVisitor {
   }
 
   private void handleCommentsForTrivia(SyntaxTrivia trivia) {
-    String[] commentLines = commentAnalyser.getContents(trivia.comment()).split("(\r)?\n|\r", -1);
+    String[] commentLines = getContents(trivia.comment()).split("(\r)?\n|\r", -1);
     int line = trivia.startLine();
     for (String commentLine : commentLines) {
       if(commentLine.contains("NOSONAR")) {
         noSonarLines.add(line);
-      } else if (!commentAnalyser.isBlank(commentLine)) {
+      } else if (!isBlank(commentLine)) {
         comments.add(line);
       }
       line++;
@@ -82,24 +79,19 @@ public class CommentLinesVisitor extends SubscriptionVisitor {
     return comments.size();
   }
 
-  public static class JavaCommentAnalyser extends CommentAnalyser {
-
-    @Override
-    public boolean isBlank(String line) {
-      // Implementation of this method was taken from org.sonar.squidbridge.text.Line#isThereBlankComment()
-      // TODO Godin: for some languages we use Character.isLetterOrDigit instead of Character.isWhitespace
-      for (int i = 0; i < line.length(); i++) {
-        char character = line.charAt(i);
-        if (!Character.isWhitespace(character) && character != '*' && character != '/') {
-          return false;
-        }
+  private static boolean isBlank(String line) {
+    // TODO Godin: for some languages we use Character.isLetterOrDigit instead of Character.isWhitespace
+    for (int i = 0; i < line.length(); i++) {
+      char character = line.charAt(i);
+      if (!Character.isWhitespace(character) && character != '*' && character != '/') {
+        return false;
       }
-      return true;
     }
+    return true;
+  }
 
-    @Override
-    public String getContents(String comment) {
-      return comment.startsWith("//") ? comment.substring(2) : comment.substring(2, comment.length() - 2);
-    }
+
+  private static String getContents(String comment) {
+    return comment.startsWith("//") ? comment.substring(2) : comment.substring(2, comment.length() - 2);
   }
 }

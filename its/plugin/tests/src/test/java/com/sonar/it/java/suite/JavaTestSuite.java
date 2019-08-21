@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2013-2017 SonarSource SA
+ * Copyright (C) 2013-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -31,17 +31,12 @@ import javax.annotation.CheckForNull;
 import org.junit.ClassRule;
 import org.junit.runner.RunWith;
 import org.junit.runners.Suite;
-import org.sonarqube.ws.WsComponents.Component;
-import org.sonarqube.ws.WsMeasures;
-import org.sonarqube.ws.WsMeasures.Measure;
-import org.sonarqube.ws.client.HttpConnector;
-import org.sonarqube.ws.client.WsClient;
-import org.sonarqube.ws.client.WsClientFactories;
-import org.sonarqube.ws.client.component.ShowWsRequest;
-import org.sonarqube.ws.client.measure.ComponentWsRequest;
+import org.sonarqube.ws.Components.Component;
+import org.sonarqube.ws.Measures;
+import org.sonarqube.ws.Measures.Measure;
+import org.sonarqube.ws.client.components.ShowRequest;
+import org.sonarqube.ws.client.measures.ComponentRequest;
 
-import static com.sonar.orchestrator.container.Server.ADMIN_LOGIN;
-import static com.sonar.orchestrator.container.Server.ADMIN_PASSWORD;
 import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
 
@@ -56,7 +51,9 @@ import static java.util.Collections.singletonList;
   JavaClasspathTest.class,
   JaCoCoControllerTest.class,
   SuppressWarningTest.class,
-  SonarLintTest.class
+  SonarLintTest.class,
+  ExternalReportTest.class,
+  DuplicationTest.class
 })
 public class JavaTestSuite {
 
@@ -67,6 +64,7 @@ public class JavaTestSuite {
 
   static {
     OrchestratorBuilder orchestratorBuilder = Orchestrator.builderEnv()
+      .setSonarVersion(System.getProperty("sonar.runtimeVersion", "LATEST_RELEASE[7.9]"))
       .addPlugin(JAVA_PLUGIN_LOCATION)
       .restoreProfileAtStartup(FileLocation.ofClasspath("/profile-java-extension.xml"))
       .restoreProfileAtStartup(FileLocation.ofClasspath("/profile-java-version-aware-visitor.xml"))
@@ -84,23 +82,18 @@ public class JavaTestSuite {
     return projectKey + ":src/main/java/" + pkgDir + cls;
   }
 
-  public static boolean sonarqube_version_is_prior_to_6_2() {
-    return !ORCHESTRATOR.getServer().version().isGreaterThanOrEquals("6.2");
-  }
-
   @CheckForNull
   static Measure getMeasure(String componentKey, String metricKey) {
-    WsMeasures.ComponentWsResponse response = TestUtils.newWsClient(ORCHESTRATOR).measures().component(new ComponentWsRequest()
-      .setComponentKey(componentKey)
+    Measures.ComponentWsResponse response = TestUtils.newWsClient(ORCHESTRATOR).measures().component(new ComponentRequest()
+      .setComponent(componentKey)
       .setMetricKeys(singletonList(metricKey)));
     List<Measure> measures = response.getComponent().getMeasuresList();
     return measures.size() == 1 ? measures.get(0) : null;
   }
 
-  @CheckForNull
   static Map<String, Measure> getMeasures(String componentKey, String... metricKeys) {
-    return TestUtils.newWsClient(ORCHESTRATOR).measures().component(new ComponentWsRequest()
-      .setComponentKey(componentKey)
+    return TestUtils.newWsClient(ORCHESTRATOR).measures().component(new ComponentRequest()
+      .setComponent(componentKey)
       .setMetricKeys(asList(metricKeys)))
       .getComponent().getMeasuresList()
       .stream()
@@ -120,7 +113,7 @@ public class JavaTestSuite {
   }
 
   static Component getComponent(String componentKey) {
-    return TestUtils.newWsClient(ORCHESTRATOR).components().show(new ShowWsRequest().setKey(componentKey)).getComponent();
+    return TestUtils.newWsClient(ORCHESTRATOR).components().show(new ShowRequest().setComponent(componentKey)).getComponent();
   }
 
 }

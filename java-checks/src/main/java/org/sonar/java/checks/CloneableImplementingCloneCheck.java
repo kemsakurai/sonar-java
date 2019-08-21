@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,8 +19,8 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import org.sonar.check.Rule;
+import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.tree.ClassTree;
@@ -28,14 +28,17 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 import org.sonar.plugins.java.api.tree.TypeTree;
 
+import java.util.Collections;
 import java.util.List;
 
 @Rule(key = "S2157")
 public class CloneableImplementingCloneCheck extends IssuableSubscriptionVisitor {
 
+  private static final MethodMatcher CLONE_MATCHER = MethodMatcher.create().name("clone").withoutParameter();
+
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.CLASS);
+    return Collections.singletonList(Tree.Kind.CLASS);
   }
 
   @Override
@@ -48,24 +51,10 @@ public class CloneableImplementingCloneCheck extends IssuableSubscriptionVisitor
   }
 
   private static boolean declaresCloneMethod(Symbol.TypeSymbol classSymbol) {
-    for (Symbol memberSymbol : classSymbol.lookupSymbols("clone")) {
-      if (memberSymbol.isMethodSymbol()) {
-        Symbol.MethodSymbol methodSymbol = (Symbol.MethodSymbol) memberSymbol;
-        if (methodSymbol.parameterTypes().isEmpty()) {
-          return true;
-        }
-      }
-    }
-    return false;
+    return classSymbol.lookupSymbols("clone").stream().anyMatch(CLONE_MATCHER::matches);
   }
 
   private static boolean isCloneable(ClassTree classTree) {
-    for (TypeTree superInterface : classTree.superInterfaces()) {
-      if (superInterface.symbolType().is("java.lang.Cloneable")) {
-        return true;
-      }
-    }
-    return false;
+    return classTree.superInterfaces().stream().map(TypeTree::symbolType).anyMatch(t -> t.is("java.lang.Cloneable"));
   }
-
 }

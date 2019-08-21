@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,59 +20,55 @@
 package org.sonar.java.filters;
 
 import com.google.common.collect.HashMultimap;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Multimap;
-
-import org.apache.commons.io.FileUtils;
-import org.assertj.core.api.Fail;
-import org.sonar.api.rule.RuleKey;
-import org.sonar.api.scan.issue.filter.FilterableIssue;
-import org.sonar.api.utils.AnnotationUtils;
-import org.sonar.check.Rule;
-import org.sonar.java.AnalyzerMessage;
-import org.sonar.java.JavaConfiguration;
-import org.sonar.java.ast.JavaAstScanner;
-import org.sonar.java.ast.visitors.SubscriptionVisitor;
-import org.sonar.java.model.VisitorsBridgeForTests;
-import org.sonar.plugins.java.api.JavaCheck;
-import org.sonar.plugins.java.api.tree.SyntaxTrivia;
-import org.sonar.plugins.java.api.tree.Tree;
-import org.sonar.squidbridge.api.CodeVisitor;
-
 import java.io.File;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.apache.commons.io.FileUtils;
+import org.assertj.core.api.Fail;
+import org.sonar.api.batch.fs.InputFile;
+import org.sonar.api.rule.RuleKey;
+import org.sonar.api.scan.issue.filter.FilterableIssue;
+import org.sonar.api.utils.AnnotationUtils;
+import org.sonar.check.Rule;
+import org.sonar.java.AnalyzerMessage;
+import org.sonar.java.CheckTestUtils;
+import org.sonar.java.ast.JavaAstScanner;
+import org.sonar.java.ast.visitors.SubscriptionVisitor;
+import org.sonar.java.model.VisitorsBridgeForTests;
+import org.sonar.plugins.java.api.JavaCheck;
+import org.sonar.plugins.java.api.tree.SyntaxTrivia;
+import org.sonar.plugins.java.api.tree.Tree;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-
 public class FilterVerifier {
 
-  public static void verify(String filename, JavaIssueFilter filter, CodeVisitor... extraCodeVisitors) {
-    // set the component to the filter
-    filter.setComponentKey(filename);
-
+  public static void verify(String filename, JavaIssueFilter filter, JavaCheck... extraJavaChecks) {
     IssueCollector issueCollector = new IssueCollector();
-    ArrayList<CodeVisitor> codeVisitors = Lists.<CodeVisitor>newArrayList(filter, issueCollector);
+    ArrayList<JavaCheck> visitors = Lists.<JavaCheck>newArrayList(filter, issueCollector);
 
     // instantiate the rules filtered by the filter
-    codeVisitors.addAll(instantiateRules(filter.filteredRules()));
+    visitors.addAll(instantiateRules(filter.filteredRules()));
 
-    for (CodeVisitor codeVisitor : extraCodeVisitors) {
-      codeVisitors.add(codeVisitor);
+    for (JavaCheck visitor : extraJavaChecks) {
+      visitors.add(visitor);
     }
 
     Collection<File> classpath = FileUtils.listFiles(new File("target/test-jars"), new String[] {"jar", "zip"}, true);
-    VisitorsBridgeForTests visitorsBridge = new VisitorsBridgeForTests(codeVisitors, Lists.newArrayList(classpath), null);
-    JavaAstScanner.scanSingleFileForTests(new File(filename), visitorsBridge, new JavaConfiguration(Charset.forName("UTF-8")));
+    List<File> projectClasspath = Lists.newArrayList(classpath);
+    projectClasspath.add(new File("target/test-classes"));
+
+    VisitorsBridgeForTests visitorsBridge = new VisitorsBridgeForTests(visitors, projectClasspath, null);
+    InputFile inputFile = CheckTestUtils.inputFile(filename);
+    JavaAstScanner.scanSingleFileForTests(inputFile, visitorsBridge);
     VisitorsBridgeForTests.TestJavaFileScannerContext testJavaFileScannerContext = visitorsBridge.lastCreatedTestContext();
 
     Multimap<Integer, String> issuesByLines = HashMultimap.create();
@@ -81,7 +77,7 @@ public class FilterVerifier {
       String ruleKey = AnnotationUtils.getAnnotation(analyzerMessage.getCheck().getClass(), Rule.class).key();
       FilterableIssue issue = mock(FilterableIssue.class);
       when(issue.ruleKey()).thenReturn(RuleKey.of("repo", ruleKey));
-      when(issue.componentKey()).thenReturn(filename);
+      when(issue.componentKey()).thenReturn(inputFile.key());
       when(issue.line()).thenReturn(issueLine);
 
       if (issueCollector.rejectedIssuesLines.contains(issueLine)) {
@@ -130,16 +126,19 @@ public class FilterVerifier {
 
     @Override
     public List<Tree.Kind> nodesToVisit() {
-      return ImmutableList.of(Tree.Kind.TRIVIA);
+      return Collections.singletonList(Tree.Kind.TRIVIA);
     }
 
     @Override
     public void visitTrivia(SyntaxTrivia syntaxTrivia) {
       String comment = syntaxTrivia.comment().trim();
-      if (comment.endsWith("NoIssue")) {
-        rejectedIssuesLines.add(syntaxTrivia.startLine());
-      } else if (comment.endsWith("WithIssue")) {
-        acceptedIssuesLines.add(syntaxTrivia.startLine());
+      String[] lines = comment.split("\\r\\n|\\r|\\n");
+      for (int i = 0; i < lines.length; i++) {
+        if (lines[i].endsWith("NoIssue")) {
+          rejectedIssuesLines.add(syntaxTrivia.startLine() + i);
+        } else if (lines[i].endsWith("WithIssue")) {
+          acceptedIssuesLines.add(syntaxTrivia.startLine() + i);
+        }
       }
     }
   }

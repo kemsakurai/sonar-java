@@ -9,13 +9,15 @@
   "tags": [
     "cwe",
     "error-handling",
-    "security",
-    "misra",
     "cert"
   ],
-  "standards": [
-    "CWE",
-    "CERT"
-  ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-899",
+  "sqKey": "S899",
+  "scope": "Main",
+  "securityStandards": {
+    "CWE": [
+      754
+    ]
+  }
 }

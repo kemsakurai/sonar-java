@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,24 +19,28 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.Sets;
+import java.io.File;
+import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Set;
 import org.sonar.check.Rule;
+import org.sonar.java.model.DefaultJavaFileScannerContext;
 import org.sonar.plugins.java.api.JavaFileScanner;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
-
-import java.io.File;
-import java.util.Set;
 
 @Rule(key = "S1228")
 public class PackageInfoCheck implements JavaFileScanner {
 
-  Set<File> directoriesWithoutPackageFile = Sets.newHashSet();
+  Set<File> directoriesWithoutPackageFile = new HashSet<>();
 
   @Override
   public void scanFile(JavaFileScannerContext context) {
-    File parentFile = context.getFile().getParentFile();
+    File parentFile = context.getInputFile().file().getParentFile();
     if (!new File(parentFile, "package-info.java").isFile() && !directoriesWithoutPackageFile.contains(parentFile)) {
-      context.addIssue(parentFile, PackageInfoCheck.this, -1, "Add a 'package-info.java' file to document the '" + parentFile.getName() + "' package");
+      Path baseDirAbsolutePath = ((DefaultJavaFileScannerContext) context).getBaseDirectory().getAbsoluteFile().toPath();
+      Path parentDirAbsolutePath = parentFile.getAbsoluteFile().toPath();
+      Path relativize = baseDirAbsolutePath.relativize(parentDirAbsolutePath);
+      context.addIssueOnProject(this, "Add a 'package-info.java' file to document the '" + relativize.toString() + "' package");
       directoriesWithoutPackageFile.add(parentFile);
     }
   }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,13 +19,14 @@
  */
 package org.sonar.java.cfg;
 
+import java.text.MessageFormat;
+import java.util.Comparator;
+import java.util.List;
+import java.util.stream.Collectors;
 import org.sonar.java.cfg.CFG.Block;
 import org.sonar.java.model.SyntaxTreeDebug;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
-
-import java.text.MessageFormat;
-import java.util.List;
 
 public class CFGDebug {
 
@@ -108,7 +109,7 @@ public class CFGDebug {
   public static String toString(CFG cfg) {
     StringBuilder buffer = new StringBuilder();
     buffer.append("Starts at B");
-    buffer.append(cfg.entry().id());
+    buffer.append(cfg.entryBlock().id());
     buffer.append('\n');
     buffer.append('\n');
     for (Block block : cfg.blocks()) {
@@ -140,7 +141,7 @@ public class CFGDebug {
       buffer.append(SyntaxTreeDebug.toString(terminator));
     }
     boolean first = true;
-    for (Block successor : block.successors()) {
+    for (Block successor : block.successors().stream().sorted(Comparator.comparingInt(Block::id).reversed()).collect(Collectors.toList())) {
       if (first) {
         first = false;
         buffer.append('\n');

@@ -7,10 +7,13 @@
     "constantCost": "5min"
   },
   "tags": [
-    "cert",
+    "error-handling",
     "unused",
     "finding",
     "clumsy"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-2737",
+  "sqKey": "S2737",
+  "scope": "Main"
 }

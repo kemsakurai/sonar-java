@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,14 +19,17 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
-
+import java.text.MessageFormat;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import javax.annotation.Nullable;
 import org.sonar.check.Rule;
-import org.sonar.java.checks.helpers.MethodsHelper;
 import org.sonar.java.checks.methods.AbstractMethodDetection;
 import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.java.matcher.TypeCriteria;
+import org.sonar.java.model.ExpressionUtils;
 import org.sonar.java.resolve.JavaSymbol;
 import org.sonar.java.resolve.JavaType;
 import org.sonar.java.resolve.ParametrizedTypeJavaType;
@@ -39,17 +42,12 @@ import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 
-import javax.annotation.Nullable;
-
-import java.text.MessageFormat;
-import java.util.List;
-
 @Rule(key = "S2175")
 public class CollectionInappropriateCallsCheck extends AbstractMethodDetection {
 
   @Override
   protected List<MethodMatcher> getMethodInvocationMatchers() {
-    return ImmutableList.of(
+    return Arrays.asList(
       collectionMethodInvocation("remove"),
       collectionMethodInvocation("contains")
     );
@@ -66,6 +64,10 @@ public class CollectionInappropriateCallsCheck extends AbstractMethodDetection {
   protected void onMethodInvocationFound(MethodInvocationTree tree) {
     ExpressionTree firstArgument = tree.arguments().get(0);
     Type argumentType = firstArgument.symbolType();
+    if(argumentType.isUnknown()) {
+      // could happen with type inference.
+      return;
+    }
     Type collectionType = getMethodOwner(tree);
     // can be null when using raw types
     Type collectionParameterType = getTypeParameter(collectionType);
@@ -79,7 +81,7 @@ public class CollectionInappropriateCallsCheck extends AbstractMethodDetection {
       && !collectionParameterType.isUnknown()
       && !isCallToParametrizedOrUnknownMethod
       && !isArgumentCompatible(argumentType, collectionParameterType)) {
-      reportIssue(MethodsHelper.methodName(tree), MessageFormat.format("A \"{0}<{1}>\" cannot contain a \"{2}\"", collectionType, collectionParameterType, argumentType));
+      reportIssue(ExpressionUtils.methodName(tree), MessageFormat.format("A \"{0}<{1}>\" cannot contain a \"{2}\"", collectionType, collectionParameterType, argumentType));
     }
   }
 
@@ -100,12 +102,14 @@ public class CollectionInappropriateCallsCheck extends AbstractMethodDetection {
 
   @Nullable
   private static Type getTypeParameter(Type collectionType) {
-    if (collectionType instanceof ParametrizedTypeJavaType) {
+    if (collectionType.is("java.util.Collection") && collectionType instanceof ParametrizedTypeJavaType) {
       ParametrizedTypeJavaType parametrizedType = (ParametrizedTypeJavaType) collectionType;
       TypeVariableJavaType first = Iterables.getFirst(parametrizedType.typeParameters(), null);
       if (first != null) {
         return parametrizedType.substitution(first);
       }
+    } else if (collectionType instanceof ParametrizedTypeJavaType) {
+      return ((JavaType) collectionType).directSuperTypes().stream().map(CollectionInappropriateCallsCheck::getTypeParameter).filter(Objects::nonNull).findFirst().orElse(null);
     }
     return null;
   }

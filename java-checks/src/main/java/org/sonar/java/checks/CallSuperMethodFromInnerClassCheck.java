@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,9 +19,10 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Arrays;
+import java.util.List;
 import org.sonar.check.Rule;
-import org.sonar.java.checks.helpers.MethodsHelper;
+import org.sonar.java.model.ExpressionUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
@@ -31,14 +32,12 @@ import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import java.util.List;
-
 @Rule(key = "S2388")
 public class CallSuperMethodFromInnerClassCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.CLASS, Tree.Kind.INTERFACE);
+    return Arrays.asList(Tree.Kind.CLASS, Tree.Kind.INTERFACE);
   }
 
   @Override
@@ -56,7 +55,7 @@ public class CallSuperMethodFromInnerClassCheck extends IssuableSubscriptionVisi
 
   private static boolean extendsOuterClass(Symbol.TypeSymbol classSymbol) {
     Type superType = classSymbol.superClass();
-    return superType != null && superType.equals(classSymbol.owner().type());
+    return superType != null && superType.erasure().equals(classSymbol.owner().type().erasure());
   }
 
 
@@ -72,7 +71,7 @@ public class CallSuperMethodFromInnerClassCheck extends IssuableSubscriptionVisi
       Symbol symbol = tree.symbol();
       if (tree.methodSelect().is(Tree.Kind.IDENTIFIER) && isCallToSuperclassMethod(symbol)) {
         String methodName = ((IdentifierTree) tree.methodSelect()).name();
-        reportIssue(MethodsHelper.methodName(tree), "Prefix this call to \"" + methodName + "\" with \"super.\".");
+        reportIssue(ExpressionUtils.methodName(tree), "Prefix this call to \"" + methodName + "\" with \"super.\".");
       }
       super.visitMethodInvocation(tree);
     }
@@ -86,8 +85,8 @@ public class CallSuperMethodFromInnerClassCheck extends IssuableSubscriptionVisi
     }
 
     private boolean isInherited(Symbol symbol) {
-      Type methodOwnerType = symbol.owner().type();
-      Type innerType = classSymbol.type();
+      Type methodOwnerType = symbol.owner().type().erasure();
+      Type innerType = classSymbol.type().erasure();
       return !symbol.isStatic() && innerType.isSubtypeOf(methodOwnerType)
         && !classSymbol.owner().type().equals(methodOwnerType) && !innerType.equals(methodOwnerType);
     }

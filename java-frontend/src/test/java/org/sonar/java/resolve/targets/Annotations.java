@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -55,6 +55,10 @@ public class Annotations {
   String[] foo();
   MyEnum bar();
   ClassAnnotation annot();
+}
+
+@interface ArrayEnumAnnotation {
+  MyEnum[] value() default MyEnum.ONE;
 }
 
 enum MyEnum {

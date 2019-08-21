@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,16 +19,13 @@
  */
 package org.sonar.java;
 
+import java.io.File;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mockito;
 import org.sonar.api.batch.fs.InputFile;
 import org.sonar.api.batch.fs.internal.DefaultFileSystem;
-import org.sonar.api.batch.fs.internal.DefaultInputFile;
-import org.sonar.api.config.MapSettings;
-import org.sonar.api.config.Settings;
-
-import java.io.File;
+import org.sonar.api.config.internal.MapSettings;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.fail;
@@ -36,16 +33,13 @@ import static org.junit.Assert.fail;
 public class JavaTestClasspathTest {
 
   private DefaultFileSystem fs;
-  private Settings settings;
+  private MapSettings settings;
   private JavaTestClasspath javaTestClasspath;
 
   @Before
   public void setUp() throws Exception {
     fs = new DefaultFileSystem(new File("src/test/files/classpath/"));
-    DefaultInputFile inputFile = new DefaultInputFile("", "foo.java");
-    inputFile.setLanguage("java");
-    inputFile.setType(InputFile.Type.TEST);
-    fs.add(inputFile);
+    fs.add(TestUtils.emptyInputFile("foo.java", InputFile.Type.TEST));
     settings = new MapSettings();
   }
 
@@ -57,7 +51,7 @@ public class JavaTestClasspathTest {
   @Test
   public void no_interaction_with_FileSystem_at_initialization() {
     fs = Mockito.spy(new DefaultFileSystem(new File("src/test/files/classpath/")));
-    javaTestClasspath = new JavaTestClasspath(settings, fs);
+    javaTestClasspath = new JavaTestClasspath(settings.asConfig(), fs);
     Mockito.verifyZeroInteractions(fs);
   }
 
@@ -82,10 +76,7 @@ public class JavaTestClasspathTest {
   @Test
   public void empty_libraries_if_only_main_files() throws Exception {
     fs = new DefaultFileSystem(new File("src/test/files/classpath/"));
-    DefaultInputFile inputFile = new DefaultInputFile("", "plop.java");
-    inputFile.setType(InputFile.Type.MAIN);
-    inputFile.setLanguage("java");
-    fs.add(inputFile);
+    fs.add(TestUtils.emptyInputFile("plop.java"));
     javaTestClasspath = createJavaClasspath();
     assertThat(javaTestClasspath.getElements()).isEmpty();
   }
@@ -109,7 +100,7 @@ public class JavaTestClasspathTest {
 
 
   private JavaTestClasspath createJavaClasspath() {
-    return new JavaTestClasspath(settings, fs);
+    return new JavaTestClasspath(settings.asConfig(), fs);
   }
 
 

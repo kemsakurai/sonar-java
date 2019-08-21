@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,12 +19,17 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.List;
 import org.sonar.check.Rule;
-import org.sonar.java.checks.helpers.MethodsHelper;
 import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.java.matcher.NameCriteria;
 import org.sonar.java.matcher.TypeCriteria;
+import org.sonar.java.model.ExpressionUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
@@ -34,11 +39,6 @@ import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.ThrowStatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.TryStatementTree;
-
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.List;
 
 @Rule(key = "S1989")
 public class ServletMethodsExceptionsThrownCheck extends IssuableSubscriptionVisitor {
@@ -51,7 +51,7 @@ public class ServletMethodsExceptionsThrownCheck extends IssuableSubscriptionVis
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD, Tree.Kind.THROW_STATEMENT, Tree.Kind.METHOD_INVOCATION, Tree.Kind.TRY_STATEMENT, Tree.Kind.CATCH);
+    return Arrays.asList(Tree.Kind.METHOD, Tree.Kind.THROW_STATEMENT, Tree.Kind.METHOD_INVOCATION, Tree.Kind.TRY_STATEMENT, Tree.Kind.CATCH);
   }
 
   @Override
@@ -66,9 +66,9 @@ public class ServletMethodsExceptionsThrownCheck extends IssuableSubscriptionVis
         tryCatches.add(getCatchedExceptions(((TryStatementTree) tree).catches()));
       } else if (tree.is(Tree.Kind.CATCH)) {
         tryCatches.pop();
-        tryCatches.add(ImmutableList.<Type>of());
+        tryCatches.add(Collections.emptyList());
       } else if (tree.is(Tree.Kind.THROW_STATEMENT)) {
-        addIssueIfNotCatched(ImmutableList.of(((ThrowStatementTree) tree).expression().symbolType()), tree, "Add a \"try/catch\" block.");
+        addIssueIfNotCatched(Collections.singletonList(((ThrowStatementTree) tree).expression().symbolType()), tree, "Add a \"try/catch\" block.");
       } else if (tree.is(Tree.Kind.METHOD_INVOCATION)) {
         checkMethodInvocation((MethodInvocationTree) tree);
       }
@@ -104,7 +104,7 @@ public class ServletMethodsExceptionsThrownCheck extends IssuableSubscriptionVis
     if (symbol.isMethodSymbol()) {
       List<Type> types = ((Symbol.MethodSymbol) symbol).thrownTypes();
       if (!types.isEmpty()) {
-        addIssueIfNotCatched(types, MethodsHelper.methodName(node), "Add a \"try/catch\" block for \"" + symbol.name() + "\".");
+        addIssueIfNotCatched(types, ExpressionUtils.methodName(node), "Add a \"try/catch\" block for \"" + symbol.name() + "\".");
       }
     }
   }

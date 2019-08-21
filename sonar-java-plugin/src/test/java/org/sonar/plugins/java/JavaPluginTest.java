@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -25,42 +25,75 @@ import org.sonar.api.SonarQubeSide;
 import org.sonar.api.SonarRuntime;
 import org.sonar.api.internal.SonarRuntimeImpl;
 import org.sonar.api.utils.Version;
+import org.sonar.java.AnalysisWarningsWrapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class JavaPluginTest {
 
-  private static final Version VERSION_6_0 = Version.create(6, 0);
-  private static final Version VERSION_5_6 = Version.create(5, 6);
+  private static final Version VERSION_6_7 = Version.create(6, 7);
+  private static final Version VERSION_7_2 = Version.create(7, 2);
+  private static final Version VERSION_7_4 = Version.create(7, 4);
   private JavaPlugin javaPlugin = new JavaPlugin();
 
   @Test
-  public void sonarqubeAPI_before_6_0_extensions() {
-    SonarRuntime runtime = SonarRuntimeImpl.forSonarQube(VERSION_5_6, SonarQubeSide.SERVER);
+  public void sonarLint_6_7_extensions() {
+    SonarRuntime runtime = SonarRuntimeImpl.forSonarLint(VERSION_6_7);
     Plugin.Context context = new Plugin.Context(runtime);
     javaPlugin.define(context);
-    assertThat(context.getExtensions()).hasSize(25);
-    runtime = SonarRuntimeImpl.forSonarLint(VERSION_5_6);
+    assertThat(context.getExtensions()).hasSize(14);
+  }
+
+  @Test
+  public void sonarLint_7_2_extensions() {
+    SonarRuntime runtime = SonarRuntimeImpl.forSonarLint(VERSION_7_2);
+    Plugin.Context context = new Plugin.Context(runtime);
+    javaPlugin.define(context);
+    assertThat(context.getExtensions()).hasSize(14);
+  }
+
+  @Test
+  public void sonarqube_6_7_extensions() {
+    SonarRuntime runtime = SonarRuntimeImpl.forSonarQube(VERSION_6_7, SonarQubeSide.SERVER);
+    Plugin.Context context = new Plugin.Context(runtime);
+    javaPlugin.define(context);
+    assertThat(context.getExtensions()).hasSize(26);
+  }
+
+  @Test
+  public void sonarqube_7_2_extensions() {
+    SonarRuntime runtime = SonarRuntimeImpl.forSonarQube(VERSION_7_2, SonarQubeSide.SERVER);
+    Plugin.Context context = new Plugin.Context(runtime);
+    javaPlugin.define(context);
+    assertThat(context.getExtensions()).hasSize(33);
+  }
+
+  @Test
+  public void sonarqube_7_4_extensions() {
+    SonarRuntime runtime = SonarRuntimeImpl.forSonarQube(VERSION_7_4, SonarQubeSide.SERVER);
+    Plugin.Context context = new Plugin.Context(runtime);
+    javaPlugin.define(context);
+    assertThat(context.getExtensions()).hasSize(34);
+  }
+
+  @Test
+  public void use_AnalysisWarningsWrapper_before_SQ_7_4_and_sonarlint() {
+    Version unsupportedVersion = Version.create(7, 3);
+    Version minSupportedVersion = Version.create(7, 4);
+
+    SonarRuntime runtime = SonarRuntimeImpl.forSonarQube(unsupportedVersion, SonarQubeSide.SCANNER);
+    Plugin.Context context = new Plugin.Context(runtime);
+    javaPlugin.define(context);
+    assertThat(context.getExtensions()).doesNotContain(AnalysisWarningsWrapper.class);
+
+    runtime = SonarRuntimeImpl.forSonarQube(minSupportedVersion, SonarQubeSide.SCANNER);
     context = new Plugin.Context(runtime);
     javaPlugin.define(context);
-    assertThat(context.getExtensions()).hasSize(25);
-  }
+    assertThat(context.getExtensions()).contains(AnalysisWarningsWrapper.class);
 
-  @Test
-  public void sonarLint_6_0_extensions() {
-    SonarRuntime runtime = SonarRuntimeImpl.forSonarLint(VERSION_6_0);
-    Plugin.Context context = new Plugin.Context(runtime);
+    runtime = SonarRuntimeImpl.forSonarLint(minSupportedVersion);
+    context = new Plugin.Context(runtime);
     javaPlugin.define(context);
-    assertThat(context.getExtensions()).hasSize(15);
+    assertThat(context.getExtensions()).doesNotContain(AnalysisWarningsWrapper.class);
   }
-
-  @Test
-  public void sonarqube_6_0_extensions() {
-    SonarRuntime runtime = SonarRuntimeImpl.forSonarQube(VERSION_6_0, SonarQubeSide.SERVER);
-    Plugin.Context context = new Plugin.Context(runtime);
-    javaPlugin.define(context);
-    assertThat(context.getExtensions()).hasSize(25);
-
-  }
-
 }

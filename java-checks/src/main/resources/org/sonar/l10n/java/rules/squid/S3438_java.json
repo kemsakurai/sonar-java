@@ -7,8 +7,10 @@
     "constantCost": "2min"
   },
   "tags": [
-    "spring",
-    "bug"
+    "spring"
   ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-3438",
+  "sqKey": "S3438",
+  "scope": "Main"
 }

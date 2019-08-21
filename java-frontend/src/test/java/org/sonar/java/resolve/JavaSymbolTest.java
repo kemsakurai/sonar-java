@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -170,23 +170,34 @@ public class JavaSymbolTest {
   }
 
   @Test
-  public void test_helper_methods() throws Exception {
+  public void test_helper_methods() {
     JavaSymbol.TypeJavaSymbol outermostClass = new JavaSymbol.TypeJavaSymbol(Flags.INTERFACE, "name", P_PACKAGE_JAVA_SYMBOL);
+    JavaSymbol.TypeJavaSymbol annotationType = new JavaSymbol.TypeJavaSymbol(Flags.INTERFACE | Flags.ANNOTATION, "myAnnotation", P_PACKAGE_JAVA_SYMBOL);
     JavaSymbol.TypeJavaSymbol typeSymbol = new JavaSymbol.TypeJavaSymbol(Flags.INTERFACE, "t", outermostClass);
     JavaSymbol.MethodJavaSymbol methodSymbol = new JavaSymbol.MethodJavaSymbol(Flags.STATIC | Flags.ABSTRACT, "name", typeSymbol);
+    JavaSymbol.MethodJavaSymbol defaultMethodSymbol = new JavaSymbol.MethodJavaSymbol(Flags.STATIC | Flags.ABSTRACT | Flags.DEFAULT, "name", typeSymbol);
     JavaSymbol.TypeJavaSymbol enumeration = new JavaSymbol.TypeJavaSymbol(Flags.ENUM, "enumeration", P_PACKAGE_JAVA_SYMBOL);
     assertThat(methodSymbol.isEnum()).isFalse();
     assertThat(methodSymbol.isFinal()).isFalse();
     assertThat(methodSymbol.isAbstract()).isTrue();
+    assertThat(methodSymbol.isAnnotation()).isFalse();
     assertThat(methodSymbol.isStatic()).isTrue();
     assertThat(methodSymbol.isPackageVisibility()).isTrue();
     assertThat(methodSymbol.isVolatile()).isFalse();
     assertThat(methodSymbol.isProtected()).isFalse();
 
+    assertThat(annotationType.isAnnotation()).isTrue();
+    assertThat(annotationType.isEnum()).isFalse();
+    assertThat(annotationType.isInterface()).isTrue();
+
     assertThat(enumeration.isEnum()).isTrue();
     assertThat(enumeration.isAbstract()).isFalse();
+    assertThat(enumeration.isAnnotation()).isFalse();
     assertThat(enumeration.isStatic()).isFalse();
     assertThat(P_PACKAGE_JAVA_SYMBOL.isPackageSymbol()).isTrue();
     assertThat(outermostClass.isPackageSymbol()).isFalse();
+
+    assertThat(methodSymbol.isDefault()).isFalse();
+    assertThat(defaultMethodSymbol.isDefault()).isTrue();
   }
 }

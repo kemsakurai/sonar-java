@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -28,6 +28,7 @@ import org.sonar.plugins.java.api.tree.ModifierTree;
 import org.sonar.plugins.java.api.tree.ModifiersTree;
 import org.sonar.plugins.java.api.tree.TreeVisitor;
 
+import java.util.Collections;
 import java.util.List;
 
 public class ModifiersTreeImpl extends ListTreeImpl<ModifierTree> implements ModifiersTree {
@@ -51,7 +52,7 @@ public class ModifiersTreeImpl extends ListTreeImpl<ModifierTree> implements Mod
   }
 
   public static ModifiersTreeImpl emptyModifiers() {
-    return new ModifiersTreeImpl(ImmutableList.<ModifierTree>of());
+    return new ModifiersTreeImpl(Collections.emptyList());
   }
 
   @Override

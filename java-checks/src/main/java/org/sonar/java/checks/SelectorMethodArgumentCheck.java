@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,12 +19,14 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
+import java.text.MessageFormat;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
 import org.sonar.check.Rule;
 import org.sonar.java.model.ModifiersUtils;
-import org.sonar.java.model.declaration.MethodTreeImpl;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
@@ -40,16 +42,12 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
-import java.text.MessageFormat;
-import java.util.Collection;
-import java.util.List;
-
 @Rule(key = "S2301")
 public class SelectorMethodArgumentCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Kind.METHOD);
+    return Collections.singletonList(Kind.METHOD);
   }
 
   @Override
@@ -58,7 +56,7 @@ public class SelectorMethodArgumentCheck extends IssuableSubscriptionVisitor {
       return;
     }
     MethodTree methodTree = (MethodTree) tree;
-    if (Boolean.TRUE.equals(((MethodTreeImpl) methodTree).isOverriding())) {
+    if (Boolean.TRUE.equals(methodTree.isOverriding())) {
       return;
     }
     List<Symbol> booleanParameterSymbols = getBooleanParametersAsSymbol(methodTree.parameters());
@@ -79,7 +77,7 @@ public class SelectorMethodArgumentCheck extends IssuableSubscriptionVisitor {
   }
 
   private static List<Symbol> getBooleanParametersAsSymbol(List<VariableTree> parameters) {
-    List<Symbol> booleanParameters = Lists.newLinkedList();
+    List<Symbol> booleanParameters = new LinkedList<>();
     for (VariableTree variableTree : parameters) {
       if (isBooleanVariable(variableTree)) {
         booleanParameters.add(variableTree.symbol());

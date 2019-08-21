@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,13 +21,13 @@ package org.sonar.java.resolve;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
 import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.Attribute;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.FieldVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.TypePath;
 import org.objectweb.asm.signature.SignatureReader;
 import org.objectweb.asm.signature.SignatureVisitor;
@@ -36,9 +36,14 @@ import org.sonar.api.utils.log.Loggers;
 
 import javax.annotation.Nullable;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
+
+import static org.sonar.java.resolve.BytecodeCompleter.ASM_API_VERSION;
 
 public class BytecodeVisitor extends ClassVisitor {
 
@@ -53,7 +58,7 @@ public class BytecodeVisitor extends ClassVisitor {
   private String className;
 
   BytecodeVisitor(BytecodeCompleter bytecodeCompleter, Symbols symbols, JavaSymbol.TypeJavaSymbol classSymbol, ParametrizedTypeCache parametrizedTypeCache) {
-    super(Opcodes.ASM5);
+    super(ASM_API_VERSION);
     this.bytecodeCompleter = bytecodeCompleter;
     this.symbols = symbols;
     this.classSymbol = classSymbol;
@@ -75,7 +80,7 @@ public class BytecodeVisitor extends ClassVisitor {
   @Override
   public void visit(int version, int flags, String name, @Nullable String signature, @Nullable String superName, @Nullable String[] interfaces) {
     Preconditions.checkState(name.endsWith(classSymbol.name), "Name : '%s' should ends with %s", name, classSymbol.name);
-    Preconditions.checkState(name.endsWith("package-info") || !BytecodeCompleter.isSynthetic(flags), "%s is synthetic", name);
+    Preconditions.checkState(name.endsWith("package-info") || isNotSynthetic(flags), "%s is synthetic", name);
     className = name;
     if (signature != null) {
       SignatureReader signatureReader = new SignatureReader(signature);
@@ -96,12 +101,18 @@ public class BytecodeVisitor extends ClassVisitor {
     //if class has already access flags set (inner class) then do not reset those.
     //The important access flags are the one defined in the outer class.
     if ((classSymbol.flags & Flags.ACCESS_FLAGS) != 0) {
-      classSymbol.flags |= bytecodeCompleter.filterBytecodeFlags(flags & ~Flags.ACCESS_FLAGS);
+      classSymbol.flags |= Flags.filterAccessBytecodeFlags(flags & ~Flags.ACCESS_FLAGS);
     } else {
-      classSymbol.flags |= bytecodeCompleter.filterBytecodeFlags(flags);
+      classSymbol.flags |= Flags.filterAccessBytecodeFlags(flags);
     }
     classSymbol.members = new Scope(classSymbol);
+  }
 
+  /**
+   * Compiler marks all artifacts not presented in the source code as {@link Flags#SYNTHETIC}.
+   */
+  private static boolean isNotSynthetic(int flags) {
+    return Flags.isNotFlagged(flags, Flags.SYNTHETIC);
   }
 
   @Override
@@ -124,7 +135,7 @@ public class BytecodeVisitor extends ClassVisitor {
 
   @Override
   public AnnotationVisitor visitAnnotation(String desc, boolean visible) {
-    JavaType annotationType = convertAsmType(org.objectweb.asm.Type.getType(desc));
+    JavaType annotationType = convertAsmType(org.objectweb.asm.Type.getType(desc), Flags.ANNOTATION);
     AnnotationInstanceResolve annotationInstance = new AnnotationInstanceResolve(annotationType.getSymbol());
     classSymbol.metadata().addAnnotation(annotationInstance);
     return new BytecodeAnnotationVisitor(annotationInstance, this);
@@ -143,7 +154,7 @@ public class BytecodeVisitor extends ClassVisitor {
 
   @Override
   public void visitInnerClass(String name, @Nullable String outerName, @Nullable String innerName, int flags) {
-    if (!BytecodeCompleter.isSynthetic(flags)) {
+    if (isNotSynthetic(flags)) {
       // TODO what about flags?
       if (innerName == null) {
         // anonymous class
@@ -167,7 +178,7 @@ public class BytecodeVisitor extends ClassVisitor {
    */
   private void defineInnerClass(String bytecodeName, int flags) {
     JavaSymbol.TypeJavaSymbol innerClass = getClassSymbol(classSymbol, bytecodeName, flags);
-    innerClass.flags |= bytecodeCompleter.filterBytecodeFlags(flags);
+    innerClass.flags |= Flags.filterAccessBytecodeFlags(flags);
     Preconditions.checkState(innerClass.owner == classSymbol, "Innerclass: " + innerClass.owner.getName() + " and classSymbol: " + classSymbol.getName() + " are not the same.");
     classSymbol.members.enter(innerClass);
   }
@@ -182,18 +193,19 @@ public class BytecodeVisitor extends ClassVisitor {
     JavaSymbol.TypeJavaSymbol outerClassSymbol = getClassSymbol(outerName, flags);
     Preconditions.checkState(outerClassSymbol.completer == null || outerClassSymbol.completer instanceof BytecodeCompleter);
     classSymbol.name = innerName;
-    classSymbol.flags = flags | bytecodeCompleter.filterBytecodeFlags(classSymbol.flags & ~Flags.ACCESS_FLAGS);
+    classSymbol.flags = flags | Flags.filterAccessBytecodeFlags(classSymbol.flags & ~Flags.ACCESS_FLAGS);
     classSymbol.owner = outerClassSymbol;
   }
 
   @Override
   public FieldVisitor visitField(int flags, String name, String desc, @Nullable String signature, @Nullable Object value) {
-    Preconditions.checkNotNull(name);
-    Preconditions.checkNotNull(desc);
-    if (!BytecodeCompleter.isSynthetic(flags)) {
+    Objects.requireNonNull(name);
+    Objects.requireNonNull(desc);
+    if (isNotSynthetic(flags)) {
       //Flags from asm lib are defined in Opcodes class and map to flags defined in Flags class
-      final JavaSymbol.VariableJavaSymbol symbol = new JavaSymbol.VariableJavaSymbol(bytecodeCompleter.filterBytecodeFlags(flags),
-          name, convertAsmType(org.objectweb.asm.Type.getType(desc)), classSymbol);
+      int filteredFlags = Flags.filterAccessBytecodeFlags(flags);
+      JavaType type = convertAsmType(Type.getType(desc));
+      JavaSymbol.VariableJavaSymbol symbol = new JavaSymbol.VariableJavaSymbol(filteredFlags, name, type, classSymbol, value);
       classSymbol.members.enter(symbol);
       if (signature != null) {
         ReadType typeReader = new ReadType();
@@ -208,9 +220,9 @@ public class BytecodeVisitor extends ClassVisitor {
 
   @Override
   public MethodVisitor visitMethod(int flags, String name, String desc, @Nullable String signature, @Nullable String[] exceptions) {
-    Preconditions.checkNotNull(name);
-    Preconditions.checkNotNull(desc);
-    if (!BytecodeCompleter.isSynthetic(flags)) {
+    Objects.requireNonNull(name);
+    Objects.requireNonNull(desc);
+    if (isNotSynthetic(flags)) {
       if((flags & Opcodes.ACC_BRIDGE) != 0) {
         LOG.warn("bridge method {} not marked as synthetic in class {}", name, className);
         return null;
@@ -222,7 +234,13 @@ public class BytecodeVisitor extends ClassVisitor {
           getCompletedClassSymbolsType(exceptions),
           classSymbol
       );
-      final JavaSymbol.MethodJavaSymbol methodSymbol = new JavaSymbol.MethodJavaSymbol(bytecodeCompleter.filterBytecodeFlags(flags), name, type, classSymbol);
+      int methodFlags = Flags.filterAccessBytecodeFlags(flags);
+      if (classSymbol.isInterface() && Flags.isNotFlagged(methodFlags, Flags.ABSTRACT | Flags.PRIVATE | Flags.STATIC)) {
+        // abstract, static nor private method of interface is a default method
+        methodFlags |= Flags.DEFAULT;
+      }
+      final JavaSymbol.MethodJavaSymbol methodSymbol = new JavaSymbol.MethodJavaSymbol(methodFlags, name, type, classSymbol);
+      methodSymbol.desc = desc;
       classSymbol.members.enter(methodSymbol);
       if (signature != null) {
         SignatureReader signatureReader = new SignatureReader(signature);
@@ -246,12 +264,15 @@ public class BytecodeVisitor extends ClassVisitor {
     }
     return result.build();
   }
-
   public JavaType convertAsmType(org.objectweb.asm.Type asmType) {
+    return convertAsmType(asmType, 0);
+  }
+
+  public JavaType convertAsmType(org.objectweb.asm.Type asmType, int flags) {
     JavaType result;
     switch (asmType.getSort()) {
       case org.objectweb.asm.Type.OBJECT:
-        result = getClassSymbol(asmType.getInternalName()).type;
+        result = getClassSymbol(asmType.getInternalName(), flags).type;
         break;
       case org.objectweb.asm.Type.BYTE:
         result = symbols.byteType;
@@ -319,7 +340,7 @@ public class BytecodeVisitor extends ClassVisitor {
 
   private List<JavaType> getCompletedClassSymbolsType(@Nullable String[] bytecodeNames) {
     if (bytecodeNames == null) {
-      return ImmutableList.of();
+      return Collections.emptyList();
     }
     return Arrays.stream(bytecodeNames).map(bName -> getClassSymbol(bName).type).collect(Collectors.toList());
   }
@@ -331,7 +352,7 @@ public class BytecodeVisitor extends ClassVisitor {
     ImmutableList.Builder<JavaType> interfaces;
 
     public ReadGenericSignature() {
-      super(Opcodes.ASM5);
+      super(ASM_API_VERSION);
       interfaces = ImmutableList.builder();
     }
 
@@ -418,7 +439,7 @@ public class BytecodeVisitor extends ClassVisitor {
     private final JavaSymbol symbol;
 
     public TypeParameterDeclaration(JavaSymbol symbol) {
-      super(Opcodes.ASM5);
+      super(ASM_API_VERSION);
       this.symbol = symbol;
       if(symbol.isTypeSymbol()) {
         ((JavaSymbol.TypeJavaSymbol) symbol).typeParameters = new Scope(symbol);
@@ -430,7 +451,7 @@ public class BytecodeVisitor extends ClassVisitor {
     @Override
     public void visitFormalTypeParameter(String name) {
       JavaSymbol.TypeVariableJavaSymbol typeVariableSymbol = new JavaSymbol.TypeVariableJavaSymbol(name, symbol);
-      ((TypeVariableJavaType) typeVariableSymbol.type).bounds = Lists.newArrayList();
+      ((TypeVariableJavaType) typeVariableSymbol.type).bounds = new ArrayList<>();
       if(symbol.isTypeSymbol()) {
         JavaSymbol.TypeJavaSymbol typeJavaSymbol = (JavaSymbol.TypeJavaSymbol) symbol;
         typeJavaSymbol.typeParameters.enter(typeVariableSymbol);
@@ -452,9 +473,9 @@ public class BytecodeVisitor extends ClassVisitor {
     List<JavaType> bounds;
 
     public ReadMethodSignature(JavaSymbol.MethodJavaSymbol methodSymbol) {
-      super(Opcodes.ASM5);
+      super(ASM_API_VERSION);
       this.methodSymbol = methodSymbol;
-      ((MethodJavaType) methodSymbol.type).argTypes = Lists.newArrayList();
+      ((MethodJavaType) methodSymbol.type).argTypes = new ArrayList<>();
     }
 
     @Override
@@ -542,20 +563,29 @@ public class BytecodeVisitor extends ClassVisitor {
     @Nullable
     private final JavaSymbol.MethodJavaSymbol methodSymbol;
     JavaType typeRead;
-    List<JavaType> typeArguments = Lists.newArrayList();
+    String bytecodeName;
+    List<JavaType> typeArguments = new ArrayList<>();
 
     public ReadType() {
-      super(Opcodes.ASM5);
+      super(ASM_API_VERSION);
       this.methodSymbol = null;
     }
 
     public ReadType(@Nullable JavaSymbol.MethodJavaSymbol methodSymbol) {
-      super(Opcodes.ASM5);
+      super(ASM_API_VERSION);
       this.methodSymbol = methodSymbol;
     }
 
     @Override
+    public void visitInnerClassType(String name) {
+      bytecodeName += "$" + name;
+      typeRead = getClassSymbol(bytecodeName).type;
+      typeArguments = new ArrayList<>();
+    }
+
+    @Override
     public void visitClassType(String name) {
+      bytecodeName = name;
       typeRead = getClassSymbol(name).type;
     }
 
@@ -609,7 +639,7 @@ public class BytecodeVisitor extends ClassVisitor {
 
     @Override
     public void visitTypeVariable(String name) {
-      List<JavaSymbol> lookup = Lists.newArrayList();
+      List<JavaSymbol> lookup = new ArrayList<>();
       JavaSymbol currentSymbol = classSymbol;
       if(methodSymbol != null) {
         currentSymbol = methodSymbol;

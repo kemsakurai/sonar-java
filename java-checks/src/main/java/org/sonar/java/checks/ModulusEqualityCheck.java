@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,8 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
 import org.sonar.check.Rule;
 import org.sonar.java.model.LiteralUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
@@ -37,22 +35,23 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 @Rule(key = "S2197")
 public class ModulusEqualityCheck extends IssuableSubscriptionVisitor {
 
-  private List<Symbol> methodParams = Lists.newArrayList();
+  private List<Symbol> methodParams = new ArrayList<>();
 
   @Override
-  public void scanFile(JavaFileScannerContext context) {
-    super.scanFile(context);
+  public void leaveFile(JavaFileScannerContext context) {
     methodParams.clear();
   }
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.EQUAL_TO, Tree.Kind.METHOD);
+    return Arrays.asList(Tree.Kind.EQUAL_TO, Tree.Kind.METHOD);
   }
 
   @Override

@@ -9,5 +9,8 @@
   "tags": [
     "unused"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-2309",
+  "sqKey": "EmptyFile",
+  "scope": "All"
 }

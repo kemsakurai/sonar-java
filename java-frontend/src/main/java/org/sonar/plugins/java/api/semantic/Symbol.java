@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,18 +19,16 @@
  */
 package org.sonar.plugins.java.api.semantic;
 
+import java.util.Collection;
+import java.util.List;
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.LabeledStatementTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.VariableTree;
-
-import javax.annotation.CheckForNull;
-import javax.annotation.Nullable;
-
-import java.util.Collection;
-import java.util.List;
 
 /**
  * Interface to access symbol information.
@@ -183,10 +181,24 @@ public interface Symbol {
      */
     List<Type> thrownTypes();
 
+    /**
+     * Retrieve the overridden symbol, which may may not be able to determine (returning 'unknown' symbol).
+     * Note that if the method returns null, the method is not overriding any method for sure.
+     *
+     * @return the overridden symbol, unknown if overriding can not be determined (incomplete semantic), or null if the method is not overriding any method
+     */
+    @Nullable
+    Symbol.MethodSymbol overriddenSymbol();
+
     @Nullable
     @Override
     MethodTree declaration();
 
+    /**
+     * Compute the signature as identified from bytecode point of view. Will be unique for each method.
+     * @return the signature of the method, as String
+     */
+    String signature();
   }
 
   /**

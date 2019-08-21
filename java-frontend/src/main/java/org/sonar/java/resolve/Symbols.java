@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -26,6 +26,7 @@ import org.sonar.java.model.AbstractTypedTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Map.Entry;
 
 /**
@@ -44,7 +45,7 @@ public class Symbols {
   /**
    * Type, which can't be modelled for the moment.
    */
-  static final UnknownType unknownType;
+  public static final UnknownType unknownType;
   public static final JavaSymbol.TypeJavaSymbol unknownSymbol;
   public static final JavaSymbol.MethodJavaSymbol unknownMethodSymbol;
 
@@ -146,7 +147,7 @@ public class Symbols {
 
     predefClass = new JavaSymbol.TypeJavaSymbol(Flags.PUBLIC, "", rootPackage);
     predefClass.members = new Scope(predefClass);
-    ((ClassJavaType) predefClass.type).interfaces = ImmutableList.of();
+    ((ClassJavaType) predefClass.type).interfaces = Collections.emptyList();
 
     // TODO should have type "noType":
     noSymbol = new JavaSymbol.TypeJavaSymbol(0, "", rootPackage);
@@ -199,14 +200,13 @@ public class Symbols {
       entry.getValue().primitiveType = entry.getKey();
     }
 
-    // TODO comment me
     arrayClass = new JavaSymbol.TypeJavaSymbol(Flags.PUBLIC, "Array", noSymbol);
     ClassJavaType arrayClassType = (ClassJavaType) arrayClass.type;
     arrayClassType.supertype = objectType;
     arrayClassType.interfaces = ImmutableList.of(cloneableType, serializableType);
+    // clone method return type is handled during method resolution.
     arrayClass.members = new Scope(arrayClass);
     arrayClass.members().enter(new JavaSymbol.VariableJavaSymbol(Flags.PUBLIC | Flags.FINAL, "length", intType, arrayClass));
-    // TODO arrayClass implements clone() method
 
     // java.lang.Synthetic is a virtual annotation added by ASM to workaround a bug in javac on inner classes parameter numbers.
     // Predefining this type avoids to look it up in classpath where it will not be found. We rely on this to detect synthetic parameters on some enum constructor for instance.
@@ -223,7 +223,7 @@ public class Symbols {
     JavaSymbol.TypeJavaSymbol symbol = new JavaSymbol.TypeJavaSymbol(Flags.PUBLIC, name, rootPackage);
     symbol.members = new Scope(symbol);
     predefClass.members.enter(symbol);
-    ((ClassJavaType) symbol.type).interfaces = ImmutableList.of();
+    ((ClassJavaType) symbol.type).interfaces = Collections.emptyList();
     symbol.type.tag = tag;
     return symbol.type;
   }
@@ -270,7 +270,7 @@ public class Symbols {
   }
 
   private void enterBinop(String name, JavaType left, JavaType right, JavaType result) {
-    JavaType type = new MethodJavaType(ImmutableList.of(left, right), result, ImmutableList.<JavaType>of(), methodClass);
+    JavaType type = new MethodJavaType(ImmutableList.of(left, right), result, Collections.emptyList(), methodClass);
     JavaSymbol symbol = new JavaSymbol.MethodJavaSymbol(Flags.PUBLIC | Flags.STATIC, name, type, predefClass);
     predefClass.members.enter(symbol);
   }

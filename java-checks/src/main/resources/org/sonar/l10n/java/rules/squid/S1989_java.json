@@ -9,14 +9,19 @@
   "tags": [
     "cwe",
     "error-handling",
-    "security",
     "cert",
-    "owasp-a6"
+    "owasp-a3"
   ],
-  "standards": [
-    "CWE",
-    "CERT",
-    "OWASP Top Ten"
-  ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-1989",
+  "sqKey": "S1989",
+  "scope": "Main",
+  "securityStandards": {
+    "CWE": [
+      600
+    ],
+    "OWASP": [
+      "A3"
+    ]
+  }
 }

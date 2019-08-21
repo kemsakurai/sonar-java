@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,14 +19,16 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import org.sonar.check.Rule;
 import org.sonar.java.model.ModifiersUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
+import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.Modifier;
+import org.sonar.plugins.java.api.tree.ModifierKeywordTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
+import java.util.Collections;
 import java.util.List;
 
 @Rule(key = "S2786")
@@ -34,19 +36,16 @@ public class NestedEnumStaticCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.ENUM);
+    return Collections.singletonList(Tree.Kind.ENUM);
   }
 
   @Override
   public void visitNode(Tree tree) {
     ClassTree classTree = (ClassTree) tree;
-    if (isStatic(classTree)) {
-      reportIssue(classTree.declarationKeyword(), "Remove this redundant \"static\" qualifier.");
+    ModifierKeywordTree staticKeyword = ModifiersUtils.getModifier(classTree.modifiers(), Modifier.STATIC);
+    if (staticKeyword != null) {
+      List<JavaFileScannerContext.Location> secondary = Collections.singletonList(new JavaFileScannerContext.Location("", classTree.declarationKeyword()));
+      reportIssue(staticKeyword, "Remove this redundant \"static\" qualifier.", secondary, null);
     }
   }
-
-  private static boolean isStatic(ClassTree classTree) {
-    return ModifiersUtils.hasModifier(classTree.modifiers(), Modifier.STATIC);
-  }
-
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,57 +19,132 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
-import org.sonar.check.Rule;
-import org.sonar.java.matcher.MethodMatcher;
-import org.sonar.plugins.java.api.JavaFileScannerContext;
-import org.sonar.plugins.java.api.semantic.Symbol;
-import org.sonar.plugins.java.api.tree.AssignmentExpressionTree;
-import org.sonar.plugins.java.api.tree.IdentifierTree;
-import org.sonar.plugins.java.api.tree.Tree;
-
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
+import org.sonar.check.Rule;
+import org.sonar.java.matcher.MethodMatcher;
+import org.sonar.java.matcher.MethodMatcherCollection;
+import org.sonar.java.model.ModifiersUtils;
+import org.sonar.plugins.java.api.JavaFileScannerContext;
+import org.sonar.plugins.java.api.semantic.Symbol;
+import org.sonar.plugins.java.api.tree.AssignmentExpressionTree;
+import org.sonar.plugins.java.api.tree.ClassTree;
+import org.sonar.plugins.java.api.tree.IdentifierTree;
+import org.sonar.plugins.java.api.tree.MethodInvocationTree;
+import org.sonar.plugins.java.api.tree.MethodTree;
+import org.sonar.plugins.java.api.tree.Modifier;
+import org.sonar.plugins.java.api.tree.Tree;
 
 @Rule(key = "S2444")
 public class StaticFieldInitializationCheck extends AbstractInSynchronizeChecker {
 
+  private Deque<Boolean> classWithSynchronizedMethod = new LinkedList<>();
   private Deque<Boolean> withinStaticInitializer = new LinkedList<>();
+  private Deque<Boolean> methodUsesLocks = new LinkedList<>();
+  private MethodMatcherCollection locks = MethodMatcherCollection.create(
+    MethodMatcher.create().typeDefinition("java.util.concurrent.locks.Lock").name("lock").withoutParameter(),
+    MethodMatcher.create().typeDefinition("java.util.concurrent.locks.Lock").name("tryLock").withoutParameter()
+  );
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.ASSIGNMENT, Tree.Kind.METHOD, Tree.Kind.METHOD_INVOCATION, Tree.Kind.SYNCHRONIZED_STATEMENT, Tree.Kind.STATIC_INITIALIZER);
+    List<Tree.Kind> nodesToVisit = new ArrayList<>(super.nodesToVisit());
+    nodesToVisit.add(Tree.Kind.CLASS);
+    nodesToVisit.add(Tree.Kind.ASSIGNMENT);
+    nodesToVisit.add(Tree.Kind.STATIC_INITIALIZER);
+    return nodesToVisit;
   }
 
   @Override
-  public void scanFile(JavaFileScannerContext context) {
+  public void setContext(JavaFileScannerContext context) {
+    classWithSynchronizedMethod.push(false);
     withinStaticInitializer.push(false);
-    super.scanFile(context);
+    methodUsesLocks.push(false);
+    super.setContext(context);
+  }
+
+  @Override
+  public void leaveFile(JavaFileScannerContext context) {
     withinStaticInitializer.clear();
+    methodUsesLocks.clear();
+    classWithSynchronizedMethod.clear();
   }
 
   @Override
   public void visitNode(Tree tree) {
-    if (hasSemantic() && tree.is(Tree.Kind.ASSIGNMENT)) {
-      AssignmentExpressionTree aet = (AssignmentExpressionTree) tree;
-      if (aet.variable().is(Tree.Kind.IDENTIFIER) && !isInSyncBlock() && !withinStaticInitializer.peek()) {
-        IdentifierTree variable = (IdentifierTree) aet.variable();
-        if (isStaticNotVolatileObject(variable)) {
-          reportIssue(variable, "Synchronize this lazy initialization of '" + variable.name() + "'");
+    switch (tree.kind()) {
+      case CLASS:
+        classWithSynchronizedMethod.push(hasSynchronizedMethod((ClassTree) tree));
+        break;
+      case STATIC_INITIALIZER:
+        withinStaticInitializer.push(true);
+        break;
+      case METHOD:
+        methodUsesLocks.push(false);
+        break;
+      case METHOD_INVOCATION:
+        if (locks.anyMatch((MethodInvocationTree) tree) && methodUsesLocks.size() != 1) {
+          methodUsesLocks.pop();
+          methodUsesLocks.push(true);
         }
-      }
-    }
-    if (tree.is(Tree.Kind.STATIC_INITIALIZER)) {
-      withinStaticInitializer.push(true);
+        break;
+      case ASSIGNMENT:
+        AssignmentExpressionTree aet = (AssignmentExpressionTree) tree;
+        if (hasSemantic()
+          && aet.variable().is(Tree.Kind.IDENTIFIER)
+          && !isInSyncBlock()
+          && !isInStaticInitializer()
+          && !isUsingLock()
+          && isInClassWithSynchronizedMethod()) {
+          IdentifierTree variable = (IdentifierTree) aet.variable();
+          if (isStaticNotVolatileObject(variable)) {
+            reportIssue(variable, "Synchronize this lazy initialization of '" + variable.name() + "'");
+          }
+        }
+        break;
+      default:
+        // Do nothing
     }
     super.visitNode(tree);
   }
 
+  private boolean isInStaticInitializer() {
+    return withinStaticInitializer.peek();
+  }
+
+  private static Boolean hasSynchronizedMethod(ClassTree tree) {
+    return tree.members().stream()
+      .filter(member -> member.is(Tree.Kind.METHOD))
+      .map(MethodTree.class::cast)
+      .map(MethodTree::modifiers)
+      .anyMatch(modifiers -> ModifiersUtils.hasModifier(modifiers, Modifier.SYNCHRONIZED));
+  }
+
+  private boolean isInClassWithSynchronizedMethod() {
+    return classWithSynchronizedMethod.peek();
+  }
+
+  private boolean isUsingLock() {
+    return methodUsesLocks.peek();
+  }
+
   @Override
   public void leaveNode(Tree tree) {
-    if (tree.is(Tree.Kind.STATIC_INITIALIZER)) {
-      withinStaticInitializer.pop();
+    switch (tree.kind()) {
+      case CLASS:
+        classWithSynchronizedMethod.pop();
+        break;
+      case STATIC_INITIALIZER:
+        withinStaticInitializer.pop();
+        break;
+      case METHOD:
+        methodUsesLocks.pop();
+        break;
+      default:
+        // do nothing
     }
     super.leaveNode(tree);
   }
@@ -88,7 +163,7 @@ public class StaticFieldInitializationCheck extends AbstractInSynchronizeChecker
 
   @Override
   protected List<MethodMatcher> getMethodInvocationMatchers() {
-    return ImmutableList.of();
+    return Collections.emptyList();
   }
 
 }

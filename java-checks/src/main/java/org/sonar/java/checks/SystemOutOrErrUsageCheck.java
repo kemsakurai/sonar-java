@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import org.sonar.check.Rule;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
@@ -27,6 +26,7 @@ import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
+import java.util.Collections;
 import java.util.List;
 
 @Rule(key = "S106")
@@ -34,14 +34,14 @@ public class SystemOutOrErrUsageCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.MEMBER_SELECT);
+    return Collections.singletonList(Tree.Kind.MEMBER_SELECT);
   }
 
   @Override
   public void visitNode(Tree tree) {
     MemberSelectExpressionTree mset = (MemberSelectExpressionTree) tree;
     if (isOutOrErr(mset) && isSystem(mset.expression())) {
-      reportIssue(tree, "Replace this usage of System.out or System.err by a logger.");
+      reportIssue(tree, "Replace this use of System.out or System.err by a logger.");
     }
   }
 

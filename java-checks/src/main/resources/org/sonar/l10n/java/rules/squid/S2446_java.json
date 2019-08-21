@@ -8,11 +8,10 @@
   },
   "tags": [
     "multi-threading",
-    "bug",
     "cert"
   ],
-  "standards": [
-    "CERT"
-  ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-2446",
+  "sqKey": "S2446",
+  "scope": "All"
 }

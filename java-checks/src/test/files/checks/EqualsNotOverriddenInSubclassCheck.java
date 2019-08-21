@@ -14,7 +14,7 @@ class A {
   }
 }
 
-class B extends A { // Noncompliant [[sc=7;ec=8]]  {{Override this superclass' "equals" method.}}
+class B extends A { // Noncompliant [[sc=7;ec=8]]  {{Override the "equals" method in this class.}}
   String s2;
 }
 
@@ -83,4 +83,15 @@ class M {
 
 class N extends M { // Compliant - M.equals() is final
   int i;
+}
+
+class O extends A {
+  @Override
+  public final boolean equals(Object obj) {
+    return false;
+  }
+}
+
+class P extends O { // Compliant - O.equals() is final
+  String s;
 }

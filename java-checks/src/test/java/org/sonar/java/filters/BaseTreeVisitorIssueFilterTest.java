@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,15 +20,18 @@
 package org.sonar.java.filters;
 
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Multimap;
-
+import java.util.Collections;
+import java.util.Set;
+import javax.annotation.Nullable;
 import org.assertj.core.api.AbstractBooleanAssert;
 import org.junit.Before;
 import org.junit.Test;
+import org.sonar.api.batch.fs.InputFile;
 import org.sonar.api.rule.RuleKey;
 import org.sonar.api.scan.issue.filter.FilterableIssue;
 import org.sonar.check.Rule;
+import org.sonar.java.CheckTestUtils;
 import org.sonar.java.ast.JavaAstScanner;
 import org.sonar.java.model.VisitorsBridgeForTests;
 import org.sonar.plugins.java.api.JavaCheck;
@@ -36,20 +39,14 @@ import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
-import javax.annotation.Nullable;
-
-import java.io.File;
-import java.util.List;
-import java.util.Set;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 public class BaseTreeVisitorIssueFilterTest {
 
+  private static final InputFile INPUT_FILE = CheckTestUtils.inputFile("src/test/files/filters/BaseTreeVisitorIssueFilter.java");
   private static final String REPOSITORY_KEY = "octopus";
-  private static final String COMPONENT_KEY = "test:test.MyTest";
   private static final String RULE_KEY = "S42";
   private BaseTreeVisitorIssueFilter filter;
   private FilterableIssue issue;
@@ -57,12 +54,11 @@ public class BaseTreeVisitorIssueFilterTest {
   @Before
   public void setup() {
     issue = mock(FilterableIssue.class);
-    when(issue.componentKey()).thenReturn(COMPONENT_KEY);
+    when(issue.componentKey()).thenReturn(INPUT_FILE.key());
     when(issue.ruleKey()).thenReturn(RuleKey.of(REPOSITORY_KEY, RULE_KEY));
 
     filter = new FakeJavaIssueFilterOnClassAndVariable();
 
-    filter.setComponentKey(COMPONENT_KEY);
     scanFile(filter);
   }
 
@@ -112,7 +108,7 @@ public class BaseTreeVisitorIssueFilterTest {
     filter = new BaseTreeVisitorIssueFilter() {
       @Override
       public Set<Class<? extends JavaCheck>> filteredRules() {
-        return ImmutableSet.of();
+        return Collections.emptySet();
       }
     };
     // no component is set
@@ -180,8 +176,7 @@ public class BaseTreeVisitorIssueFilterTest {
   }
 
   private static void scanFile(JavaIssueFilter filter) {
-    List<JavaCheck> visitors = Lists.<JavaCheck>newArrayList(filter);
-    VisitorsBridgeForTests visitorsBridge = new VisitorsBridgeForTests(visitors, Lists.<File>newLinkedList(), null);
-    JavaAstScanner.scanSingleFileForTests(new File("src/test/files/filters/BaseTreeVisitorIssueFilter.java"), visitorsBridge);
+    VisitorsBridgeForTests visitorsBridge = new VisitorsBridgeForTests(Collections.singletonList(filter), Collections.emptyList(), null);
+    JavaAstScanner.scanSingleFileForTests(INPUT_FILE, visitorsBridge);
   }
 }

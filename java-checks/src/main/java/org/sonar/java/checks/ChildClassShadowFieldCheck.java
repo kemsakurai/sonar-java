@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,13 +19,12 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
 import org.sonar.check.Rule;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.ClassTree;
+import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 import org.sonar.plugins.java.api.tree.TypeTree;
@@ -33,17 +32,18 @@ import org.sonar.plugins.java.api.tree.VariableTree;
 
 import javax.annotation.CheckForNull;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
 @Rule(key = "S2387")
 public class ChildClassShadowFieldCheck extends IssuableSubscriptionVisitor {
 
-  private static final Set<String> IGNORED_FIELDS = ImmutableSet.of("serialVersionUID");
+  private static final Set<String> IGNORED_FIELDS = Collections.singleton("serialVersionUID");
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.CLASS);
+    return Collections.singletonList(Tree.Kind.CLASS);
   }
 
   @Override
@@ -53,35 +53,32 @@ public class ChildClassShadowFieldCheck extends IssuableSubscriptionVisitor {
       Symbol.TypeSymbol superclassSymbol = superClass.symbolType().symbol();
       ((ClassTree) tree).members().stream()
         .filter(m -> m.is(Kind.VARIABLE))
-        .map(m -> (VariableTree) m)
-        .forEach(v -> {
-          String fieldName = v.simpleName().name();
-          if (!IGNORED_FIELDS.contains(fieldName)) {
-            checkForIssue(superclassSymbol, v, fieldName);
+        .map(VariableTree.class::cast)
+        .map(VariableTree::simpleName)
+        .forEach(fieldSimpleName -> {
+          if (!IGNORED_FIELDS.contains(fieldSimpleName.name())) {
+            checkForIssue(superclassSymbol, fieldSimpleName);
           }
         });
     }
   }
 
-  private void checkForIssue(Symbol.TypeSymbol classSymbol, VariableTree variableTree, String fieldName) {
+  private void checkForIssue(Symbol.TypeSymbol classSymbol, IdentifierTree fieldSimpleName) {
     for (Symbol.TypeSymbol symbol = classSymbol; symbol != null; symbol = getSuperclass(symbol)) {
-      if (checkMembers(variableTree, fieldName, symbol)) {
+      if (checkMembers(fieldSimpleName, symbol)) {
         return;
       }
     }
   }
 
-  private boolean checkMembers(VariableTree variableTree, String fieldName, Symbol.TypeSymbol symbol) {
+  private boolean checkMembers(IdentifierTree fieldSimpleName, Symbol.TypeSymbol symbol) {
     for (Symbol member : symbol.memberSymbols()) {
-      if (member.isVariableSymbol() && !member.isPrivate()) {
-        if (member.name().equals(fieldName)) {
-          reportIssue(variableTree.simpleName(), String.format("\"%s\" is the name of a field in \"%s\".", fieldName, symbol.name()));
-          return true;
-        }
-        if (member.name().equalsIgnoreCase(fieldName)) {
-          reportIssue(variableTree.simpleName(), String.format("\"%s\" differs only by case from \"%s\" in \"%s\".", fieldName, member.name(), symbol.name()));
-          return true;
-        }
+      if (member.isVariableSymbol()
+        && !member.isPrivate()
+        && !member.isStatic()
+        && member.name().equals(fieldSimpleName.name())) {
+        reportIssue(fieldSimpleName, String.format("\"%s\" is the name of a field in \"%s\".", fieldSimpleName.name(), symbol.name()));
+        return true;
       }
     }
     return false;

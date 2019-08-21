@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -40,5 +40,10 @@ public class AbstractClassNoFieldShouldBeInterfaceCheckTest {
   public void test_with_java_8() {
     JavaCheckVerifier.verify(TEST_FILE, new AbstractClassNoFieldShouldBeInterfaceCheck(), 8);
     JavaCheckVerifier.verify("src/test/files/checks/AbstractClassNoFieldShouldBeInterfaceCheck_javalang.java", new AbstractClassNoFieldShouldBeInterfaceCheck(), 8);
+  }
+
+  @Test
+  public void test_with_java_9() {
+    JavaCheckVerifier.verify("src/test/files/checks/AbstractClassNoFieldShouldBeInterfaceCheck_java9.java", new AbstractClassNoFieldShouldBeInterfaceCheck(), 9);
   }
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,42 +19,36 @@
  */
 package org.sonar.java.se.symbolicvalues;
 
-import org.sonar.java.se.constraint.BooleanConstraint;
-
-import javax.annotation.Nullable;
-
 /**
  * This enum values are the possible returns of the method implies(SymbolicValueRelation) of class SymbolicValueRelation.
- * @see BinaryRelation#implies
+ * @see RelationalSymbolicValue#implies(RelationalSymbolicValue)
  */
-public enum RelationState {
+enum RelationState {
   /**
    * This value means that the checked relation is fulfilled by the set of known relations
    */
-  FULFILLED(true, BooleanConstraint.FALSE),
+  FULFILLED,
   /**
    * This value means that the checked relation is not fulfilled by the set of known relations
    */
-  UNFULFILLED(true, BooleanConstraint.TRUE),
+  UNFULFILLED,
   /**
    * This value means that the checked relation is not determined by the set of known relations
    */
-  UNDETERMINED(false, null);
-
-  private final boolean determined;
-  private final BooleanConstraint checkedConstraint;
-
-  RelationState(boolean determined, @Nullable BooleanConstraint checkedConstraint) {
-    this.determined = determined;
-    this.checkedConstraint = checkedConstraint;
-  }
-
-  public boolean rejects(BooleanConstraint constraint) {
-    return checkedConstraint != null && checkedConstraint.equals(constraint);
-  }
+  UNDETERMINED;
 
   public boolean isDetermined() {
-    return determined;
+    return this != UNDETERMINED;
+  }
+
+  RelationState invert() {
+    if (this == FULFILLED) {
+      return UNFULFILLED;
+    }
+    if (this == UNFULFILLED) {
+      return FULFILLED;
+    }
+    return UNDETERMINED;
   }
 
 }

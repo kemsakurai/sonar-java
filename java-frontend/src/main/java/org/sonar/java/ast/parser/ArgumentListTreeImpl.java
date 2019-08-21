@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,6 @@
  */
 package org.sonar.java.ast.parser;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import org.sonar.java.model.InternalSyntaxToken;
 import org.sonar.plugins.java.api.tree.Arguments;
@@ -37,14 +36,14 @@ public class ArgumentListTreeImpl extends ListTreeImpl<ExpressionTree> implement
   private InternalSyntaxToken closeParenToken;
 
   public ArgumentListTreeImpl(InternalSyntaxToken openParenToken, InternalSyntaxToken closeParenToken) {
-    super(JavaLexer.ARGUMENTS, ImmutableList.<ExpressionTree>of(), ImmutableList.<SyntaxToken>of());
+    super(JavaLexer.ARGUMENTS, Collections.emptyList(), Collections.emptyList());
 
     this.openParenToken = openParenToken;
     this.closeParenToken = closeParenToken;
   }
 
   public ArgumentListTreeImpl(InternalSyntaxToken openParenToken, ExpressionTree expression, InternalSyntaxToken closeParenToken) {
-    super(JavaLexer.ARGUMENTS, ImmutableList.of(expression), ImmutableList.<SyntaxToken>of());
+    super(JavaLexer.ARGUMENTS, Collections.singletonList(expression), Collections.emptyList());
 
     this.openParenToken = openParenToken;
     this.closeParenToken = closeParenToken;

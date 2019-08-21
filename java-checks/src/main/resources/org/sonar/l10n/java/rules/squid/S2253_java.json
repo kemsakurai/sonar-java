@@ -5,5 +5,8 @@
   "tags": [
     
   ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-2253",
+  "sqKey": "S2253",
+  "scope": "Main"
 }

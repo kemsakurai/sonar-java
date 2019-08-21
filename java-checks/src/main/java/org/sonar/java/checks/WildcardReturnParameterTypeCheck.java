@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,11 +19,10 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
-import org.apache.commons.lang.BooleanUtils;
+import java.util.Collections;
+import java.util.List;
 import org.sonar.check.Rule;
 import org.sonar.java.model.ModifiersUtils;
-import org.sonar.java.model.declaration.MethodTreeImpl;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
 import org.sonar.plugins.java.api.tree.MethodTree;
@@ -32,14 +31,12 @@ import org.sonar.plugins.java.api.tree.ParameterizedTypeTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.WildcardTree;
 
-import java.util.List;
-
 @Rule(key = "S1452")
 public class WildcardReturnParameterTypeCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD);
+    return Collections.singletonList(Tree.Kind.METHOD);
   }
 
   @Override
@@ -55,7 +52,7 @@ public class WildcardReturnParameterTypeCheck extends IssuableSubscriptionVisito
   }
 
   private static boolean isOverriding(MethodTree tree) {
-    return BooleanUtils.isTrue(((MethodTreeImpl) tree).isOverriding());
+    return Boolean.TRUE.equals(tree.isOverriding());
   }
 
   private class CheckWildcard extends BaseTreeVisitor {

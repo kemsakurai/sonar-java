@@ -11,9 +11,13 @@
     "obsolete",
     "cert"
   ],
-  "standards": [
-    "CWE",
-    "CERT"
-  ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-1874",
+  "sqKey": "S1874",
+  "scope": "Main",
+  "securityStandards": {
+    "CWE": [
+      477
+    ]
+  }
 }

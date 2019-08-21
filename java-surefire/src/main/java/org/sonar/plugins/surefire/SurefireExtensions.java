@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,6 +20,7 @@
 package org.sonar.plugins.surefire;
 
 import com.google.common.collect.ImmutableList;
+
 import org.sonar.api.config.PropertyDefinition;
 import org.sonar.api.resources.Qualifiers;
 import org.sonar.java.JavaConstants;
@@ -34,10 +35,15 @@ public final class SurefireExtensions {
 
   public static List getExtensions() {
     return ImmutableList.of(
-        PropertyDefinition.builder(SurefireUtils.SUREFIRE_REPORTS_PATH_PROPERTY)
-            .name("JUnit Reports")
-            .description("Path to the directory containing all the *.xml JUnit report files. The path may be absolute or relative to the project base directory.")
+        /**
+         * @since 4.11
+         */
+        PropertyDefinition.builder(SurefireUtils.SUREFIRE_REPORT_PATHS_PROPERTY)
+            .name("JUnit Report Paths")
+            .description("Comma-separated paths to the various directories containing the *.xml JUnit report files. "
+              + "Each path may be absolute or relative to the project base directory.")
             .onQualifiers(Qualifiers.PROJECT)
+            .multiValues(true)
             .category(JavaConstants.JAVA_CATEGORY)
             .subCategory("JUnit")
             .build(),

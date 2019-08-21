@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -26,5 +26,6 @@ public class CloneOverrideCheckTest {
   @Test
   public void test() {
     JavaCheckVerifier.verify("src/test/files/checks/CloneOverrideCheck.java", new CloneOverrideCheck());
+    JavaCheckVerifier.verifyNoIssueWithoutSemantic("src/test/files/checks/CloneOverrideCheck.java", new CloneOverrideCheck());
   }
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,8 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
 import org.sonar.java.checks.methods.AbstractMethodDetection;
 import org.sonar.java.model.ModifiersUtils;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
@@ -28,22 +26,32 @@ import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Modifier;
 import org.sonar.plugins.java.api.tree.Tree;
 
+import java.util.Arrays;
 import java.util.Deque;
+import java.util.LinkedList;
 import java.util.List;
 
 public abstract class AbstractInSynchronizeChecker extends AbstractMethodDetection {
-  private Deque<Boolean> withinSynchronizedBlock = Lists.newLinkedList();
+  private Deque<Boolean> withinSynchronizedBlock = new LinkedList<>();
 
   @Override
-  public void scanFile(JavaFileScannerContext context) {
+  public void setContext(JavaFileScannerContext context) {
     withinSynchronizedBlock.push(false);
-    super.scanFile(context);
+    super.setContext(context);
+  }
+
+  @Override
+  public void leaveFile(JavaFileScannerContext context) {
     withinSynchronizedBlock.clear();
   }
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD_INVOCATION, Tree.Kind.SYNCHRONIZED_STATEMENT, Tree.Kind.METHOD);
+    return Arrays.asList(
+      Tree.Kind.METHOD_INVOCATION,
+      Tree.Kind.SYNCHRONIZED_STATEMENT,
+      Tree.Kind.METHOD,
+      Tree.Kind.LAMBDA_EXPRESSION);
   }
 
   @Override
@@ -54,12 +62,14 @@ public abstract class AbstractInSynchronizeChecker extends AbstractMethodDetecti
       withinSynchronizedBlock.push(ModifiersUtils.hasModifier(((MethodTree) tree).modifiers(), Modifier.SYNCHRONIZED));
     } else if (tree.is(Tree.Kind.SYNCHRONIZED_STATEMENT)) {
       withinSynchronizedBlock.push(true);
+    } else if (tree.is(Tree.Kind.LAMBDA_EXPRESSION)) {
+      withinSynchronizedBlock.push(false);
     }
   }
 
   @Override
   public void leaveNode(Tree tree) {
-    if (tree.is(Tree.Kind.METHOD, Tree.Kind.SYNCHRONIZED_STATEMENT)) {
+    if (tree.is(Tree.Kind.METHOD, Tree.Kind.SYNCHRONIZED_STATEMENT, Tree.Kind.LAMBDA_EXPRESSION)) {
       withinSynchronizedBlock.pop();
     }
   }

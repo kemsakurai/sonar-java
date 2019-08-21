@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,26 +19,25 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Arrays;
+import java.util.List;
 import org.sonar.check.Rule;
-import org.sonar.java.checks.helpers.MethodsHelper;
 import org.sonar.java.matcher.MethodMatcher;
+import org.sonar.java.model.ExpressionUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.NewClassTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import java.util.List;
-
 @Rule(key = "S2245")
 public class PseudoRandomCheck extends IssuableSubscriptionVisitor {
 
-  private static final String MESSAGE = "Use a cryptographically strong random number generator (RNG) like \"java.security.SecureRandom\" in place of this PRNG";
+  private static final String MESSAGE = "Make sure that using this pseudorandom number generator is safe here.";
   private static final MethodMatcher MATH_RANDOM_MATCHER = MethodMatcher.create().typeDefinition("java.lang.Math").name("random").withoutParameter();
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.NEW_CLASS, Tree.Kind.METHOD_INVOCATION);
+    return Arrays.asList(Tree.Kind.NEW_CLASS, Tree.Kind.METHOD_INVOCATION);
   }
 
   @Override
@@ -46,7 +45,7 @@ public class PseudoRandomCheck extends IssuableSubscriptionVisitor {
     if (tree.is(Tree.Kind.METHOD_INVOCATION)) {
       MethodInvocationTree mit = (MethodInvocationTree) tree;
       if (MATH_RANDOM_MATCHER.matches(mit)) {
-        reportIssue(MethodsHelper.methodName(mit), MESSAGE);
+        reportIssue(ExpressionUtils.methodName(mit), MESSAGE);
       }
     } else {
       NewClassTree newClass = (NewClassTree) tree;

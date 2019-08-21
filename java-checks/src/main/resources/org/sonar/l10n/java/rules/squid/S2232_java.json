@@ -1,6 +1,6 @@
 {
   "title": "\"ResultSet.isLast()\" should not be used",
-  "type": "BUG",
+  "type": "CODE_SMELL",
   "status": "ready",
   "remediation": {
     "func": "Constant\/Issue",
@@ -8,9 +8,11 @@
   },
   "tags": [
     "performance",
-    "bug",
     "pitfall",
     "sql"
   ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-2232",
+  "sqKey": "S2232",
+  "scope": "Main"
 }

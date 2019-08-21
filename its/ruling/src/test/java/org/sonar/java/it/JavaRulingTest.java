@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2013-2017 SonarSource SA
+ * Copyright (C) 2013-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -23,12 +23,30 @@ import com.google.common.base.Splitter;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.google.gson.Gson;
 import com.sonar.orchestrator.Orchestrator;
 import com.sonar.orchestrator.build.Build;
+import com.sonar.orchestrator.build.BuildResult;
 import com.sonar.orchestrator.build.MavenBuild;
 import com.sonar.orchestrator.build.SonarScanner;
+import com.sonar.orchestrator.container.Server;
 import com.sonar.orchestrator.locator.FileLocation;
+import com.sonar.orchestrator.locator.MavenLocation;
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import javax.annotation.Nullable;
 import no.finn.lambdacompanion.Try;
+import org.apache.commons.lang.StringUtils;
 import org.assertj.core.api.Assertions;
 import org.assertj.core.api.Fail;
 import org.junit.BeforeClass;
@@ -39,21 +57,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.sonar.wsclient.SonarClient;
 
-import javax.annotation.Nullable;
-import java.io.File;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 public class JavaRulingTest {
 
+  private static final int LOGS_NUMBER_LINES = 200;
   private static final Logger LOG = LoggerFactory.getLogger(JavaRulingTest.class);
 
   // by default all rules are enabled, if you want to enable just a subset of rules you can specify the list of
@@ -71,10 +77,11 @@ public class JavaRulingTest {
 
   @ClassRule
   public static Orchestrator orchestrator = Orchestrator.builderEnv()
-  .addPlugin(FileLocation.byWildcardMavenFilename(new File("../../sonar-java-plugin/target"), "sonar-java-plugin-*.jar"))
-  .setOrchestratorProperty("litsVersion", "0.5")
-  .addPlugin("lits")
-  .build();
+    .setSonarVersion(System.getProperty("sonar.runtimeVersion", "LATEST_RELEASE[7.9]"))
+    .addPlugin(FileLocation.byWildcardMavenFilename(new File("../../sonar-java-plugin/target"), "sonar-java-plugin-*.jar"))
+    .addPlugin(MavenLocation.of("org.sonarsource.sonar-lits-plugin","sonar-lits-plugin", "0.8.0.1209"))
+    .build();
+  private static final Gson GSON = new Gson();
 
   @BeforeClass
   public static void prepare_quality_profiles() {
@@ -97,9 +104,9 @@ public class JavaRulingTest {
       "LeftCurlyBraceStartLineCheck"
       );
     Set<String> activatedRuleKeys = new HashSet<>();
-    ProfileGenerator.generate(orchestrator, "java", "squid", rulesParameters, disabledRules, SUBSET_OF_ENABLED_RULES, activatedRuleKeys);
+    ProfileGenerator.generate(orchestrator, rulesParameters, disabledRules, SUBSET_OF_ENABLED_RULES, activatedRuleKeys);
     instantiateTemplateRule("S2253", "stringToCharArray", "className=\"java.lang.String\";methodName=\"toCharArray\"", activatedRuleKeys);
-    instantiateTemplateRule("ArchitecturalConstraint", "doNotUseJavaIoFile", "fromClasses=\"**\";toClasses=\"java.io.File\"", activatedRuleKeys);
+    instantiateTemplateRule("S4011", "longDate", "className=\"java.util.Date\";argumentTypes=\"long\"", activatedRuleKeys);
     instantiateTemplateRule("S124", "commentRegexTest", "regularExpression=\"(?i).*TODO\\(user\\).*\";message=\"bad user\"", activatedRuleKeys);
     instantiateTemplateRule("S3417", "doNotUseCommonsCollections", "dependencyName=\"commons-collections:*\";", activatedRuleKeys);
     instantiateTemplateRule("S3417", "doNotUseJunitBefore4", "dependencyName=\"junit:junit\";version=\"*-3.9.9\"", activatedRuleKeys);
@@ -138,29 +145,24 @@ public class JavaRulingTest {
 
   @Test
   public void guava() throws Exception {
-    test_project("com.google.guava:guava", "guava");
+    String projectName = "guava";
+    MavenBuild build = test_project("com.google.guava:guava", projectName);
+    executeBuildWithCommonProperties(build, projectName);
   }
 
   @Test
   public void apache_commons_beanutils() throws Exception {
-    test_project("commons-beanutils:commons-beanutils", "commons-beanutils");
-  }
-
-  @Test
-  public void fluent_http() throws Exception {
-    test_project("net.code-story:http", "fluent-http");
-  }
-
-  @Test
-  public void java_squid() throws Exception {
-    // sonar-java/java-squid (v3.6)
-    test_project("org.sonarsource.java:java-squid", "java-squid");
+    String projectName = "commons-beanutils";
+    MavenBuild build = test_project("commons-beanutils:commons-beanutils", projectName);
+    executeBuildWithCommonProperties(build, projectName);
   }
 
   @Test
   public void sonarqube_server() throws Exception {
-    // sonarqube/server/sonar-server (v.5.1.2)
-    test_project("org.codehaus.sonar:sonar-server", "sonarqube/server", "sonar-server");
+    // sonarqube-6.5/server/sonar-server (v.6.5)
+    String projectName = "sonar-server";
+    MavenBuild build = test_project("org.sonarsource.sonarqube:sonar-server", "sonarqube-6.5/server", projectName);
+    executeBuildWithCommonProperties(build, projectName);
   }
 
   @Test
@@ -174,8 +176,11 @@ public class JavaRulingTest {
       .setProjectVersion("0.1.0-SNAPSHOT")
       .setSourceEncoding("UTF-8")
       .setSourceDirs(".")
+      .setDebugLogs(true)
+      // Dummy sonar.java.binaries to pass validation
+      .setProperty("sonar.java.binaries", "asynch")
       .setProperty("sonar.java.source", "1.5");
-    executeBuildWithCommonProperties(build, projectName);
+    executeDebugBuildWithCommonProperties(build, projectName);
   }
 
   /**
@@ -192,20 +197,23 @@ public class JavaRulingTest {
       .setSourceEncoding("UTF-8")
       .setSourceDirs(".")
       .setProperty("sonar.java.source", "1.5")
+      // Dummy sonar.java.binaries to pass validation
+      .setProperty("sonar.java.binaries", "launcher")
       .setProperty("sonar.inclusions", "java/**/*.java");
     executeBuildWithCommonProperties(build, projectName);
   }
 
-  private static void test_project(String projectKey, String projectName) throws IOException {
-    test_project(projectKey, null, projectName);
+  private static MavenBuild test_project(String projectKey, String projectName) throws IOException {
+    return test_project(projectKey, null, projectName);
   }
 
-  private static void test_project(String projectKey, @Nullable String path, String projectName) throws IOException {
+  private static MavenBuild test_project(String projectKey, @Nullable String path, String projectName) throws IOException {
     String pomLocation = "../sources/" + (path != null ? path + "/" : "") + projectName + "/pom.xml";
-    File pomFile = FileLocation.of(pomLocation).getFile();
+    File pomFile = FileLocation.of(pomLocation).getFile().getCanonicalFile();
     prepareProject(projectKey, projectName);
     MavenBuild mavenBuild = MavenBuild.create().setPom(pomFile).setCleanPackageSonarGoals().addArgument("-DskipTests");
-    executeBuildWithCommonProperties(mavenBuild, projectName);
+    mavenBuild.setProperty("sonar.projectKey", projectKey);
+    return mavenBuild;
   }
 
   private static void prepareProject(String projectKey, String projectName) {
@@ -213,31 +221,68 @@ public class JavaRulingTest {
     orchestrator.getServer().associateProjectToQualityProfile(projectKey, "java", "rules");
   }
 
+  private static void executeDebugBuildWithCommonProperties(Build<?> build, String projectName) throws IOException {
+    executeBuildWithCommonProperties(build, projectName, true);
+  }
+
   private static void executeBuildWithCommonProperties(Build<?> build, String projectName) throws IOException {
-    build.setProperty("sonar.cpd.skip", "true")
+    executeBuildWithCommonProperties(build, projectName, false);
+  }
+
+  private static void executeBuildWithCommonProperties(Build<?> build, String projectName, boolean buildQuietly) throws IOException {
+    build.setProperty("sonar.cpd.exclusions", "**/*")
       .setProperty("sonar.import_unknown_files", "true")
       .setProperty("sonar.skipPackageDesign", "true")
-      .setProperty("sonar.analysis.mode", "preview")
-      .setProperty("sonar.issuesReport.html.enable", "true")
-      .setProperty("sonar.issuesReport.html.location", htmlReportPath(projectName))
       .setProperty("dump.old", effectiveDumpOldFolder.resolve(projectName).toString())
       .setProperty("dump.new", FileLocation.of("target/actual/" + projectName).getFile().getAbsolutePath())
-      .setProperty("lits.differences", litsDifferencesPath(projectName));
-    orchestrator.executeBuild(build);
-    assertNoDifferences(projectName);
+      .setProperty("lits.differences", litsDifferencesPath(projectName))
+      .setProperty("sonar.java.xfile", "true")
+      .setProperty("sonar.java.failOnException", "true");
+    BuildResult buildResult;
+    if (buildQuietly) {
+      // if build fail, ruling job is not violently interrupted, allowing time to dump SQ logs
+      buildResult = orchestrator.executeBuildQuietly(build);
+    } else {
+      buildResult = orchestrator.executeBuild(build);
+    }
+    if (buildResult.isSuccess()) {
+      assertNoDifferences(projectName);
+    } else {
+      dumpServerLogs();
+      Fail.fail("Build failure for project: " + projectName);
+    }
+  }
+
+  private static void dumpServerLogs() throws IOException {
+    Server server = orchestrator.getServer();
+    LOG.error("::::::::::::::::::::::::::::::::::: DUMPING SERVER LOGS :::::::::::::::::::::::::::::::::::");
+    dumpServerLogLastLines(server.getAppLogs());
+    dumpServerLogLastLines(server.getCeLogs());
+    dumpServerLogLastLines(server.getEsLogs());
+    dumpServerLogLastLines(server.getWebLogs());
+  }
+
+  private static void dumpServerLogLastLines(File logFile) throws IOException {
+    if (!logFile.exists()) {
+      return;
+    }
+    List<String> logs = Files.readAllLines(logFile.toPath());
+    int nbLines = logs.size();
+    if (nbLines > LOGS_NUMBER_LINES) {
+      logs = logs.subList(nbLines - LOGS_NUMBER_LINES, nbLines);
+    }
+    LOG.error("=================================== START " + logFile.getName() + " ===================================");
+    LOG.error(System.lineSeparator() + logs.stream().collect(Collectors.joining(System.lineSeparator())));
+    LOG.error("===================================== END " + logFile.getName() + " ===================================");
   }
 
   private static String litsDifferencesPath(String projectName) {
     return FileLocation.of("target/" + projectName + "_differences").getFile().getAbsolutePath();
   }
 
-  private static String htmlReportPath(String projectName) {
-    return FileLocation.of("target/" + projectName + "_issue-report").getFile().getAbsolutePath();
-  }
-
   private static void assertNoDifferences(String projectName) throws IOException {
     String differences = new String(Files.readAllBytes(Paths.get(litsDifferencesPath(projectName))), StandardCharsets.UTF_8);
-    Assertions.assertThat(differences).overridingErrorMessage(differences + " -> file://" + htmlReportPath(projectName) + "/issues-report.html").isEmpty();
+    Assertions.assertThat(differences).isEmpty();
   }
 
   private static void instantiateTemplateRule(String ruleTemplateKey, String instantiationKey, String params, Set<String> activatedRuleKeys) {
@@ -256,18 +301,24 @@ public class JavaRulingTest {
       .put("prevent_reactivation", "true")
       .put("params", "name=\"" + instantiationKey + "\";key=\"" + instantiationKey + "\";markdown_description=\"" + instantiationKey + "\";" + params)
       .build());
-    String post = sonarClient.get("api/rules/app");
-    Pattern pattern = Pattern.compile("java-rules-\\d+");
-    Matcher matcher = pattern.matcher(post);
-    if (matcher.find()) {
-      String profilekey = matcher.group();
-      sonarClient.post("api/qualityprofiles/activate_rule", ImmutableMap.<String, Object>of(
-        "profile_key", profilekey,
+    String post = sonarClient.get("api/qualityprofiles/search");
+    String profileKey = null;
+    Map map = GSON.fromJson(post, Map.class);
+    for (Map qp : ((List<Map>) map.get("profiles"))) {
+      if ("rules".equals(qp.get("name"))) {
+        profileKey = (String) qp.get("key");
+        break;
+      }
+    }
+    if (StringUtils.isEmpty(profileKey)) {
+      LOG.error("Could not retrieve profile key : Template rule " + ruleTemplateKey + " has not been activated");
+    } else {
+      String activateRuleResponse = sonarClient.post("api/qualityprofiles/activate_rule", ImmutableMap.of(
+        "profile_key", profileKey,
         "rule_key", "squid:" + instantiationKey,
         "severity", "INFO",
         "params", ""));
-    } else {
-      LOG.error("Could not retrieve profile key : Template rule " + ruleTemplateKey + " has not been activated");
+      LOG.warn(activateRuleResponse);
     }
   }
 

@@ -288,4 +288,13 @@ public class StandardFunctionalInterfaceCheck {
     byte[] bar(int value);
   }
 
+  @FunctionalInterface
+  public interface InterfaceWithObjectMethodName { // Noncompliant {{Drop this interface in favor of "java.util.function.Consumer<String>".}}
+    void notify(String param);
+  }
+
+  @FunctionalInterface // not really functional iface, just to test private methods
+  public interface InterfaceWithPrivateMethod {
+    private void notify(String param) {};
+  }
 }

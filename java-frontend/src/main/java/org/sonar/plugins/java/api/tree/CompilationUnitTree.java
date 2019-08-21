@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -41,6 +41,19 @@ public interface CompilationUnitTree extends Tree {
   List<ImportClauseTree> imports();
 
   List<Tree> types();
+
+  /**
+   * Experimental feature allowing retrieval of java 9 module declaration from 'module-info.java' files.
+   *
+   * In java 9, a new compilation unit level has been introduced, splitting current compilation units between 
+   * 'Modular' and 'Ordinary' Compilation Units. In order to not introduce breaking change in API too early, and as long as java 9 
+   * is not officially released, the 'Module Declaration' part of the Java 9 'Modular Compilation Unit' will be part of the
+   * current Compilation Unit interface.
+   *
+   * @since Java 9
+   */
+  @Nullable
+  ModuleDeclarationTree moduleDeclaration();
 
   SyntaxToken eofToken();
 

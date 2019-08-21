@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,18 +19,18 @@
  */
 package org.sonar.plugins.surefire;
 
+import java.io.File;
+import java.util.List;
 import org.sonar.api.batch.DependedUpon;
 import org.sonar.api.batch.fs.FileSystem;
 import org.sonar.api.batch.sensor.Sensor;
 import org.sonar.api.batch.sensor.SensorContext;
 import org.sonar.api.batch.sensor.SensorDescriptor;
-import org.sonar.api.config.Settings;
+import org.sonar.api.config.Configuration;
 import org.sonar.api.scan.filesystem.PathResolver;
 import org.sonar.api.utils.log.Logger;
 import org.sonar.api.utils.log.Loggers;
 import org.sonar.plugins.surefire.api.SurefireUtils;
-
-import java.io.File;
 
 @DependedUpon("surefire-java")
 public class SurefireSensor implements Sensor {
@@ -38,11 +38,11 @@ public class SurefireSensor implements Sensor {
   private static final Logger LOGGER = Loggers.get(SurefireSensor.class);
 
   private final SurefireJavaParser surefireJavaParser;
-  private final Settings settings;
+  private final Configuration settings;
   private final FileSystem fs;
   private final PathResolver pathResolver;
 
-  public SurefireSensor(SurefireJavaParser surefireJavaParser, Settings settings, FileSystem fs, PathResolver pathResolver) {
+  public SurefireSensor(SurefireJavaParser surefireJavaParser, Configuration settings, FileSystem fs, PathResolver pathResolver) {
     this.surefireJavaParser = surefireJavaParser;
     this.settings = settings;
     this.fs = fs;
@@ -56,13 +56,13 @@ public class SurefireSensor implements Sensor {
 
   @Override
   public void execute(SensorContext context) {
-    File dir = SurefireUtils.getReportsDirectory(settings, fs, pathResolver);
-    collect(context, dir);
+    List<File> dirs = SurefireUtils.getReportsDirectories(settings, fs, pathResolver);
+    collect(context, dirs);
   }
 
-  protected void collect(SensorContext context, File reportsDir) {
-    LOGGER.info("parsing {}", reportsDir);
-    surefireJavaParser.collect(context, reportsDir, settings.hasKey(SurefireUtils.SUREFIRE_REPORTS_PATH_PROPERTY));
+  protected void collect(SensorContext context, List<File> reportsDirs) {
+    LOGGER.info("parsing {}", reportsDirs);
+    surefireJavaParser.collect(context, reportsDirs, settings.hasKey(SurefireUtils.SUREFIRE_REPORT_PATHS_PROPERTY));
   }
 
   @Override

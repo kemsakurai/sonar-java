@@ -9,5 +9,8 @@
   "tags": [
     "error-handling"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-1165",
+  "sqKey": "S1165",
+  "scope": "All"
 }

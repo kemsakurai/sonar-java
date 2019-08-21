@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import org.sonar.check.Rule;
 import org.sonar.java.checks.helpers.ValueBasedUtils;
 import org.sonar.java.checks.serialization.SerializableContract;
@@ -35,6 +34,7 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
+import java.util.Arrays;
 import java.util.List;
 
 @Rule(key = "S3437")
@@ -44,7 +44,7 @@ public class ValueBasedObjectsShouldNotBeSerializedCheck extends IssuableSubscri
   
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.CLASS, Tree.Kind.ENUM, Tree.Kind.ANNOTATION_TYPE);
+    return Arrays.asList(Tree.Kind.CLASS, Tree.Kind.ENUM, Tree.Kind.ANNOTATION_TYPE);
   }
 
   @Override

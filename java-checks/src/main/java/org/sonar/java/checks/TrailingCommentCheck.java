@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,9 +19,13 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Sets;
+
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.regex.Pattern;
 import org.apache.commons.lang.StringUtils;
 import org.sonar.check.Rule;
 import org.sonar.check.RuleProperty;
@@ -32,16 +36,12 @@ import org.sonar.plugins.java.api.tree.SyntaxToken;
 import org.sonar.plugins.java.api.tree.SyntaxTrivia;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import java.util.List;
-import java.util.Set;
-import java.util.regex.Pattern;
-
 @Rule(key = "TrailingCommentCheck")
 @RspecKey("S139")
 public class TrailingCommentCheck extends IssuableSubscriptionVisitor {
 
   private static final String DEFAULT_LEGAL_COMMENT_PATTERN = "^\\s*+[^\\s]++$";
-  private static final Set<String> EXCLUDED_PATTERNS = ImmutableSet.of("NOSONAR", "NOPMD", "CHECKSTYLE:");
+  private static final Set<String> EXCLUDED_PATTERNS = ImmutableSet.of("NOSONAR", "NOPMD", "CHECKSTYLE:", "$NON-NLS");
 
   @RuleProperty(
     key = "legalTrailingCommentPattern",
@@ -56,17 +56,23 @@ public class TrailingCommentCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(
+    return Arrays.asList(
       Tree.Kind.TOKEN,
       Tree.Kind.VARIABLE);
   }
 
   @Override
-  public void scanFile(JavaFileScannerContext context) {
+  public void setContext(JavaFileScannerContext context) {
     previousTokenLine = -1;
-    pattern = Pattern.compile(legalCommentPattern);
-    visitedTokens = Sets.newHashSet();
-    super.scanFile(context);
+    if (pattern == null) {
+      pattern = Pattern.compile(legalCommentPattern);
+    }
+    visitedTokens = new HashSet<>();
+    super.setContext(context);
+  }
+
+  @Override
+  public void leaveFile(JavaFileScannerContext context) {
     visitedTokens.clear();
   }
 

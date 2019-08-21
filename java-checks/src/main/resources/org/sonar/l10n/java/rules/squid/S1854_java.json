@@ -1,6 +1,6 @@
 {
   "title": "Dead stores should be removed",
-  "type": "BUG",
+  "type": "CODE_SMELL",
   "status": "ready",
   "remediation": {
     "func": "Constant\/Issue",
@@ -8,14 +8,16 @@
   },
   "tags": [
     "cwe",
-    "bug",
     "cert",
-    "unused",
-    "suspicious"
+    "unused"
   ],
-  "standards": [
-    "CWE",
-    "CERT"
-  ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-1854",
+  "sqKey": "S1854",
+  "scope": "All",
+  "securityStandards": {
+    "CWE": [
+      563
+    ]
+  }
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,19 +19,21 @@
  */
 package org.sonar.java.se.checks;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
+import com.google.common.annotations.VisibleForTesting;
 
 import org.sonar.check.Rule;
 import org.sonar.java.model.ExpressionUtils;
 import org.sonar.java.se.CheckerContext;
+import org.sonar.java.se.Flow;
 import org.sonar.java.se.FlowComputation;
 import org.sonar.java.se.ProgramState;
 import org.sonar.java.se.constraint.Constraint;
 import org.sonar.java.se.constraint.ConstraintManager;
 import org.sonar.java.se.constraint.ObjectConstraint;
+import org.sonar.java.se.symbolicvalues.RelationalSymbolicValue;
 import org.sonar.java.se.symbolicvalues.SymbolicValue;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
+import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.AssignmentExpressionTree;
 import org.sonar.plugins.java.api.tree.BinaryExpressionTree;
@@ -44,6 +46,7 @@ import org.sonar.plugins.java.api.tree.UnaryExpressionTree;
 
 import javax.annotation.Nullable;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -52,15 +55,21 @@ import java.util.stream.Collectors;
 public class DivisionByZeroCheck extends SECheck {
 
   private static final ExceptionalYieldChecker EXCEPTIONAL_YIELD_CHECKER = new ExceptionalYieldChecker(
-    "A division by zero will occur when invoking method %s().");
+    "A division by zero will occur when invoking method \"%s()\".");
 
-  private enum ZeroConstraint implements Constraint {
+  @VisibleForTesting
+  public enum ZeroConstraint implements Constraint {
     ZERO,
     NON_ZERO;
 
     @Override
+    public boolean hasPreciseValue() {
+      return this == ZERO;
+    }
+
+    @Override
     public String valueAsString() {
-      if (this == ZeroConstraint.ZERO) {
+      if (this == ZERO) {
         return "zero";
       }
       return "non-zero";
@@ -69,6 +78,22 @@ public class DivisionByZeroCheck extends SECheck {
     @Override
     public boolean isValidWith(@Nullable Constraint constraint) {
       return constraint == null || this == constraint;
+    }
+
+    @Nullable
+    @Override
+    public Constraint copyOver(RelationalSymbolicValue.Kind kind) {
+      switch (kind) {
+        case EQUAL:
+        case METHOD_EQUALS:
+          return this;
+        case LESS_THAN:
+        case NOT_EQUAL:
+        case NOT_METHOD_EQUALS:
+          return inverse();
+        default:
+          return null;
+      }
     }
 
     @Override
@@ -89,8 +114,7 @@ public class DivisionByZeroCheck extends SECheck {
     @Nullable
     private final ZeroConstraint deferredConstraint;
 
-    DeferredConstraintHolderSV(int id, @Nullable ZeroConstraint deferredConstraint) {
-      super(id);
+    DeferredConstraintHolderSV(@Nullable ZeroConstraint deferredConstraint) {
       this.deferredConstraint = deferredConstraint;
     }
   }
@@ -114,51 +138,40 @@ public class DivisionByZeroCheck extends SECheck {
 
     @Override
     public void visitAssignmentExpression(AssignmentExpressionTree tree) {
-      List<SymbolicValue> symbolicValues;
       SymbolicValue var;
       SymbolicValue expr;
+      Symbol symbol;
       if (ExpressionUtils.isSimpleAssignment(tree)) {
-        var = programState.getValue(((IdentifierTree) ExpressionUtils.skipParentheses(tree.variable())).symbol());
+        symbol = ExpressionUtils.extractIdentifier(tree).symbol();
+        var = programState.getValue(symbol);
         expr = programState.peekValue();
       } else {
-        symbolicValues = programState.peekValues(2);
-        var = symbolicValues.get(1);
-        expr = symbolicValues.get(0);
+        ProgramState.Pop unstackValue = programState.unstackValue(2);
+        var = unstackValue.values.get(1);
+        expr = unstackValue.values.get(0);
+        symbol = unstackValue.valuesAndSymbols.get(0).symbol();
       }
 
-      checkExpression(tree, var, expr);
+      checkExpression(tree, var, expr, symbol);
     }
 
     @Override
     public void visitBinaryExpression(BinaryExpressionTree tree) {
-      List<SymbolicValue> symbolicValues;
       switch (tree.kind()) {
         case MULTIPLY:
         case PLUS:
         case MINUS:
         case DIVIDE:
         case REMAINDER:
-          symbolicValues = programState.peekValues(2);
-          checkExpression(tree, symbolicValues.get(1), symbolicValues.get(0));
-          break;
-        case GREATER_THAN:
-        case GREATER_THAN_OR_EQUAL_TO:
-        case LESS_THAN:
-        case LESS_THAN_OR_EQUAL_TO:
-          symbolicValues = programState.peekValues(2);
-          removeZeroConstraint(symbolicValues.get(1));
-          removeZeroConstraint(symbolicValues.get(0));
+          ProgramState.Pop unstackValue = programState.unstackValue(2);
+          checkExpression(tree, unstackValue.values.get(1), unstackValue.values.get(0), unstackValue.valuesAndSymbols.get(0).symbol());
           break;
         default:
           // do nothing
       }
     }
 
-    private void removeZeroConstraint(SymbolicValue sv) {
-      programState = programState.removeConstraintsOnDomain(sv, ZeroConstraint.class);
-    }
-
-    private void checkExpression(Tree tree, SymbolicValue leftOp, SymbolicValue rightOp) {
+    private void checkExpression(Tree tree, SymbolicValue leftOp, SymbolicValue rightOp, Symbol rightOpSymbol) {
       switch (tree.kind()) {
         case MULTIPLY:
         case MULTIPLY_ASSIGNMENT:
@@ -174,7 +187,7 @@ public class DivisionByZeroCheck extends SECheck {
         case DIVIDE_ASSIGNMENT:
         case REMAINDER:
         case REMAINDER_ASSIGNMENT:
-          handleDivide(tree, leftOp, rightOp);
+          handleDivide(tree, leftOp, rightOp, rightOpSymbol);
           break;
         default:
           // can not be reached
@@ -213,31 +226,33 @@ public class DivisionByZeroCheck extends SECheck {
       }
     }
 
-    private void handleDivide(Tree tree, SymbolicValue leftOp, SymbolicValue rightOp) {
+    private void handleDivide(Tree tree, SymbolicValue leftOp, SymbolicValue rightOp, Symbol rightOpSymbol) {
       if (isZero(rightOp)) {
         context.addExceptionalYield(rightOp, programState, "java.lang.ArithmeticException", DivisionByZeroCheck.this);
-        reportIssue(tree, rightOp);
+        reportIssue(tree, rightOp, rightOpSymbol);
         // interrupt exploration
         programState = null;
       } else if (isZero(leftOp)) {
         reuseSymbolicValue(leftOp);
       } else if (isNonZero(leftOp) && isNonZero(rightOp)) {
-        deferConstraint(tree.is(Tree.Kind.DIVIDE, Tree.Kind.DIVIDE_ASSIGNMENT) ? ZeroConstraint.NON_ZERO : null);
+        // result of 'integer' can be zero or non-zero, depending of operands (for instance: '1 / 2 == 0')
+        deferConstraint(null);
       } else if (hasNoConstraint(rightOp)) {
         ProgramState exceptionalState = programState
           .addConstraint(rightOp, ZeroConstraint.ZERO)
           // FIXME SONARJAVA-2125 - we should not have to add the NOT_NULL constraint for primitive types
           .addConstraint(rightOp, ObjectConstraint.NOT_NULL);
         context.addExceptionalYield(rightOp, exceptionalState, "java.lang.ArithmeticException", DivisionByZeroCheck.this);
+        programState = programState.addConstraintTransitively(rightOp, ZeroConstraint.NON_ZERO);
       }
     }
 
     private void deferConstraint(@Nullable ZeroConstraint constraint) {
-      constraintManager.setValueFactory(id -> new DeferredConstraintHolderSV(id, constraint));
+      constraintManager.setValueFactory(() -> new DeferredConstraintHolderSV(constraint));
     }
 
     private void reuseSymbolicValue(SymbolicValue sv) {
-      constraintManager.setValueFactory(id -> new DeferredConstraintHolderSV(id, programState.getConstraint(sv, ZeroConstraint.class)) {
+      constraintManager.setValueFactory(() -> new DeferredConstraintHolderSV(programState.getConstraint(sv, ZeroConstraint.class)) {
         @Override
         public SymbolicValue wrappedValue() {
           return sv.wrappedValue();
@@ -245,23 +260,15 @@ public class DivisionByZeroCheck extends SECheck {
       });
     }
 
-    private void reportIssue(Tree tree, SymbolicValue denominator) {
+    private void reportIssue(Tree tree, SymbolicValue denominator, Symbol denominatorSymbol) {
       ExpressionTree expression = getDenominator(tree);
       String operation = tree.is(Tree.Kind.REMAINDER, Tree.Kind.REMAINDER_ASSIGNMENT) ? "modulation" : "division";
-      String expressionName;
-      String flowMessage;
-      if (expression.is(Tree.Kind.IDENTIFIER)) {
-        String name = ((IdentifierTree) expression).name();
-        expressionName = "'" + name + "'";
-        flowMessage = expressionName + " is divided by zero";
-      } else {
-        expressionName = "this expression";
-        flowMessage = "this expression contains division by zero";
-      }
-      List<Class<? extends Constraint>> domains = Lists.newArrayList(ZeroConstraint.class);
-      Set<List<JavaFileScannerContext.Location>> flows = FlowComputation.flow(context.getNode(), denominator, domains).stream()
-        .map(f -> ImmutableList.<JavaFileScannerContext.Location>builder()
-          .add(new JavaFileScannerContext.Location(flowMessage, tree))
+      String expressionName = expression.is(Tree.Kind.IDENTIFIER) ? ("\"" + ((IdentifierTree) expression).name() + "\"") : "this expression";
+      List<Class<? extends Constraint>> domains = Collections.singletonList(ZeroConstraint.class);
+      Set<Flow> flows = FlowComputation.flow(context.getNode(), denominator, domains, denominatorSymbol).stream()
+        .filter(f -> !f.isEmpty())
+        .map(f -> Flow.builder()
+          .add(new JavaFileScannerContext.Location("Division by zero.", tree))
           .addAll(f)
           .build())
         .collect(Collectors.toSet());

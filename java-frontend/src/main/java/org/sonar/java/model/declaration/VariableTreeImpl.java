@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -39,6 +39,7 @@ import org.sonar.plugins.java.api.tree.VariableTree;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nullable;
 import java.util.Collections;
+import java.util.Objects;
 
 public class VariableTreeImpl extends JavaTree implements VariableTree {
   private ModifiersTree modifiers;
@@ -58,6 +59,19 @@ public class VariableTreeImpl extends JavaTree implements VariableTree {
   @Nullable
   private ArrayTypeTreeImpl nestedDimensions;
   private boolean vararg = false;
+
+  public VariableTreeImpl(
+    boolean vararg,
+    ModifiersTree modifiers,
+    TypeTree type,
+    IdentifierTree simpleName
+  ) {
+    super(Kind.VARIABLE);
+    this.vararg = vararg;
+    this.modifiers = modifiers;
+    this.type = type;
+    this.simpleName = simpleName;
+  }
 
   public VariableTreeImpl(IdentifierTreeImpl simpleName, @Nullable ArrayTypeTreeImpl nestedDimensions) {
     super(Kind.VARIABLE);
@@ -81,8 +95,8 @@ public class VariableTreeImpl extends JavaTree implements VariableTree {
 
   public VariableTreeImpl(Kind kind, ModifiersTree modifiers, IdentifierTree simpleName, @Nullable ExpressionTree initializer) {
     super(kind);
-    this.modifiers = Preconditions.checkNotNull(modifiers);
-    this.simpleName = Preconditions.checkNotNull(simpleName);
+    this.modifiers = Objects.requireNonNull(modifiers);
+    this.simpleName = Objects.requireNonNull(simpleName);
     this.initializer = initializer;
   }
 
@@ -169,7 +183,8 @@ public class VariableTreeImpl extends JavaTree implements VariableTree {
     return initializer;
   }
 
-  @CheckForNull
+  @Nullable
+  @Override
   public SyntaxToken equalToken() {
     return equalToken;
   }
@@ -191,6 +206,8 @@ public class VariableTreeImpl extends JavaTree implements VariableTree {
   public void setSymbol(JavaSymbol.VariableJavaSymbol symbol) {
     Preconditions.checkState(this.symbol == null);
     this.symbol = symbol;
+    // also set the symbol to the variable identifier, or it would remain unknown
+    ((IdentifierTreeImpl) simpleName()).setSymbol(symbol);
   }
 
   @Override

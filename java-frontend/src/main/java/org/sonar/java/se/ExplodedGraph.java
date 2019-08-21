@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,11 +20,12 @@
 package org.sonar.java.se;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Maps;
+import com.google.common.collect.LinkedListMultimap;
+import com.google.common.collect.Multimap;
 
 import org.sonar.java.se.xproc.MethodYield;
+import org.sonar.plugins.java.api.tree.Tree;
 
-import javax.annotation.CheckForNull;
 import javax.annotation.Nullable;
 
 import java.util.Collection;
@@ -33,17 +34,17 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Stream;
 
 public class ExplodedGraph {
 
-  private Map<Node, Node> nodes = Maps.newHashMap();
+  private final Map<Node, Node> nodes = new HashMap<>();
+  private final Multimap<ProgramPoint, Node> nodesByProgramPoint = LinkedListMultimap.create();
 
   /**
    * Returns node associated with given (programPoint,programState) pair. If no node for this pair exists, it is created.
    */
   public Node node(ProgramPoint programPoint, @Nullable ProgramState programState) {
-    Node result = new Node(programPoint, programState);
+    Node result = new Node(programPoint, programState, this);
     Node cached = nodes.get(result);
     if (cached != null) {
       cached.isNew = false;
@@ -51,6 +52,7 @@ public class ExplodedGraph {
     }
     result.isNew = true;
     nodes.put(result, result);
+    nodesByProgramPoint.put(programPoint, result);
     return result;
   }
 
@@ -66,14 +68,17 @@ public class ExplodedGraph {
 
     private final Map<Node, Edge> edges = new HashMap<>();
 
-    boolean isNew;
+    private boolean isNew;
     boolean exitPath = false;
-    boolean happyPath = true;
+    private final int hashcode;
+    private final ExplodedGraph explodedGraph;
 
-    private Node(ProgramPoint programPoint, @Nullable ProgramState programState) {
+    private Node(ProgramPoint programPoint, @Nullable ProgramState programState, ExplodedGraph explodedGraph) {
       Objects.requireNonNull(programPoint);
       this.programPoint = programPoint;
       this.programState = programState;
+      this.explodedGraph = explodedGraph;
+      hashcode = programPoint.hashCode() * 31 + (programState == null ? 0 : programState.hashCode());
     }
 
     public void addParent(@Nullable Node parent, @Nullable MethodYield methodYield) {
@@ -82,12 +87,15 @@ public class ExplodedGraph {
       }
       Edge edge = edges.computeIfAbsent(parent, p -> new Edge(this, p));
       if (methodYield != null) {
+        Preconditions.checkState(parent.programPoint.syntaxTree().is(Tree.Kind.METHOD_INVOCATION), "Yield on edge where parent is not MIT");
         edge.yields.add(methodYield);
       }
     }
 
-    public boolean onHappyPath() {
-      return happyPath;
+    public Collection<Node> siblings() {
+      Collection<Node> collection = explodedGraph.nodesByProgramPoint.get(programPoint);
+      collection.remove(this);
+      return collection;
     }
 
     @Nullable
@@ -102,17 +110,9 @@ public class ExplodedGraph {
       return edges.keySet();
     }
 
-    public Stream<LearnedConstraint> learnedConstraints() {
-      return edges.values().stream().flatMap(e -> e.learnedConstraints().stream());
-    }
-
-    public Stream<LearnedAssociation> learnedAssociations() {
-      return edges.values().stream().flatMap(e -> e.learnedAssociations().stream());
-    }
-
     @Override
     public int hashCode() {
-      return programPoint.hashCode() * 31 + (programState == null ? 0 : programState.hashCode());
+      return hashcode;
     }
 
     @Override
@@ -130,42 +130,47 @@ public class ExplodedGraph {
       return "B" + programPoint.block.id() + "." + programPoint.i + ": " + programState;
     }
 
-    @CheckForNull
-    public MethodYield selectedMethodYield(Node from) {
-      return edges.containsKey(from) ? edges.get(from).yields.stream().findFirst().orElse(null) : null;
-    }
-
     public Collection<Edge> edges() {
       return edges.values();
+    }
+
+    public boolean isNew() {
+      return isNew;
     }
   }
 
   public static final class Edge {
     final Node child;
     final Node parent;
+    final int hashcode;
 
     private Set<LearnedConstraint> lc;
     private Set<LearnedAssociation> la;
     private final Set<MethodYield> yields = new LinkedHashSet<>();
 
     private Edge(Node child, Node parent) {
-      Preconditions.checkState(!Objects.equals(child, parent));
+      Preconditions.checkState(!child.equals(parent));
       this.child = child;
       this.parent = parent;
+      hashcode = Objects.hash(child, parent);
+    }
+
+    public Node child() {
+      return child;
     }
 
     public Node parent() {
       return parent;
     }
 
-    Set<LearnedConstraint> learnedConstraints() {
+    public Set<LearnedConstraint> learnedConstraints() {
       if (lc == null) {
         lc = child.programState.learnedConstraints(parent.programState);
       }
       return lc;
     }
 
-    Set<LearnedAssociation> learnedAssociations() {
+    public Set<LearnedAssociation> learnedAssociations() {
       if (la == null) {
         la = child.programState.learnedAssociations(parent.programState);
       }
@@ -185,13 +190,13 @@ public class ExplodedGraph {
         return false;
       }
       Edge edge = (Edge) o;
-      return Objects.equals(child, edge.child) &&
-        Objects.equals(parent, edge.parent);
+      return child.equals(edge.child) &&
+        parent.equals(edge.parent);
     }
 
     @Override
     public int hashCode() {
-      return Objects.hash(child, parent);
+      return hashcode;
     }
   }
 }

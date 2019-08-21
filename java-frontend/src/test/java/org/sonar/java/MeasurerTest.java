@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,36 +19,29 @@
  */
 package org.sonar.java;
 
-import com.google.common.collect.Lists;
+import java.io.File;
+import java.util.Collections;
 import org.junit.Before;
 import org.junit.Test;
-import org.sonar.api.batch.fs.internal.DefaultFileSystem;
-import org.sonar.api.batch.fs.internal.DefaultInputFile;
+import org.sonar.api.batch.fs.InputFile;
 import org.sonar.api.batch.sensor.internal.SensorContextTester;
 import org.sonar.api.issue.NoSonarFilter;
 import org.sonar.api.utils.PathUtils;
-import org.sonar.squidbridge.api.CodeVisitor;
-
-import java.io.File;
-import java.nio.charset.StandardCharsets;
-import java.util.Collections;
+import org.sonar.java.model.JavaVersionImpl;
+import org.sonar.plugins.java.api.JavaCheck;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 public class MeasurerTest {
 
-  private static final int NB_OF_METRICS = 10;
+  private static final int NB_OF_METRICS = 7;
+  private static final File BASE_DIR = new File("src/test/files/metrics");
   private SensorContextTester context;
-  private JavaSquid squid;
-  private File baseDir;
-  private DefaultFileSystem fs;
 
   @Before
   public void setUp() throws Exception {
-    baseDir = new File("src/test/files/metrics");
-    context = SensorContextTester.create(baseDir);
-    fs = context.fileSystem();
+    context = SensorContextTester.create(BASE_DIR);
   }
 
   @Test
@@ -63,12 +56,12 @@ public class MeasurerTest {
 
   @Test
   public void verify_complexity_metric() {
-    checkMetric("Complexity.java", "complexity", 16);
+    checkMetric("Complexity.java", "complexity", 15);
   }
 
   @Test
-  public void verify_complexity_in_classes() {
-    checkMetric("Complexity.java", "complexity_in_classes", 16);
+  public void verify_cognitive_complexity_metric() {
+    checkMetric("CognitiveComplexity.java", "cognitive_complexity", 25);
   }
 
   @Test
@@ -97,16 +90,17 @@ public class MeasurerTest {
    * Utility method to quickly get metric out of a file.
    */
   private void checkMetric(String filename, String metric, Number expectedValue) {
-    String relativePath = PathUtils.sanitize(new File(baseDir, filename).getPath());
-    DefaultInputFile inputFile = new DefaultInputFile(context.module().key(), relativePath);
-    inputFile.setModuleBaseDir(fs.baseDirPath());
-    fs.add(inputFile);
-    Measurer measurer = new Measurer(fs, context, mock(NoSonarFilter.class));
-    JavaConfiguration conf = new JavaConfiguration(StandardCharsets.UTF_8);
-    squid = new JavaSquid(conf, null, measurer, null, null, new CodeVisitor[0]);
-    squid.scan(Lists.newArrayList(new File(baseDir, filename)), Collections.emptyList());
-    assertThat(context.measures("projectKey:"+relativePath)).hasSize(NB_OF_METRICS);
-    assertThat(context.measure("projectKey:"+relativePath, metric).value()).isEqualTo(expectedValue);
+    String relativePath = PathUtils.sanitize(new File(BASE_DIR, filename).getPath());
+    InputFile inputFile = TestUtils.inputFile(relativePath);
+    context.fileSystem().add(inputFile);
+
+    Measurer measurer = new Measurer(context, mock(NoSonarFilter.class));
+    JavaSquid squid = new JavaSquid(new JavaVersionImpl(), null, measurer, null, null, new JavaCheck[0]);
+
+    squid.scan(Collections.singletonList(inputFile), Collections.emptyList());
+
+    assertThat(context.measures(inputFile.key())).hasSize(NB_OF_METRICS);
+    assertThat(context.measure(inputFile.key(), metric).value()).isEqualTo(expectedValue);
   }
 
 }

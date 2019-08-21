@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -31,7 +31,7 @@ import java.util.List;
  *
  * <pre>
  *   try {@link #block()} {@link #catches()} finally {@link #finallyBlock()}
- *   try ({@link #resources()}) {@link #block()} {@link #catches()} finally {@link #finallyBlock()}
+ *   try ({@link #resourceList()}) {@link #block()} {@link #catches()} finally {@link #finallyBlock()}
  * </pre>
  *
  * @since Java 1.3
@@ -45,9 +45,23 @@ public interface TryStatementTree extends StatementTree {
   SyntaxToken openParenToken();
 
   /**
+   * Java 9 allows resources to be declared by existing effectively final variables.
+   * This method will not return trees of resources declared by such variables, only resources declared with new variables will be returned (as it was until Java 9).
+   *
+   * @deprecated since 4.11. Use {@link #resourceList()} to get all declared resources.
+   *
    * @since Java 1.7
    */
+  @Deprecated
   ListTree<VariableTree> resources();
+
+  /**
+   * Until Java 9, resource could only be instance of {@link VariableTree}. Since Java 9 it is possible to refer to resources by existing effectively final variables,
+   * so list can also contain {@link IdentifierTree} or {@link MemberSelectExpressionTree}.
+   *
+   * @since Java 9
+   */
+  ListTree<Tree> resourceList();
 
   @Nullable
   SyntaxToken closeParenToken();

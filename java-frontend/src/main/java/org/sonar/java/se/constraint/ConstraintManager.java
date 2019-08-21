@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,25 +21,29 @@ package org.sonar.java.se.constraint;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
+import org.sonar.java.bytecode.cfg.Instruction;
+import org.sonar.java.se.ExplodedGraphWalker;
 import org.sonar.java.se.Pair;
 import org.sonar.java.se.ProgramState;
 import org.sonar.java.se.SymbolicValueFactory;
 import org.sonar.java.se.symbolicvalues.RelationalSymbolicValue;
+import org.sonar.java.se.symbolicvalues.RelationalSymbolicValue.Kind;
 import org.sonar.java.se.symbolicvalues.SymbolicValue;
-import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
-import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
 import javax.annotation.Nullable;
+
 import java.util.List;
+
+import static org.objectweb.asm.Opcodes.*;
 
 public class ConstraintManager {
 
-  private int counter = ProgramState.EMPTY_STATE.constraintsSize();
   private SymbolicValueFactory symbolicValueFactory;
 
   public void setValueFactory(SymbolicValueFactory valueFactory) {
@@ -50,41 +54,11 @@ public class ConstraintManager {
   public SymbolicValue createSymbolicValue(Tree syntaxNode) {
     SymbolicValue result;
     switch (syntaxNode.kind()) {
-      case EQUAL_TO:
-        result = new RelationalSymbolicValue(counter, RelationalSymbolicValue.Kind.EQUAL);
-        break;
-      case NOT_EQUAL_TO:
-        result = new RelationalSymbolicValue(counter, RelationalSymbolicValue.Kind.NOT_EQUAL);
-        break;
-      case LESS_THAN:
-        result = new RelationalSymbolicValue(counter, RelationalSymbolicValue.Kind.LESS_THAN);
-        break;
-      case LESS_THAN_OR_EQUAL_TO:
-        result = new RelationalSymbolicValue(counter, RelationalSymbolicValue.Kind.LESS_THAN_OR_EQUAL);
-        break;
-      case GREATER_THAN:
-        result = new RelationalSymbolicValue(counter, RelationalSymbolicValue.Kind.GREATER_THAN);
-        break;
-      case GREATER_THAN_OR_EQUAL_TO:
-        result = new RelationalSymbolicValue(counter, RelationalSymbolicValue.Kind.GREATER_THAN_OR_EQUAL);
-        break;
       case LOGICAL_COMPLEMENT:
-        result = new SymbolicValue.NotSymbolicValue(counter);
-        break;
-      case AND:
-      case AND_ASSIGNMENT:
-        result = new SymbolicValue.AndSymbolicValue(counter);
-        break;
-      case OR:
-      case OR_ASSIGNMENT:
-        result = new SymbolicValue.OrSymbolicValue(counter);
-        break;
-      case XOR:
-      case XOR_ASSIGNMENT:
-        result = new SymbolicValue.XorSymbolicValue(counter);
+        result = new SymbolicValue.NotSymbolicValue();
         break;
       case INSTANCE_OF:
-        result = new SymbolicValue.InstanceOfSymbolicValue(counter);
+        result = new SymbolicValue.InstanceOfSymbolicValue();
         break;
       case MEMBER_SELECT:
         result = createIdentifierSymbolicValue(((MemberSelectExpressionTree) syntaxNode).identifier());
@@ -95,46 +69,77 @@ public class ConstraintManager {
       default:
         result = createDefaultSymbolicValue();
     }
-    counter++;
+    return result;
+  }
+
+  public SymbolicValue createBinarySymbolicValue(Tree syntaxNode, List<ProgramState.SymbolicValueSymbol> computedFrom) {
+    SymbolicValue result;
+    switch (syntaxNode.kind()) {
+      case EQUAL_TO:
+        result = createRelationalSymbolicValue(Kind.EQUAL, computedFrom);
+        break;
+      case NOT_EQUAL_TO:
+        result = createRelationalSymbolicValue(Kind.NOT_EQUAL, computedFrom);
+        break;
+      case LESS_THAN:
+        result = createRelationalSymbolicValue(Kind.LESS_THAN, computedFrom);
+        break;
+      case LESS_THAN_OR_EQUAL_TO:
+        result = createRelationalSymbolicValue(Kind.GREATER_THAN_OR_EQUAL, Lists.reverse(computedFrom));
+        break;
+      case GREATER_THAN:
+        result = createRelationalSymbolicValue(Kind.LESS_THAN, Lists.reverse(computedFrom));
+        break;
+      case GREATER_THAN_OR_EQUAL_TO:
+        result = createRelationalSymbolicValue(Kind.GREATER_THAN_OR_EQUAL, computedFrom);
+        break;
+      case AND:
+      case AND_ASSIGNMENT:
+        result = new SymbolicValue.AndSymbolicValue();
+        result.computedFrom(computedFrom);
+        break;
+      case OR:
+      case OR_ASSIGNMENT:
+        result = new SymbolicValue.OrSymbolicValue();
+        result.computedFrom(computedFrom);
+        break;
+      case XOR:
+      case XOR_ASSIGNMENT:
+        result = new SymbolicValue.XorSymbolicValue();
+        result.computedFrom(computedFrom);
+        break;
+      default:
+        result = createDefaultSymbolicValue();
+        result.computedFrom(computedFrom);
+    }
+    return result;
+  }
+
+  private static RelationalSymbolicValue createRelationalSymbolicValue(Kind kind, List<ProgramState.SymbolicValueSymbol> computedFrom) {
+    RelationalSymbolicValue result = new RelationalSymbolicValue(kind);
+    result.computedFrom(computedFrom);
     return result;
   }
 
   public SymbolicValue.ExceptionalSymbolicValue createExceptionalSymbolicValue(@Nullable Type exceptionType) {
-    SymbolicValue.ExceptionalSymbolicValue result = new SymbolicValue.ExceptionalSymbolicValue(counter, exceptionType);
-    counter++;
-    return result;
+    return new SymbolicValue.ExceptionalSymbolicValue(exceptionType);
   }
 
-  public SymbolicValue createMethodSymbolicValue(MethodInvocationTree syntaxNode, List<SymbolicValue> values) {
+  public SymbolicValue.CaughtExceptionSymbolicValue createCaughtExceptionSymbolicValue(SymbolicValue.ExceptionalSymbolicValue thrownValue) {
+    return new SymbolicValue.CaughtExceptionSymbolicValue(thrownValue);
+  }
+
+  public SymbolicValue createMethodSymbolicValue(MethodInvocationTree syntaxNode, List<ProgramState.SymbolicValueSymbol> values) {
     SymbolicValue result;
-    if (isEqualsMethod(syntaxNode) || isObjectsEqualsMethod(syntaxNode.symbol())) {
-      result = new RelationalSymbolicValue(counter, RelationalSymbolicValue.Kind.METHOD_EQUALS);
-      SymbolicValue leftOp = values.get(1);
-      SymbolicValue rightOp = values.get(0);
+    if (ExplodedGraphWalker.EQUALS_METHODS.anyMatch(syntaxNode)) {
+      result = new RelationalSymbolicValue(RelationalSymbolicValue.Kind.METHOD_EQUALS);
+      ProgramState.SymbolicValueSymbol leftOp = values.get(1);
+      ProgramState.SymbolicValueSymbol rightOp = values.get(0);
       result.computedFrom(ImmutableList.of(rightOp, leftOp));
     } else {
       result = createDefaultSymbolicValue();
     }
-    counter++;
     return result;
-  }
-
-  private static boolean isObjectsEqualsMethod(Symbol symbol) {
-    return symbol.isMethodSymbol() && symbol.owner().type().is("java.util.Objects") && "equals".equals(symbol.name());
-  }
-
-  private static boolean isEqualsMethod(MethodInvocationTree syntaxNode) {
-    if (syntaxNode.arguments().size() == 1) {
-      ExpressionTree methodSelect = syntaxNode.methodSelect();
-      if (methodSelect.is(Tree.Kind.MEMBER_SELECT)) {
-        MemberSelectExpressionTree expression = (MemberSelectExpressionTree) methodSelect;
-        if ("equals".equals(expression.identifier().name()) && syntaxNode.symbol().isMethodSymbol()) {
-          Symbol.MethodSymbol symbol = (Symbol.MethodSymbol) syntaxNode.symbol();
-          return symbol.parameterTypes().get(0).is("java.lang.Object");
-        }
-      }
-    }
-    return false;
   }
 
   private SymbolicValue createIdentifierSymbolicValue(IdentifierTree identifier) {
@@ -149,9 +154,9 @@ public class ConstraintManager {
     return createDefaultSymbolicValue();
   }
 
-  private SymbolicValue createDefaultSymbolicValue() {
+  public SymbolicValue createDefaultSymbolicValue() {
     SymbolicValue result;
-    result = symbolicValueFactory == null ? new SymbolicValue(counter) : symbolicValueFactory.createSymbolicValue(counter);
+    result = symbolicValueFactory == null ? new SymbolicValue() : symbolicValueFactory.createSymbolicValue();
     symbolicValueFactory = null;
     return result;
   }
@@ -168,5 +173,61 @@ public class ConstraintManager {
     List<ProgramState> falseConstraint = sv.setConstraint(unstack.state, BooleanConstraint.FALSE);
     List<ProgramState> trueConstraint = sv.setConstraint(unstack.state, BooleanConstraint.TRUE);
     return new Pair<>(falseConstraint, trueConstraint);
+  }
+
+  public SymbolicValue createBinarySymbolicValue(Instruction inst, List<ProgramState.SymbolicValueSymbol> computedFrom) {
+    SymbolicValue result;
+    switch (inst.opcode) {
+      case IAND:
+      case LAND:
+        result = new SymbolicValue.AndSymbolicValue();
+        result.computedFrom(computedFrom);
+        break;
+      case IOR:
+      case LOR:
+        result = new SymbolicValue.OrSymbolicValue();
+        result.computedFrom(computedFrom);
+        break;
+      case IXOR:
+      case LXOR:
+        result = new SymbolicValue.XorSymbolicValue();
+        result.computedFrom(computedFrom);
+        break;
+      case IF_ICMPEQ:
+      case IF_ACMPEQ:
+      case IFEQ:
+      case IFNULL:
+        result = createRelationalSymbolicValue(Kind.EQUAL, computedFrom);
+        break;
+      case IFNE:
+      case IFNONNULL:
+      case IF_ICMPNE:
+      case IF_ACMPNE:
+        result = createRelationalSymbolicValue(Kind.NOT_EQUAL, computedFrom);
+        break;
+      case IF_ICMPLT:
+      case IFLT:
+        result = createRelationalSymbolicValue(Kind.LESS_THAN, computedFrom);
+        break;
+      case IF_ICMPGE:
+      case IFGE:
+        result = createRelationalSymbolicValue(Kind.GREATER_THAN_OR_EQUAL, computedFrom);
+        break;
+      case IF_ICMPGT:
+      case IFGT:
+        result = createRelationalSymbolicValue(Kind.LESS_THAN, Lists.reverse(computedFrom));
+        break;
+      case IF_ICMPLE:
+      case IFLE:
+        result = createRelationalSymbolicValue(Kind.GREATER_THAN_OR_EQUAL, Lists.reverse(computedFrom));
+        break;
+      default:
+        throw new IllegalStateException("Unexpected kind for binary SV");
+    }
+    return result;
+  }
+
+  public SymbolicValue createSymbolicValue(Instruction inst) {
+    return createDefaultSymbolicValue();
   }
 }

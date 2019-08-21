@@ -1,6 +1,6 @@
 {
   "title": "Generic exceptions should never be thrown",
-  "type": "BUG",
+  "type": "CODE_SMELL",
   "status": "ready",
   "remediation": {
     "func": "Constant\/Issue",
@@ -9,12 +9,15 @@
   "tags": [
     "cwe",
     "error-handling",
-    "bug",
     "cert"
   ],
-  "standards": [
-    "CWE",
-    "CERT"
-  ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-112",
+  "sqKey": "S112",
+  "scope": "Main",
+  "securityStandards": {
+    "CWE": [
+      397
+    ]
+  }
 }

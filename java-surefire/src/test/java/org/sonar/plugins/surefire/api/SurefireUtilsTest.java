@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,39 +19,60 @@
  */
 package org.sonar.plugins.surefire.api;
 
+import java.io.File;
+import java.util.List;
+import org.junit.Rule;
 import org.junit.Test;
 import org.sonar.api.batch.fs.internal.DefaultFileSystem;
-import org.sonar.api.config.MapSettings;
-import org.sonar.api.config.Settings;
+import org.sonar.api.config.internal.MapSettings;
 import org.sonar.api.scan.filesystem.PathResolver;
-
-import java.io.File;
+import org.sonar.api.utils.log.LogTester;
+import org.sonar.api.utils.log.LoggerLevel;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
 
 public class SurefireUtilsTest {
 
+  @Rule
+  public LogTester logTester = new LogTester();
+
   @Test
-  public void shouldGetReportsFromProperty() {
-    Settings settings = new MapSettings();
-    settings.setProperty("sonar.junit.reportsPath", "target/surefire");
+  public void should_get_report_paths_from_property() {
+    MapSettings settings = new MapSettings();
+    settings.setProperty("sonar.junit.reportPaths", "target/surefire,submodule/target/surefire");
 
-    DefaultFileSystem fs = new DefaultFileSystem(new File("src/test/resources/org/sonar/plugins/surefire/api/SurefireUtilsTest/shouldGetReportsFromProperty"));
+    DefaultFileSystem fs = new DefaultFileSystem(new File("src/test/resources/org/sonar/plugins/surefire/api/SurefireUtilsTest/shouldGetReportsPathFromProperty"));
     PathResolver pathResolver = new PathResolver();
-    assertThat(SurefireUtils.getReportsDirectory(settings, fs, pathResolver).exists()).isTrue();
-    assertThat(SurefireUtils.getReportsDirectory(settings, fs, pathResolver).isDirectory()).isTrue();
-  }
 
+    assertThat(logTester.logs(LoggerLevel.INFO)).isEmpty();
+
+    List<File> directories = SurefireUtils.getReportsDirectories(settings.asConfig(), fs, pathResolver);
+
+    assertThat(directories).hasSize(2);
+    File directory1 = directories.get(0);
+    assertThat(directory1.exists()).isTrue();
+    assertThat(directory1.isDirectory()).isTrue();
+    File directory2 = directories.get(1);
+    assertThat(directory2.exists()).isTrue();
+    assertThat(directory2.isDirectory()).isTrue();
+    assertThat(logTester.logs(LoggerLevel.INFO)).isEmpty();
+  }
 
   @Test
   public void return_default_value_if_property_unset() throws Exception {
-    Settings settings = mock(Settings.class);
-    DefaultFileSystem fs = new DefaultFileSystem(new File("src/test/resources/org/sonar/plugins/surefire/api/SurefireUtilsTest/shouldGetReportsFromProperty"));
+    MapSettings settings = new MapSettings();
+    DefaultFileSystem fs = new DefaultFileSystem(new File("src/test/resources/org/sonar/plugins/surefire/api/SurefireUtilsTest"));
     PathResolver pathResolver = new PathResolver();
-    File directory = SurefireUtils.getReportsDirectory(settings, fs, pathResolver);
+
+    assertThat(logTester.logs(LoggerLevel.INFO)).isEmpty();
+
+    List<File> directories = SurefireUtils.getReportsDirectories(settings.asConfig(), fs, pathResolver);
+
+    assertThat(directories).hasSize(1);
+    File directory = directories.get(0);
     assertThat(directory.getCanonicalPath()).endsWith("target"+File.separator+"surefire-reports");
     assertThat(directory.exists()).isFalse();
     assertThat(directory.isDirectory()).isFalse();
+    assertThat(logTester.logs(LoggerLevel.INFO)).isEmpty();
   }
 }

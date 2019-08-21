@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,25 +19,30 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import org.apache.commons.lang.BooleanUtils;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Deque;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.sonar.check.Rule;
 import org.sonar.java.checks.helpers.ExpressionsHelper;
-import org.sonar.java.model.declaration.MethodTreeImpl;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
+import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.LambdaExpressionTree;
+import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.TypeTree;
 import org.sonar.plugins.java.api.tree.VariableTree;
-
-import java.util.List;
-import java.util.Map;
 
 @Rule(key = "S1149")
 public class SynchronizedClassUsageCheck extends IssuableSubscriptionVisitor {
@@ -49,9 +54,11 @@ public class SynchronizedClassUsageCheck extends IssuableSubscriptionVisitor {
     .put("java.util.Stack", "\"Deque\"")
     .build();
 
+  private final Deque<Set<String>> exclusions = new ArrayDeque<>();
+
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.COMPILATION_UNIT);
+    return Arrays.asList(Tree.Kind.CLASS, Tree.Kind.ENUM, Tree.Kind.INTERFACE, Tree.Kind.ANNOTATION_TYPE);
   }
 
   @Override
@@ -59,7 +66,47 @@ public class SynchronizedClassUsageCheck extends IssuableSubscriptionVisitor {
     if (!hasSemantic()) {
       return;
     }
+    ExclusionsVisitor exclusionsVisitor = new ExclusionsVisitor();
+    tree.accept(exclusionsVisitor);
+    Set<String> currentClassExclusions = exclusionsVisitor.exclusions;
+    if(!exclusions.isEmpty()) {
+      currentClassExclusions.addAll(exclusions.peek());
+    }
+    exclusions.push(currentClassExclusions);
     tree.accept(new DeprecatedTypeVisitor());
+  }
+
+  @Override
+  public void leaveNode(Tree tree) {
+    if (!hasSemantic()) {
+      return;
+    }
+    exclusions.pop();
+  }
+
+  private static class ExclusionsVisitor extends BaseTreeVisitor {
+    Set<String> exclusions = new HashSet<>();
+
+    @Override
+    public void visitMethodInvocation(MethodInvocationTree tree) {
+      if (tree.symbol().isMethodSymbol() && tree.symbol().declaration() == null) {
+        String fqn = tree.symbol().owner().type().fullyQualifiedName();
+        if (isMethodFromJavaPackage(fqn)) {
+          Symbol.MethodSymbol methodSymbol = (Symbol.MethodSymbol) tree.symbol();
+          List<Type> types = new ArrayList<>(methodSymbol.parameterTypes());
+          Symbol.TypeSymbol returnType = methodSymbol.returnType();
+          if (returnType != null) {
+            types.add(returnType.type());
+          }
+          types.forEach(t -> exclusions.addAll(REPLACEMENTS.keySet().stream().filter(t::isSubtypeOf).collect(Collectors.toSet())));
+        }
+      }
+      super.visitMethodInvocation(tree);
+    }
+
+    private static boolean isMethodFromJavaPackage(String fqn) {
+      return fqn.startsWith("java") && !REPLACEMENTS.keySet().contains(fqn);
+    }
   }
 
   private class DeprecatedTypeVisitor extends BaseTreeVisitor {
@@ -87,7 +134,7 @@ public class SynchronizedClassUsageCheck extends IssuableSubscriptionVisitor {
     }
 
     private boolean isOverriding(MethodTree tree) {
-      return BooleanUtils.isTrue(((MethodTreeImpl) tree).isOverriding());
+      return Boolean.TRUE.equals(tree.isOverriding());
     }
 
     @Override
@@ -116,7 +163,7 @@ public class SynchronizedClassUsageCheck extends IssuableSubscriptionVisitor {
       if (symbolType.isClass()) {
         for (String deprecatedType : REPLACEMENTS.keySet()) {
           if (symbolType.is(deprecatedType)) {
-            return true;
+            return !exclusions.peek().contains(deprecatedType);
           }
         }
       }

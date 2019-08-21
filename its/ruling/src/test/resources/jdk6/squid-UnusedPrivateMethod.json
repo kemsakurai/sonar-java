@@ -12,9 +12,6 @@
 'jdk6:java/awt/Window.java':[
 2572,
 ],
-'jdk6:java/awt/color/ICC_Profile.java':[
-905,
-],
 'jdk6:java/awt/event/KeyEvent.java':[
 936,
 ],
@@ -52,9 +49,6 @@
 419,
 420,
 ],
-'jdk6:java/net/PlainDatagramSocketImpl.java':[
-364,
-],
 'jdk6:java/net/PlainSocketImpl.java':[
 707,
 ],
@@ -63,9 +57,6 @@
 ],
 'jdk6:java/net/URI.java':[
 2819,
-],
-'jdk6:java/net/URLClassLoader.java':[
-216,
 ],
 'jdk6:java/nio/DirectByteBuffer.java':[
 134,

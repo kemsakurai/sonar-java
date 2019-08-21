@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -24,13 +24,11 @@ import org.junit.Test;
 import org.sonar.java.ast.parser.JavaParser;
 import org.sonar.plugins.java.api.tree.CompilationUnitTree;
 
-import java.nio.charset.StandardCharsets;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class PackageUtilsTest {
 
-  private static final ActionParser PARSER = JavaParser.createParser(StandardCharsets.UTF_8);
+  private static final ActionParser PARSER = JavaParser.createParser();
 
   @Test
   public void no_package_empty_string() {

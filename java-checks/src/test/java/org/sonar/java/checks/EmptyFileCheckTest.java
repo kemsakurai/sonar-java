@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -32,6 +32,16 @@ public class EmptyFileCheckTest {
   @Test
   public void test_non_empty_file() {
     JavaCheckVerifier.verifyNoIssue("src/test/files/checks/NonEmptyFile.java", new EmptyFileCheck());
+  }
+
+  @Test
+  public void with_package() {
+    JavaCheckVerifier.verifyNoIssue("src/test/files/checks/WithPackage.java", new EmptyFileCheck());
+  }
+
+  @Test
+  public void with_module() {
+    JavaCheckVerifier.verifyNoIssue("src/test/files/checks/WithModule.java", new EmptyFileCheck());
   }
 
   @Test

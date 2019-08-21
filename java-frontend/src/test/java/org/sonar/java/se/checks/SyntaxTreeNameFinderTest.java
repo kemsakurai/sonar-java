@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -22,22 +22,22 @@ package org.sonar.java.se.checks;
 import com.sonar.sslr.api.typed.ActionParser;
 import org.junit.Test;
 import org.sonar.java.ast.parser.JavaParser;
+import org.sonar.plugins.java.api.tree.AssignmentExpressionTree;
 import org.sonar.plugins.java.api.tree.BlockTree;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.CompilationUnitTree;
 import org.sonar.plugins.java.api.tree.ExpressionStatementTree;
 import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
+import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.StatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
-
-import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class SyntaxTreeNameFinderTest {
 
-  public static ActionParser<Tree> parser = JavaParser.createParser(StandardCharsets.UTF_8);
+  public static ActionParser<Tree> parser = JavaParser.createParser();
 
   private static MethodTree buildSyntaxTree(String methodCode) {
     CompilationUnitTree cut = (CompilationUnitTree) parser.parse("class A { " + methodCode + " }");
@@ -46,10 +46,11 @@ public class SyntaxTreeNameFinderTest {
 
   @Test
   public void testClassCast() {
-    MethodTree tree = buildSyntaxTree("public boolean equals(Object obj) {((String) obj).length;}");
+    MethodTree tree = buildSyntaxTree("public boolean equals(Object obj) {((String) obj).length();}");
     BlockTree block = tree.block();
     StatementTree statementTree = block.body().get(0);
-    MemberSelectExpressionTree mse = (MemberSelectExpressionTree) ((ExpressionStatementTree) statementTree).expression();
+    MethodInvocationTree mit = (MethodInvocationTree) ((ExpressionStatementTree) statementTree).expression();
+    MemberSelectExpressionTree mse = (MemberSelectExpressionTree) mit.methodSelect();
     assertThat(SyntaxTreeNameFinder.getName(mse)).isEqualTo("obj");
   }
 
@@ -95,5 +96,28 @@ public class SyntaxTreeNameFinderTest {
   public void testVariableWithInitializer() {
     MethodTree tree = buildSyntaxTree("public void test() {int i = length;}");
     assertThat(SyntaxTreeNameFinder.getName(tree)).isEqualTo("length");
+  }
+
+  @Test
+  public void testFieldAccess() {
+    MethodTree tree = buildSyntaxTree("public void test() {this.field = value;} Object field;");
+    BlockTree block = tree.block();
+    AssignmentExpressionTree assignmentTree = (AssignmentExpressionTree) ((ExpressionStatementTree) block.body().get(0)).expression();
+    assertThat(SyntaxTreeNameFinder.getName(assignmentTree.variable())).isEqualTo("field");
+
+    tree = buildSyntaxTree("public void test() {super.field = value;}");
+    block = tree.block();
+    assignmentTree = (AssignmentExpressionTree) ((ExpressionStatementTree) block.body().get(0)).expression();
+    assertThat(SyntaxTreeNameFinder.getName(assignmentTree.variable())).isEqualTo("field");
+
+    tree = buildSyntaxTree("public void test() {A.field = value;}");
+    block = tree.block();
+    assignmentTree = (AssignmentExpressionTree) ((ExpressionStatementTree) block.body().get(0)).expression();
+    assertThat(SyntaxTreeNameFinder.getName(assignmentTree.variable())).isEqualTo("A");
+
+    tree = buildSyntaxTree("public void test() {foo().field = value;}");
+    block = tree.block();
+    assignmentTree = (AssignmentExpressionTree) ((ExpressionStatementTree) block.body().get(0)).expression();
+    assertThat(SyntaxTreeNameFinder.getName(assignmentTree.variable())).isEqualTo("foo");
   }
 }

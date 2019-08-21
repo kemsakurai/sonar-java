@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,49 +19,45 @@
  */
 package org.sonar.java.checks.naming;
 
-import com.google.common.collect.ImmutableList;
-import org.apache.commons.lang.BooleanUtils;
 import org.sonar.check.Rule;
-import org.sonar.java.checks.helpers.ExpressionsHelper;
-import org.sonar.java.model.declaration.MethodTreeImpl;
+import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
-import org.sonar.plugins.java.api.tree.ExpressionTree;
+import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
-import org.sonar.plugins.java.api.tree.VariableTree;
 
+import java.util.Collections;
 import java.util.List;
 
 @Rule(key = "S1201")
 public class MethodNamedEqualsCheck extends IssuableSubscriptionVisitor {
 
+  private static final String EQUALS = "equals";
+  private static final MethodMatcher EQUALS_MATCHER = MethodMatcher.create().name(EQUALS).parameters("java.lang.Object");
+
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD);
+    return Collections.singletonList(Tree.Kind.METHOD);
   }
 
   @Override
   public void visitNode(Tree tree) {
+    if (!hasSemantic()) {
+      return;
+    }
     MethodTree methodTree = (MethodTree) tree;
-    if ("equals".equalsIgnoreCase(methodTree.simpleName().name()) && !hasSingleObjectParameter(methodTree) && !isOverriding(methodTree)) {
-      reportIssue(methodTree.simpleName(), "Either override Object.equals(Object), or totally rename the method to prevent any confusion.");
+    if (equalsWithSingleParam(methodTree) && !hasProperEquals(methodTree)) {
+      reportIssue(methodTree.simpleName(), "Either override Object.equals(Object), or rename the method to prevent any confusion.");
     }
   }
 
-  private static boolean hasSingleObjectParameter(MethodTree methodTree) {
-    List<VariableTree> parameters = methodTree.parameters();
-    if (parameters.size() != 1) {
-      return false;
-    }
-    return isObjectType(parameters.get(0));
+  private static boolean equalsWithSingleParam(MethodTree methodTree) {
+    return EQUALS.equalsIgnoreCase(methodTree.simpleName().name()) && methodTree.parameters().size() == 1;
   }
 
-  private static boolean isObjectType(VariableTree variableTree) {
-    String type = ExpressionsHelper.concatenate((ExpressionTree) variableTree.type());
-    return "Object".equals(type)|| "java.lang.Object".equals(type);
+  private static boolean hasProperEquals(MethodTree methodTree) {
+    Symbol.TypeSymbol enclosingClass = methodTree.symbol().enclosingClass();
+    return enclosingClass != null && enclosingClass.lookupSymbols(EQUALS).stream().anyMatch(EQUALS_MATCHER::matches);
   }
 
-  private static boolean isOverriding(MethodTree methodTree) {
-    return BooleanUtils.isTrue(((MethodTreeImpl) methodTree).isOverriding());
-  }
 }

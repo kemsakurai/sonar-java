@@ -1,6 +1,6 @@
 {
   "title": "Java 8's \"Files.exists\" should not be used",
-  "type": "BUG",
+  "type": "CODE_SMELL",
   "status": "ready",
   "remediation": {
     "func": "Constant\/Issue",
@@ -10,5 +10,8 @@
     "performance",
     "java8"
   ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-3725",
+  "sqKey": "S3725",
+  "scope": "All"
 }

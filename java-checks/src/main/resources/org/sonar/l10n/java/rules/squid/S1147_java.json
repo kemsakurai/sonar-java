@@ -1,6 +1,6 @@
 {
   "title": "Exit methods should not be called",
-  "type": "BUG",
+  "type": "CODE_SMELL",
   "status": "ready",
   "remediation": {
     "func": "Constant\/Issue",
@@ -8,13 +8,16 @@
   },
   "tags": [
     "cwe",
-    "bug",
     "cert",
     "suspicious"
   ],
-  "standards": [
-    "CWE",
-    "CERT"
-  ],
-  "defaultSeverity": "Blocker"
+  "defaultSeverity": "Blocker",
+  "ruleSpecification": "RSPEC-1147",
+  "sqKey": "S1147",
+  "scope": "Main",
+  "securityStandards": {
+    "CWE": [
+      382
+    ]
+  }
 }

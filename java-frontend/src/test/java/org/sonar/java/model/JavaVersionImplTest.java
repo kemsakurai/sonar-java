@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -35,8 +35,18 @@ public class JavaVersionImplTest {
   }
 
   @Test
+  public void java_5() throws Exception {
+    JavaVersion version = new JavaVersionImpl(5);
+    assertThat(version.isJava6Compatible()).isFalse();
+    assertThat(version.isJava7Compatible()).isFalse();
+    assertThat(version.isJava8Compatible()).isFalse();
+    assertThat(version.asInt()).isEqualTo(5);
+  }
+
+  @Test
   public void java_6() throws Exception {
     JavaVersion version = new JavaVersionImpl(6);
+    assertThat(version.isJava6Compatible()).isTrue();
     assertThat(version.isJava7Compatible()).isFalse();
     assertThat(version.isJava8Compatible()).isFalse();
     assertThat(version.asInt()).isEqualTo(6);
@@ -45,6 +55,7 @@ public class JavaVersionImplTest {
   @Test
   public void java_7() throws Exception {
     JavaVersion version = new JavaVersionImpl(7);
+    assertThat(version.isJava6Compatible()).isTrue();
     assertThat(version.isJava7Compatible()).isTrue();
     assertThat(version.isJava8Compatible()).isFalse();
     assertThat(version.asInt()).isEqualTo(7);
@@ -53,19 +64,32 @@ public class JavaVersionImplTest {
   @Test
   public void java_8() throws Exception {
     JavaVersion version = new JavaVersionImpl(8);
+    assertThat(version.isJava6Compatible()).isTrue();
     assertThat(version.isJava7Compatible()).isTrue();
     assertThat(version.isJava8Compatible()).isTrue();
     assertThat(version.asInt()).isEqualTo(8);
   }
 
   @Test
+  public void java_12() {
+    JavaVersion version = new JavaVersionImpl(12);
+    assertThat(version.isJava6Compatible()).isTrue();
+    assertThat(version.isJava7Compatible()).isTrue();
+    assertThat(version.isJava8Compatible()).isTrue();
+    assertThat(version.isJava12Compatible()).isTrue();
+    assertThat(version.asInt()).isEqualTo(12);
+  }
+
+  @Test
   public void compatibilityMesssages() throws Exception {
     JavaVersion version;
     version = new JavaVersionImpl();
+    assertThat(version.java6CompatibilityMessage()).isEqualTo(" (sonar.java.source not set. Assuming 6 or greater.)");
     assertThat(version.java7CompatibilityMessage()).isEqualTo(" (sonar.java.source not set. Assuming 7 or greater.)");
     assertThat(version.java8CompatibilityMessage()).isEqualTo(" (sonar.java.source not set. Assuming 8 or greater.)");
 
     version = new JavaVersionImpl(6);
+    assertThat(version.java6CompatibilityMessage()).isEmpty();
     assertThat(version.java7CompatibilityMessage()).isEmpty();
     assertThat(version.java8CompatibilityMessage()).isEmpty();
   }
@@ -98,5 +122,15 @@ public class JavaVersionImplTest {
     version = JavaVersionImpl.fromString("7");
     assertThat(version.isNotSet()).isFalse();
     assertThat(version.asInt()).isEqualTo(7);
+
+    version = JavaVersionImpl.fromString("10");
+    assertThat(version.isNotSet()).isFalse();
+    assertThat(version.asInt()).isEqualTo(10);
+    assertThat(version.isJava8Compatible()).isTrue();
+
+    version = JavaVersionImpl.fromString("12");
+    assertThat(version.isNotSet()).isFalse();
+    assertThat(version.asInt()).isEqualTo(12);
+    assertThat(version.isJava12Compatible()).isTrue();
   }
 }

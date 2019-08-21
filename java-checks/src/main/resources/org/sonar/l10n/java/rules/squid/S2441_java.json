@@ -7,11 +7,15 @@
     "constantCost": "20min"
   },
   "tags": [
-    "cwe",
-    "bug"
+    "cwe"
   ],
-  "standards": [
-    "CWE"
-  ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-2441",
+  "sqKey": "S2441",
+  "scope": "Main",
+  "securityStandards": {
+    "CWE": [
+      579
+    ]
+  }
 }

@@ -7,8 +7,15 @@
     "constantCost": "5min"
   },
   "tags": [
-    "security",
     "owasp-a9"
   ],
-  "defaultSeverity": "Critical"
+  "defaultSeverity": "Critical",
+  "ruleSpecification": "RSPEC-2976",
+  "sqKey": "S2976",
+  "scope": "All",
+  "securityStandards": {
+    "OWASP": [
+      "A9"
+    ]
+  }
 }

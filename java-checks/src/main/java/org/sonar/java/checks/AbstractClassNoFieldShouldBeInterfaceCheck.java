@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,22 +19,26 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Collections;
+import java.util.List;
 import org.sonar.check.Rule;
 import org.sonar.java.JavaVersionAwareVisitor;
 import org.sonar.java.model.ModifiersUtils;
-import org.sonar.java.model.declaration.MethodTreeImpl;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
+import org.sonar.plugins.java.api.JavaFileScannerContext;
 import org.sonar.plugins.java.api.JavaVersion;
+import org.sonar.plugins.java.api.tree.AnnotationTree;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
+import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Modifier;
 import org.sonar.plugins.java.api.tree.Tree;
-
-import java.util.List;
+import org.sonar.plugins.java.api.tree.TypeTree;
 
 @Rule(key = "S1610")
 public class AbstractClassNoFieldShouldBeInterfaceCheck extends IssuableSubscriptionVisitor implements JavaVersionAwareVisitor {
+
+  private int javaVersionAsInt;
 
   @Override
   public boolean isCompatibleWithJavaVersion(JavaVersion version) {
@@ -42,14 +46,24 @@ public class AbstractClassNoFieldShouldBeInterfaceCheck extends IssuableSubscrip
   }
 
   @Override
+  public void setContext(JavaFileScannerContext context) {
+    javaVersionAsInt = context.getJavaVersion().asInt();
+    super.setContext(context);
+  }
+
+  @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.CLASS);
+    return Collections.singletonList(Tree.Kind.CLASS);
   }
 
   @Override
   public void visitNode(Tree tree) {
     ClassTree classTree = (ClassTree) tree;
-    if (classTree.superClass() == null && classIsAbstract(classTree) && classHasNoFieldAndProtectedMethod(classTree)) {
+    if (classTree.superClass() == null
+            && classIsAbstract(classTree)
+            && classHasNoFieldAndProtectedMethod(classTree)
+            && classHasNoAutoValueOrImmutableAnnotation(classTree)
+            && supportPrivateMethod(classTree)) {
       IdentifierTree simpleName = classTree.simpleName();
       reportIssue(
         simpleName,
@@ -61,16 +75,33 @@ public class AbstractClassNoFieldShouldBeInterfaceCheck extends IssuableSubscrip
     return ModifiersUtils.hasModifier(tree.modifiers(), Modifier.ABSTRACT);
   }
 
-  private static boolean classHasNoFieldAndProtectedMethod(ClassTree tree) {
-    for (Tree member : tree.members()) {
-      if (member.is(Tree.Kind.VARIABLE) || (member.is(Tree.Kind.METHOD) && isProtectedOrOverriding((MethodTreeImpl) member))) {
-        return false;
-      }
-    }
-    return true;
+  /**
+   * Java 9 introduce private method in interfaces.
+   * Before Java 9, an abstract class with private methods can not be turned into an interface.
+   */
+  private boolean supportPrivateMethod(ClassTree tree) {
+    return !hasPrivateMethod(tree) || javaVersionAsInt >= 9;
   }
 
-  private static boolean isProtectedOrOverriding(MethodTreeImpl member) {
+  private static boolean hasPrivateMethod(ClassTree tree) {
+    return tree.members().stream()
+      .filter(member -> member.is(Tree.Kind.METHOD))
+      .anyMatch(member -> ModifiersUtils.hasModifier(((MethodTree) member).modifiers(), Modifier.PRIVATE));
+  }
+
+  private static boolean classHasNoFieldAndProtectedMethod(ClassTree tree) {
+    return tree.members().stream()
+      .noneMatch(member -> member.is(Tree.Kind.VARIABLE) || (member.is(Tree.Kind.METHOD) && isProtectedOrOverriding((MethodTree) member)));
+  }
+
+  private static boolean isProtectedOrOverriding(MethodTree member) {
     return ModifiersUtils.hasModifier(member.modifiers(), Modifier.PROTECTED) || !Boolean.FALSE.equals(member.isOverriding());
+  }
+
+  private static boolean classHasNoAutoValueOrImmutableAnnotation(ClassTree tree) {
+    return tree.modifiers().annotations().stream()
+      .map(AnnotationTree::annotationType)
+      .map(TypeTree::symbolType)
+      .noneMatch(type -> type.is("com.google.auto.value.AutoValue") || type.is("org.immutables.value.Value$Immutable"));
   }
 }

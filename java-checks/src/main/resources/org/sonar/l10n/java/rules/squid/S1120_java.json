@@ -7,7 +7,10 @@
     "constantCost": "1min"
   },
   "tags": [
-    "convention"
+    "style"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-1120",
+  "sqKey": "S1120",
+  "scope": "All"
 }

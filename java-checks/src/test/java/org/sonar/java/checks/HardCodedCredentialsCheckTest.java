@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -27,6 +27,13 @@ public class HardCodedCredentialsCheckTest {
   @Test
   public void test() {
     JavaCheckVerifier.verify("src/test/files/checks/HardCodedCredentialsCheck.java", new HardCodedCredentialsCheck());
+  }
+
+  @Test
+  public void custom() {
+    HardCodedCredentialsCheck check = new HardCodedCredentialsCheck();
+    check.credentialWords = "marmalade,bazooka";
+    JavaCheckVerifier.verify("src/test/files/checks/HardCodedCredentialsCheckCustom.java", check);
   }
 
 }

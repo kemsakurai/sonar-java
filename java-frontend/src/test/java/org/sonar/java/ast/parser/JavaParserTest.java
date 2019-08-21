@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,22 +19,35 @@
  */
 package org.sonar.java.ast.parser;
 
+import com.sonar.sslr.api.typed.ActionParser;
 import org.junit.Test;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.CompilationUnitTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import java.nio.charset.StandardCharsets;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
+import static org.junit.Assert.assertEquals;
 
 public class JavaParserTest {
 
   @Test
+  public void should_throw_exception_when_missing_semicolon_after_enum_constants() {
+    ActionParser<Tree> parser = JavaParser.createParser();
+    parser.parse("enum E { ; int field; }");
+
+    try {
+      parser.parse("enum E { int field; }");
+      fail("exception expected");
+    } catch (RuntimeException e) {
+      assertEquals("missing semicolon after enum constants", e.getCause().getCause().getMessage());
+    }
+  }
+
+  @Test
   public void parent_link_should_be_computed() {
-    CompilationUnitTree cut = (CompilationUnitTree) JavaParser.createParser(StandardCharsets.UTF_8).parse("class A { void foo() {} }");
+    CompilationUnitTree cut = (CompilationUnitTree) JavaParser.createParser().parse("class A { void foo() {} }");
     ClassTree classTree = (ClassTree) cut.types().get(0);
     MethodTree method = (MethodTree) classTree.members().get(0);
     assertThat(method.parent()).isSameAs(classTree);
@@ -46,7 +59,7 @@ public class JavaParserTest {
   public void receiver_type_should_be_parsed() throws Exception {
     try {
       String code = "class Main { class Inner { Inner(Main Main.this) {}};}";
-      CompilationUnitTree cut = (CompilationUnitTree) JavaParser.createParser(StandardCharsets.UTF_8).parse(code);
+      CompilationUnitTree cut = (CompilationUnitTree) JavaParser.createParser().parse(code);
       Tree constructor = ((ClassTree) ((ClassTree) cut.types().get(0)).members().get(0)).members().get(0);
       assertThat(constructor).isInstanceOf(MethodTree.class);
       assertThat(((MethodTree) constructor).parameters().get(0).simpleName().name()).isEqualTo("this");

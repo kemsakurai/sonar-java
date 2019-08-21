@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,27 +19,26 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.Sets;
-import org.sonar.squidbridge.recognizer.CamelCaseDetector;
-import org.sonar.squidbridge.recognizer.ContainsDetector;
-import org.sonar.squidbridge.recognizer.Detector;
-import org.sonar.squidbridge.recognizer.EndWithDetector;
-import org.sonar.squidbridge.recognizer.KeywordsDetector;
-import org.sonar.squidbridge.recognizer.LanguageFootprint;
-
+import java.util.HashSet;
 import java.util.Set;
+import org.sonarsource.analyzer.recognizers.CamelCaseDetector;
+import org.sonarsource.analyzer.recognizers.ContainsDetector;
+import org.sonarsource.analyzer.recognizers.Detector;
+import org.sonarsource.analyzer.recognizers.EndWithDetector;
+import org.sonarsource.analyzer.recognizers.KeywordsDetector;
+import org.sonarsource.analyzer.recognizers.LanguageFootprint;
 
 public final class JavaFootprint implements LanguageFootprint {
 
-  private final Set<Detector> detectors = Sets.newHashSet();
+  private final Set<Detector> detectors = new HashSet<>();
 
   public JavaFootprint() {
     detectors.add(new EndWithDetector(0.95, '}', ';', '{'));
-    detectors.add(new KeywordsDetector(0.7, "||", "&&"));
+    detectors.add(new KeywordsDetector(0.7, "++", "||", "&&"));
     detectors.add(new KeywordsDetector(0.3, "public", "abstract", "class", "implements", "extends", "return", "throw",
         "private", "protected", "enum", "continue", "assert", "package", "synchronized", "boolean", "this", "double", "instanceof",
         "final", "interface", "static", "void", "long", "int", "float", "super", "true", "case:"));
-    detectors.add(new ContainsDetector(0.95, "++", "for(", "if(", "while(", "catch(", "switch(", "try{", "else{"));
+    detectors.add(new ContainsDetector(0.95, "for(", "if(", "while(", "catch(", "switch(", "try{", "else{"));
     detectors.add(new CamelCaseDetector(0.5));
   }
 

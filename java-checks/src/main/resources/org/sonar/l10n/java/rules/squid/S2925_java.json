@@ -7,7 +7,11 @@
     "constantCost": "20min"
   },
   "tags": [
+    "tests",
     "bad-practice"
   ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-2925",
+  "sqKey": "S2925",
+  "scope": "Tests"
 }

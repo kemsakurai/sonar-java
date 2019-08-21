@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,27 +21,19 @@ package org.sonar.java.filters;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
-
-import org.sonar.api.batch.fs.FileSystem;
-import org.sonar.api.batch.fs.InputFile;
 import org.sonar.api.scan.issue.filter.FilterableIssue;
 import org.sonar.api.scan.issue.filter.IssueFilterChain;
 import org.sonar.plugins.java.api.JavaFileScanner;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
-import org.sonar.squidbridge.api.AnalysisException;
 
-public class PostAnalysisIssueFilter implements JavaFileScanner, CodeVisitorIssueFilter {
+public class PostAnalysisIssueFilter implements JavaFileScanner, SonarJavaIssueFilter {
 
   private static final Iterable<JavaIssueFilter> DEFAULT_ISSUE_FILTERS = ImmutableList.<JavaIssueFilter>of(
     new EclipseI18NFilter(),
     new LombokFilter(),
-    new SuppressWarningFilter());
+    new SuppressWarningFilter(),
+    new GeneratedCodeFilter());
   private Iterable<JavaIssueFilter> issueFilers;
-  private final FileSystem fileSystem;
-
-  public PostAnalysisIssueFilter(FileSystem fileSystem) {
-    this.fileSystem = fileSystem;
-  }
 
   @VisibleForTesting
   void setIssueFilters(Iterable<? extends JavaIssueFilter> issueFilters) {
@@ -68,13 +60,7 @@ public class PostAnalysisIssueFilter implements JavaFileScanner, CodeVisitorIssu
 
   @Override
   public void scanFile(JavaFileScannerContext context) {
-    InputFile component = fileSystem.inputFile(fileSystem.predicates().is(context.getFile()));
-    if (component == null) {
-      throw new AnalysisException("Component not found: " + context.getFileKey());
-    }
-    String componentKey = component.key();
     for (JavaIssueFilter javaIssueFilter : getIssueFilters()) {
-      javaIssueFilter.setComponentKey(componentKey);
       javaIssueFilter.scanFile(context);
     }
   }

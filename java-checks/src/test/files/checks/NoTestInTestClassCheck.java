@@ -2,7 +2,22 @@ import java.lang.Deprecated;
 import org.junit.experimental.runners.Enclosed;
 import cucumber.api.junit.Cucumber;
 import org.junit.runner.RunWith;
+import org.junit.runner.Suite;
 import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.experimental.theories.Theories;
+import org.junit.experimental.theories.Theory;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+
+import com.googlecode.zohhak.api.TestWith;
+import com.googlecode.zohhak.api.runners.ZohhakRunner;
+
 
 class A extends junit.framework.TestCase {
   void testFoo() {
@@ -85,12 +100,7 @@ class OtherTest extends BaseTest {
   public void test2() {
   }
 }
-@org.junit.runner.RunWith(org.junit.experimental.runners.Enclosed.class)
-public class MyNewTest { // should not raise an issue
-}
-@RunWith(Enclosed.class)
-public class MyNew2Test { // no issue
-}
+
 @org.junit.runner.RunWith(cucumber.api.junit.Cucumber.class)
 public class MyCucumberTest { // should not raise an issue
 }
@@ -120,5 +130,136 @@ public class CTest {
 public class DTest { // Noncompliant {{Add some tests to this class.}}
   public void testFoo() {
     assertThat(new A().foo(null)).isEqualTo(0);
+  }
+}
+
+@RunWith(Suite.class)
+@Suite.SuiteClasses(value = { S2187Test.Test1.class, S2187Test.Test2.class })
+public class S2187Test {
+
+  public static class Test1 {
+
+    @Test
+    public void test() {
+      Assert.assertTrue(true);
+    }
+  }
+
+  public static class Test2 {
+
+    @Test
+    public void test() {
+      Assert.assertTrue(true);
+    }
+  }
+
+}
+
+@RunWith(Theories.class)
+public class MyTheorieClassTest {
+  @Theory
+  public void test_method() {
+
+  }
+}
+
+public class Junit5MetaAnnotationTest {
+
+  @Test
+  @Target(ElementType.METHOD)
+  @Retention(RetentionPolicy.RUNTIME)
+  public static @interface Bar {
+
+  }
+
+  @Bar
+  public void test() {
+
+  }
+
+}
+
+public class JUnit5InheritedDefaultMethodsTest implements TestA { // Compliant
+
+}
+
+interface TestA {
+
+  @Test
+  default void method1() {}
+}
+
+public class CrazyHierarchyTest extends AbstractCrazyHierarchyTest { } // Compliant, contains test from TestA interface
+
+abstract class AbstractCrazyHierarchyTest implements TestB { }
+
+interface TestB extends TestA { }
+
+class MyUnitTest { // Compliant
+  @org.junit.jupiter.params.ParameterizedTest
+  void foo() {
+    assertThat(plop);
+  }
+}
+
+class CustomAnnotationTest {
+  @CustomAnnotation
+  void foo() {}
+}
+
+@org.junit.platform.commons.annotation.Testable
+@interface CustomAnnotation {}
+
+class NestedTest { // Compliant
+  @Nested
+  class NestedClass {
+    @Test
+    public void foo() {
+      Assert.assertTrue(true);
+    }
+  }
+}
+
+class NoTestsInNestedTest { // Noncompliant {{Add some tests to this class.}}
+  @Nested
+  class NestedClass {
+    public void foo() {
+      Assert.assertTrue(true);
+    }
+  }
+}
+
+class SomeTest implements SomeInterface { }// Noncompliant {{Add some tests to this class.}}
+
+interface SomeInterface {
+  class Foo implements SomeInterface { }
+}
+
+
+@RunWith(ZohhakRunner.class)
+public class MyZohhakTest { // Noncompliant
+}
+
+@RunWith(ZohhakRunner.class)
+public class MyZohhak2Test { // Compliant, Zohhak uses @TestWith
+  @TestWith({
+    "1, 2",
+    "3, 4"
+  })
+  public void testFoo1(int p1, int p2) {
+  }
+}
+
+@RunWith(ZohhakRunner.class)
+public class MyZohhak3Test { // Compliant, Zohhak uses @TestWith
+  @TestWith(value=" 7 = 7 > 5 => true", separator="=>")
+  public void testFoo3(String string, boolean bool) {
+  }
+}
+
+@RunWith(ZohhakRunner.class)
+public class MyZohhak4Test { // Compliant
+  @Test
+  public void testFoo4() {
   }
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -57,6 +57,7 @@ public class IndentationCheck extends BaseTreeVisitor implements JavaFileScanner
   private boolean isBlockAlreadyReported;
   private int excludeIssueAtLine;
   private JavaFileScannerContext context;
+  private List<String> fileLines;
 
   @Override
   public void scanFile(JavaFileScannerContext context) {
@@ -64,6 +65,7 @@ public class IndentationCheck extends BaseTreeVisitor implements JavaFileScanner
     isBlockAlreadyReported = false;
     excludeIssueAtLine = 0;
     this.context = context;
+    fileLines = context.getFileLines();
     scan(context.getTree());
   }
 
@@ -147,7 +149,7 @@ public class IndentationCheck extends BaseTreeVisitor implements JavaFileScanner
     int bodySize = body.size();
     if (bodySize > 0 && body.get(0).is(Kind.BLOCK)) {
       expectedLevel -= indentationLevel;
-      checkIndentation(body.get(0), Iterables.getLast(labels).colonToken().column() + 2);
+      checkIndentation(body.get(0), Iterables.getLast(labels).colonOrArrowToken().column() + 2);
       newBody = body.subList(1, bodySize);
     }
     checkIndentation(newBody);
@@ -176,8 +178,15 @@ public class IndentationCheck extends BaseTreeVisitor implements JavaFileScanner
 
   private void checkIndentation(Tree tree, int expectedLevel) {
     SyntaxToken firstSyntaxToken = tree.firstToken();
-    if (firstSyntaxToken.column() != expectedLevel && !isExcluded(tree, firstSyntaxToken.line())) {
-      context.addIssue(((JavaTree) tree).getLine(), this, "Make this line start at column " + (expectedLevel + 1) + ".");
+    String line = fileLines.get(firstSyntaxToken.line() - 1);
+    int level = firstSyntaxToken.column();
+    for (int i = 0; i < firstSyntaxToken.column(); i++) {
+      if (line.charAt(i) == '\t') {
+        level += indentationLevel - 1;
+      }
+    }
+    if (level != expectedLevel && !isExcluded(tree, firstSyntaxToken.line())) {
+      context.addIssue(((JavaTree) tree).getLine(), this, "Make this line start after "+expectedLevel+" spaces to indent the code consistently.");
       isBlockAlreadyReported = true;
     }
     excludeIssueAtLine = tree.lastToken().line();

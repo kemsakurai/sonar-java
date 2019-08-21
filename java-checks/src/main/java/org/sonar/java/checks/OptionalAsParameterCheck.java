@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -31,6 +31,7 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.TypeTree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
@@ -38,6 +39,7 @@ import java.util.Optional;
 public class OptionalAsParameterCheck extends IssuableSubscriptionVisitor {
 
   private static final String JAVA_UTIL_OPTIONAL = "java.util.Optional";
+  private static final String GUAVA_OPTIONAL = "com.google.common.base.Optional";
   private static final List<String> PRIMITIVE_OPTIONALS = ImmutableList.<String>builder()
     .add("java.util.OptionalDouble")
     .add("java.util.OptionalInt")
@@ -46,7 +48,7 @@ public class OptionalAsParameterCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD, Tree.Kind.CONSTRUCTOR);
+    return Arrays.asList(Tree.Kind.METHOD, Tree.Kind.CONSTRUCTOR);
   }
 
   @Override
@@ -64,7 +66,7 @@ public class OptionalAsParameterCheck extends IssuableSubscriptionVisitor {
   }
 
   private static Optional<String> expectedTypeInsteadOfOptional(Type type) {
-    if (type.is(JAVA_UTIL_OPTIONAL)) {
+    if (type.is(JAVA_UTIL_OPTIONAL) || type.is(GUAVA_OPTIONAL)) {
       String msg;
       if (((JavaType) type).isParameterized()) {
         ParametrizedTypeJavaType ptjt = (ParametrizedTypeJavaType) type;

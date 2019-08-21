@@ -7,8 +7,10 @@
     "constantCost": "5min"
   },
   "tags": [
-    "bug",
     "unpredictable"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-2200",
+  "sqKey": "S2200",
+  "scope": "Main"
 }

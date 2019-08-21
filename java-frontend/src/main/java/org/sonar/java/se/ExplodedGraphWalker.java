@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -25,37 +25,54 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
-
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
 import org.sonar.api.utils.log.Logger;
 import org.sonar.api.utils.log.Loggers;
+import org.sonar.java.DebugCheck;
 import org.sonar.java.cfg.CFG;
 import org.sonar.java.cfg.LiveVariables;
 import org.sonar.java.matcher.MethodMatcher;
+import org.sonar.java.matcher.MethodMatcherCollection;
 import org.sonar.java.model.ExpressionUtils;
 import org.sonar.java.model.JavaTree;
-import org.sonar.java.resolve.JavaSymbol;
 import org.sonar.java.resolve.JavaType;
 import org.sonar.java.resolve.SemanticModel;
 import org.sonar.java.resolve.Types;
-import org.sonar.java.se.checks.ConditionAlwaysTrueOrFalseCheck;
 import org.sonar.java.se.checks.DivisionByZeroCheck;
 import org.sonar.java.se.checks.LocksNotUnlockedCheck;
 import org.sonar.java.se.checks.NoWayOutLoopCheck;
 import org.sonar.java.se.checks.NonNullSetToNullCheck;
 import org.sonar.java.se.checks.NullDereferenceCheck;
 import org.sonar.java.se.checks.OptionalGetBeforeIsPresentCheck;
+import org.sonar.java.se.checks.RedundantAssignmentsCheck;
 import org.sonar.java.se.checks.SECheck;
+import org.sonar.java.se.checks.StreamConsumedCheck;
 import org.sonar.java.se.checks.UnclosedResourcesCheck;
 import org.sonar.java.se.constraint.BooleanConstraint;
 import org.sonar.java.se.constraint.ConstraintManager;
 import org.sonar.java.se.constraint.ObjectConstraint;
+import org.sonar.java.se.symbolicvalues.RelationalSymbolicValue;
 import org.sonar.java.se.symbolicvalues.SymbolicValue;
 import org.sonar.java.se.xproc.BehaviorCache;
 import org.sonar.java.se.xproc.MethodBehavior;
 import org.sonar.java.se.xproc.MethodYield;
 import org.sonar.plugins.java.api.JavaFileScanner;
 import org.sonar.plugins.java.api.semantic.Symbol;
-import org.sonar.plugins.java.api.semantic.SymbolMetadata;
 import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.ArrayAccessExpressionTree;
 import org.sonar.plugins.java.api.tree.ArrayDimensionTree;
@@ -78,46 +95,41 @@ import org.sonar.plugins.java.api.tree.ReturnStatementTree;
 import org.sonar.plugins.java.api.tree.ThrowStatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.TypeCastTree;
-import org.sonar.plugins.java.api.tree.UnaryExpressionTree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 import org.sonar.plugins.java.api.tree.WhileStatementTree;
 
-import javax.annotation.Nullable;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Deque;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import static org.sonar.java.se.NullableAnnotationUtils.isAnnotatedNonNull;
+import static org.sonar.java.se.NullableAnnotationUtils.isAnnotatedNullable;
+import static org.sonar.java.se.NullableAnnotationUtils.isGloballyAnnotatedParameterNonNull;
+import static org.sonar.java.se.NullableAnnotationUtils.isGloballyAnnotatedParameterNullable;
 
 public class ExplodedGraphWalker {
 
-  private static final String EQUALS_METHOD_NAME = "equals";
   /**
    * Arbitrary number to limit symbolic execution.
    */
   private static final int MAX_STEPS = 16_000;
   public static final int MAX_NESTED_BOOLEAN_STATES = 10_000;
+  // would correspond to 10 parameters annotated with @Nullable
+  private static final int MAX_STARTING_STATES = 1_024;
   private static final Logger LOG = Loggers.get(ExplodedGraphWalker.class);
   private static final Set<String> THIS_SUPER = ImmutableSet.of("this", "super");
 
   private static final boolean DEBUG_MODE_ACTIVATED = false;
   @VisibleForTesting
   static final int MAX_EXEC_PROGRAM_POINT = 2;
+
   private static final MethodMatcher SYSTEM_EXIT_MATCHER = MethodMatcher.create().typeDefinition("java.lang.System").name("exit").addParameter("int");
-  private static final MethodMatcher OBJECT_WAIT_MATCHER = MethodMatcher.create().typeDefinition("java.lang.Object").name("wait").withAnyParameters();
+  private static final String JAVA_LANG_OBJECT = "java.lang.Object";
+  private static final MethodMatcher OBJECT_WAIT_MATCHER = MethodMatcher.create().typeDefinition(JAVA_LANG_OBJECT).name("wait").withAnyParameters();
+  private static final MethodMatcher GET_CLASS_MATCHER = MethodMatcher.create().typeDefinition(JAVA_LANG_OBJECT).name("getClass").withoutParameter();
   private static final MethodMatcher THREAD_SLEEP_MATCHER = MethodMatcher.create().typeDefinition("java.lang.Thread").name("sleep").withAnyParameters();
-  private final ConditionAlwaysTrueOrFalseCheck alwaysTrueOrFalseChecker;
+  private static final MethodMatcher EQUALS = MethodMatcher.create().name("equals").parameters(JAVA_LANG_OBJECT);
+  public static final MethodMatcherCollection EQUALS_METHODS = MethodMatcherCollection.create(
+    EQUALS,
+    MethodMatcher.create().name("equals").typeDefinition("java.util.Objects").withAnyParameters());
+
+  private final AlwaysTrueOrFalseExpressionCollector alwaysTrueOrFalseExpressionCollector;
   private MethodTree methodTree;
 
   private ExplodedGraph explodedGraph;
@@ -149,24 +161,32 @@ public class ExplodedGraphWalker {
       super(s);
     }
   }
+
   public static class MaximumStepsReachedException extends RuntimeException {
 
     public MaximumStepsReachedException(String s) {
       super(s);
     }
-    public MaximumStepsReachedException(String s, TooManyNestedBooleanStatesException e) {
+
+    public MaximumStepsReachedException(String s, RuntimeException e) {
       super(s, e);
     }
-
   }
+
   public static class TooManyNestedBooleanStatesException extends RuntimeException {
-
   }
+
+  public static class MaximumStartingStatesException extends RuntimeException {
+    public MaximumStartingStatesException(String s) {
+      super(s);
+    }
+  }
+
   @VisibleForTesting
   public ExplodedGraphWalker(BehaviorCache behaviorCache, SemanticModel semanticModel) {
-    alwaysTrueOrFalseChecker = new ConditionAlwaysTrueOrFalseCheck();
-    List<SECheck> checks = Lists.newArrayList(alwaysTrueOrFalseChecker, new NullDereferenceCheck(), new DivisionByZeroCheck(),
+    List<SECheck> checks = Lists.newArrayList(new NullDereferenceCheck(), new DivisionByZeroCheck(),
       new UnclosedResourcesCheck(), new LocksNotUnlockedCheck(), new NonNullSetToNullCheck(), new NoWayOutLoopCheck());
+    this.alwaysTrueOrFalseExpressionCollector = new AlwaysTrueOrFalseExpressionCollector();
     this.checkerDispatcher = new CheckerDispatcher(this, checks);
     this.behaviorCache = behaviorCache;
     this.semanticModel = semanticModel;
@@ -178,15 +198,12 @@ public class ExplodedGraphWalker {
     this.cleanup = cleanup;
   }
 
-  private ExplodedGraphWalker(ConditionAlwaysTrueOrFalseCheck alwaysTrueOrFalseChecker, List<SECheck> seChecks, BehaviorCache behaviorCache, SemanticModel semanticModel) {
-    this.alwaysTrueOrFalseChecker = alwaysTrueOrFalseChecker;
+  @VisibleForTesting
+  protected ExplodedGraphWalker(List<SECheck> seChecks, BehaviorCache behaviorCache, SemanticModel semanticModel) {
+    this.alwaysTrueOrFalseExpressionCollector = new AlwaysTrueOrFalseExpressionCollector();
     this.checkerDispatcher = new CheckerDispatcher(this, seChecks);
     this.behaviorCache = behaviorCache;
     this.semanticModel = semanticModel;
-  }
-
-  public ExplodedGraph getExplodedGraph() {
-    return explodedGraph;
   }
 
   public MethodBehavior visitMethod(MethodTree tree) {
@@ -194,8 +211,9 @@ public class ExplodedGraphWalker {
   }
 
   public MethodBehavior visitMethod(MethodTree tree, @Nullable MethodBehavior methodBehavior) {
-    BlockTree body = tree.block();
+    Preconditions.checkArgument(methodBehavior == null || !methodBehavior.isComplete() || !methodBehavior.isVisited(), "Trying to execute an already visited methodBehavior");
     this.methodBehavior = methodBehavior;
+    BlockTree body = tree.block();
     if (body != null) {
       execute(tree);
     }
@@ -219,37 +237,41 @@ public class ExplodedGraphWalker {
     programState = ProgramState.EMPTY_STATE;
     steps = 0;
     for (ProgramState startingState : startingStates(tree, programState)) {
-      enqueue(new ProgramPoint(cfg.entry()), startingState);
+      enqueue(new ProgramPoint(cfg.entryBlock()), startingState);
     }
     while (!workList.isEmpty()) {
       steps++;
-      if (steps > MAX_STEPS) {
+      if (steps > maxSteps()) {
         throwMaxSteps(tree);
       }
       // LIFO:
       setNode(workList.removeFirst());
-      if (programPosition.block.successors().isEmpty()) {
+      CFG.Block block = (CFG.Block) programPosition.block;
+      if (block.successors().isEmpty()) {
         endOfExecutionPath.add(node);
         continue;
       }
       try {
-        if (programPosition.i < programPosition.block.elements().size()) {
+        Tree terminator = block.terminator();
+        if (programPosition.i < block.elements().size()) {
           // process block element
-          visit(programPosition.block.elements().get(programPosition.i), programPosition.block.terminator());
-        } else if (programPosition.block.terminator() == null) {
+          visit(block.elements().get(programPosition.i), terminator);
+        } else if (terminator == null) {
           // process block exit, which is unconditional jump such as goto-statement or return-statement
           handleBlockExit(programPosition);
-        } else if (programPosition.i == programPosition.block.elements().size()) {
+        } else if (programPosition.i == block.elements().size()) {
           // process block exist, which is conditional jump such as if-statement
-          checkerDispatcher.executeCheckPostStatement(programPosition.block.terminator());
+          checkerDispatcher.executeCheckPostStatement(terminator);
         } else {
           // process branch
           // process block exist, which is conditional jump such as if-statement
-          checkerDispatcher.executeCheckPreStatement(programPosition.block.terminator());
+          checkerDispatcher.executeCheckPreStatement(terminator);
           handleBlockExit(programPosition);
         }
       } catch (TooManyNestedBooleanStatesException e) {
         throwTooManyBooleanStates(tree, e);
+      } catch (RelationalSymbolicValue.TransitiveRelationExceededException e) {
+        throwTooManyTransitiveRelationsException(tree, e);
       }
     }
 
@@ -262,23 +284,33 @@ public class ExplodedGraphWalker {
     constraintManager = null;
   }
 
+  private void throwTooManyTransitiveRelationsException(MethodTree tree, RelationalSymbolicValue.TransitiveRelationExceededException e) {
+    String message = String.format("reached maximum number of transitive relations generated for method %s in class %s",
+      tree.simpleName().name(), tree.symbol().owner().name());
+    MaximumStepsReachedException cause = new MaximumStepsReachedException(message, e);
+    interrupted(cause);
+    throw cause;
+  }
+
   private void throwTooManyBooleanStates(MethodTree tree, TooManyNestedBooleanStatesException e) {
-    interrupted();
     String message = String.format("reached maximum number of %d branched states for method %s in class %s",
       MAX_NESTED_BOOLEAN_STATES, tree.simpleName().name(), tree.symbol().owner().name());
-    throw new MaximumStepsReachedException(message, e);
+    MaximumStepsReachedException cause = new MaximumStepsReachedException(message, e);
+    interrupted(cause);
+    throw cause;
   }
 
   private void throwMaxSteps(MethodTree tree) {
-    interrupted();
     String message = String.format("reached limit of %d steps for method %s#%d in class %s",
-      MAX_STEPS, tree.simpleName().name(), tree.simpleName().firstToken().line(), tree.symbol().owner().name());
-    throw new MaximumStepsReachedException(message);
+      maxSteps(), tree.simpleName().name(), tree.simpleName().firstToken().line(), tree.symbol().owner().name());
+    MaximumStepsReachedException cause = new MaximumStepsReachedException(message);
+    interrupted(cause);
+    throw cause;
   }
 
-  private void interrupted() {
+  private void interrupted(Exception cause) {
     handleEndOfExecutionPath(true);
-    checkerDispatcher.interruptedExecution();
+    checkerDispatcher.interruptedExecution(cause);
   }
 
   private void setNode(ExplodedGraph.Node node) {
@@ -291,9 +323,7 @@ public class ExplodedGraphWalker {
     ExplodedGraph.Node savedNode = node;
     endOfExecutionPath.forEach(n -> {
       setNode(n);
-      if (!programState.exitingOnRuntimeException()) {
-        checkerDispatcher.executeCheckEndOfExecutionPath(constraintManager);
-      }
+      checkerDispatcher.executeCheckEndOfExecutionPath(constraintManager);
       if (!interrupted && methodBehavior != null) {
         methodBehavior.createYield(node);
       }
@@ -302,48 +332,60 @@ public class ExplodedGraphWalker {
   }
 
   public void addExceptionalYield(SymbolicValue target, ProgramState exceptionalState, String exceptionFullyQualifiedName, SECheck check) {
+    // in order to create such Exceptional Yield, a parameter of the method has to be the cause of the exception
     if (methodBehavior != null && methodBehavior.parameters().contains(target)) {
       Type exceptionType = semanticModel.getClassType(exceptionFullyQualifiedName);
       ProgramState newExceptionalState = exceptionalState.clearStack().stackValue(constraintManager.createExceptionalSymbolicValue(exceptionType));
       ExplodedGraph.Node exitNode = explodedGraph.node(node.programPoint, newExceptionalState);
-      methodBehavior.createExceptionalCheckBasedYield(target, exitNode, exceptionType, check);
+      methodBehavior.createExceptionalCheckBasedYield(target, exitNode, exceptionFullyQualifiedName, check);
       exitNode.addParent(node, null);
     }
   }
 
   private Iterable<ProgramState> startingStates(MethodTree tree, ProgramState currentState) {
     Stream<ProgramState> stateStream = Stream.of(currentState);
-    boolean isEqualsMethod = EQUALS_METHOD_NAME.equals(tree.simpleName().name()) && tree.parameters().size() == 1;
-    SymbolMetadata packageMetadata = ((JavaSymbol.MethodJavaSymbol) tree.symbol()).packge().metadata();
-    boolean nonNullParams = packageMetadata.isAnnotatedWith("javax.annotation.ParametersAreNonnullByDefault");
-    boolean nullableParams = packageMetadata.isAnnotatedWith("javax.annotation.ParametersAreNullableByDefault");
+    int numberStartingStates = 1;
+    boolean isEqualsMethod = EQUALS.matches(tree);
+    boolean nonNullParameters = isGloballyAnnotatedParameterNonNull(methodTree.symbol());
+    boolean nullableParameters = isGloballyAnnotatedParameterNullable(methodTree.symbol());
     boolean hasMethodBehavior = methodBehavior != null;
+
     for (final VariableTree variableTree : tree.parameters()) {
-      // create
       final SymbolicValue sv = constraintManager.createSymbolicValue(variableTree);
       Symbol variableSymbol = variableTree.symbol();
       if (hasMethodBehavior) {
         methodBehavior.addParameter(sv);
       }
       stateStream = stateStream.map(ps -> ps.put(variableSymbol, sv));
-      if (isEqualsMethod || parameterCanBeNull(variableSymbol, nullableParams)) {
+      if (isEqualsMethod || parameterCanBeNull(variableSymbol, nullableParameters)) {
+        // each nullable parameter generate 2 starting states, combined with all the others
+        numberStartingStates *= 2;
+        if (numberStartingStates > MAX_STARTING_STATES) {
+          throwMaximumStartingStates(methodTree);
+        }
         stateStream = stateStream.flatMap((ProgramState ps) ->
           Stream.concat(
             sv.setConstraint(ps, ObjectConstraint.NULL).stream(),
             sv.setConstraint(ps, ObjectConstraint.NOT_NULL).stream()
             ));
-      } else if(nonNullParams) {
+      } else if (nonNullParameters || isAnnotatedNonNull(variableSymbol)) {
         stateStream = stateStream.flatMap(ps -> sv.setConstraint(ps, ObjectConstraint.NOT_NULL).stream());
       }
     }
     return stateStream.collect(Collectors.toList());
   }
 
-  private static boolean parameterCanBeNull(Symbol variableSymbol, boolean nullableParams) {
-    SymbolMetadata metadata = variableSymbol.metadata();
-    return metadata.isAnnotatedWith("javax.annotation.CheckForNull")
-      || metadata.isAnnotatedWith("javax.annotation.Nullable")
-      || (nullableParams && !variableSymbol.type().isPrimitive());
+  private static void throwMaximumStartingStates(MethodTree tree) {
+    String message = String.format("reached maximum number of %d starting states for method %s in class %s",
+      MAX_STARTING_STATES, tree.simpleName().name(), tree.symbol().owner().name());
+    throw new MaximumStartingStatesException(message);
+  }
+
+  private static boolean parameterCanBeNull(Symbol variableSymbol, boolean nullableParameters) {
+    if (variableSymbol.type().isPrimitive()) {
+      return false;
+    }
+    return isAnnotatedNullable(variableSymbol) || (nullableParameters && !isAnnotatedNonNull(variableSymbol));
   }
 
   private void cleanUpProgramState(CFG.Block block) {
@@ -355,14 +397,15 @@ public class ExplodedGraphWalker {
   }
 
   private void handleBlockExit(ProgramPoint programPosition) {
-    CFG.Block block = programPosition.block;
+    CFG.Block block = (CFG.Block) programPosition.block;
     Tree terminator = block.terminator();
     cleanUpProgramState(block);
     boolean exitPath = node.exitPath;
     if (terminator != null) {
       switch (terminator.kind()) {
         case IF_STATEMENT:
-          handleBranch(block, cleanupCondition(((IfStatementTree) terminator).condition()));
+          ExpressionTree ifCondition = ((IfStatementTree) terminator).condition();
+          handleBranch(block, cleanupCondition(ifCondition), verifyCondition(ifCondition));
           return;
         case CONDITIONAL_OR:
         case CONDITIONAL_AND:
@@ -380,14 +423,14 @@ public class ExplodedGraphWalker {
           break;
         case WHILE_STATEMENT:
           ExpressionTree whileCondition = ((WhileStatementTree) terminator).condition();
-          handleBranch(block, cleanupCondition(whileCondition), !whileCondition.is(Tree.Kind.BOOLEAN_LITERAL));
+          handleBranch(block, cleanupCondition(whileCondition), verifyCondition(whileCondition));
           return;
         case DO_STATEMENT:
           ExpressionTree doCondition = ((DoWhileStatementTree) terminator).condition();
-          handleBranch(block, cleanupCondition(doCondition), !doCondition.is(Tree.Kind.BOOLEAN_LITERAL));
+          handleBranch(block, cleanupCondition(doCondition), verifyCondition(doCondition));
           return;
         case SYNCHRONIZED_STATEMENT:
-          resetFieldValues();
+          resetFieldValues(false);
           break;
         case RETURN_STATEMENT:
           ExpressionTree returnExpression = ((ReturnStatementTree) terminator).expression();
@@ -397,8 +440,14 @@ public class ExplodedGraphWalker {
           break;
         case THROW_STATEMENT:
           ProgramState.Pop unstack = programState.unstackValue(1);
-          // we don't use the SV related to the expression
-          programState = unstack.state.stackValue(constraintManager.createExceptionalSymbolicValue(((ThrowStatementTree) terminator).expression().symbolType()));
+          SymbolicValue sv = unstack.values.get(0);
+          if (sv instanceof SymbolicValue.CaughtExceptionSymbolicValue) {
+            // retrowing the exception from a catch block
+            sv = ((SymbolicValue.CaughtExceptionSymbolicValue) sv).exception();
+          } else {
+            sv = constraintManager.createExceptionalSymbolicValue(((ThrowStatementTree) terminator).expression().symbolType());
+          }
+          programState = unstack.state.stackValue(sv);
           programState.storeExitValue();
           break;
         default:
@@ -418,15 +467,25 @@ public class ExplodedGraphWalker {
     } else {
       for (CFG.Block successor : block.successors()) {
         if (!block.isFinallyBlock() || isDirectFlowSuccessorOf(successor, block)) {
-          node.happyPath = terminator == null || !terminator.is(Tree.Kind.THROW_STATEMENT);
           enqueue(new ProgramPoint(successor), programState, successor == block.exitBlock());
         }
       }
     }
   }
 
+  private static boolean verifyCondition(ExpressionTree condition) {
+    if(condition.is(Tree.Kind.IDENTIFIER)) {
+      IdentifierTree identifierTree = (IdentifierTree) condition;
+      if(identifierTree.symbol().isFinal() && identifierTree.symbol().isVariableSymbol()) {
+        VariableTree declaration = (VariableTree) identifierTree.symbol().declaration();
+        return declaration == null || declaration.initializer() == null || !declaration.initializer().is(Tree.Kind.BOOLEAN_LITERAL);
+      }
+    }
+    return !condition.is(Tree.Kind.BOOLEAN_LITERAL);
+  }
+
   private static boolean isDirectFlowSuccessorOf(CFG.Block successor, CFG.Block block) {
-    return successor != block.exitBlock() || successor.isMethodExitBlock();
+    return successor != block.exitBlock() || (block.successors().size() == 1 && successor.isMethodExitBlock());
   }
 
   /**
@@ -458,7 +517,7 @@ public class ExplodedGraphWalker {
       // enqueue false-branch, if feasible
       enqueue(falseBlockProgramPoint, ps, node.exitPath);
       if (checkPath) {
-        alwaysTrueOrFalseChecker.evaluatedToFalse(condition, node);
+        alwaysTrueOrFalseExpressionCollector.evaluatedToFalse(cleanupCondition((ExpressionTree) condition), node);
       }
     }
     ProgramPoint trueBlockProgramPoint = new ProgramPoint(programPosition.trueBlock());
@@ -472,7 +531,7 @@ public class ExplodedGraphWalker {
       // enqueue true-branch, if feasible
       enqueue(trueBlockProgramPoint, ps, node.exitPath);
       if (checkPath) {
-        alwaysTrueOrFalseChecker.evaluatedToTrue(condition, node);
+        alwaysTrueOrFalseExpressionCollector.evaluatedToTrue(cleanupCondition((ExpressionTree) condition), node);
       }
     }
   }
@@ -521,7 +580,7 @@ public class ExplodedGraphWalker {
       case LEFT_SHIFT_ASSIGNMENT:
       case RIGHT_SHIFT_ASSIGNMENT:
       case UNSIGNED_RIGHT_SHIFT_ASSIGNMENT:
-        executeAssignement((AssignmentExpressionTree) tree);
+        executeAssignment((AssignmentExpressionTree) tree);
         break;
       case AND_ASSIGNMENT:
       case XOR_ASSIGNMENT:
@@ -592,6 +651,7 @@ public class ExplodedGraphWalker {
         break;
       case LAMBDA_EXPRESSION:
       case METHOD_REFERENCE:
+      case SWITCH_EXPRESSION:
         programState = programState.stackValue(constraintManager.createSymbolicValue(tree));
         break;
       case ASSERT_STATEMENT:
@@ -631,10 +691,12 @@ public class ExplodedGraphWalker {
     }
 
     // Enqueue additional exceptional paths corresponding to unchecked exceptions, for instance OutOfMemoryError
-    enqueueUncheckedExceptionalPaths();
+    enqueueUncheckedExceptionalPaths(methodSymbol);
 
-    final SymbolicValue resultValue = constraintManager.createMethodSymbolicValue(mit, unstack.values);
-    if (methodInvokedBehavior != null && methodInvokedBehavior.isComplete()) {
+    final SymbolicValue resultValue = constraintManager.createMethodSymbolicValue(mit, unstack.valuesAndSymbols);
+    if (methodInvokedBehavior != null
+      && methodInvokedBehavior.isComplete()
+      && !EQUALS_METHODS.anyMatch(mit)) {
       List<SymbolicValue> invocationArguments = invocationArguments(unstack.values);
       List<Type> invocationTypes = mit.arguments().stream().map(ExpressionTree::symbolType).collect(Collectors.toList());
 
@@ -646,8 +708,8 @@ public class ExplodedGraphWalker {
           invocationArguments,
           invocationTypes,
           programState,
-          () -> thrownExceptionsByExceptionType.computeIfAbsent(yield.exceptionType(), constraintManager::createExceptionalSymbolicValue))
-          .forEach(psYield -> enqueueExceptionalPaths(psYield, yield)));
+          () -> thrownExceptionsByExceptionType.computeIfAbsent(yield.exceptionType(semanticModel), constraintManager::createExceptionalSymbolicValue))
+          .forEach(psYield -> enqueueExceptionalPaths(psYield, methodSymbol, yield)));
 
       // Enqueue happy paths
       methodInvokedBehavior.happyPathYields()
@@ -675,10 +737,10 @@ public class ExplodedGraphWalker {
   }
 
   private ProgramState handleSpecialMethods(ProgramState ps, MethodInvocationTree mit) {
-    if (isNonNullMethod(mit.symbol())) {
+    if (isAnnotatedNonNull(mit.symbol())) {
       return ps.addConstraint(ps.peekValue(), ObjectConstraint.NOT_NULL);
     } else if (OBJECT_WAIT_MATCHER.matches(mit)) {
-      return ps.resetFieldValues(constraintManager);
+      return ps.resetFieldValues(constraintManager, false);
     }
     return ps;
   }
@@ -692,31 +754,31 @@ public class ExplodedGraphWalker {
     ((Symbol.MethodSymbol) symbol).thrownTypes().stream()
       .map(constraintManager::createExceptionalSymbolicValue)
       .map(ps::stackValue)
-      .forEach(this::enqueueExceptionalPaths);
+      .forEach(ps1 -> enqueueExceptionalPaths(ps1, symbol));
   }
 
-  private void enqueueUncheckedExceptionalPaths() {
-    enqueueExceptionalPaths(programState.clearStack().stackValue(constraintManager.createExceptionalSymbolicValue(null)));
+  private void enqueueUncheckedExceptionalPaths(Symbol methodSymbol) {
+    enqueueExceptionalPaths(programState.clearStack().stackValue(constraintManager.createExceptionalSymbolicValue(null)), methodSymbol);
   }
 
-  private void enqueueExceptionalPaths(ProgramState ps) {
-    enqueueExceptionalPaths(ps, null);
+  private void enqueueExceptionalPaths(ProgramState ps, Symbol methodSymbol) {
+    enqueueExceptionalPaths(ps, methodSymbol, null);
   }
 
-  private void enqueueExceptionalPaths(ProgramState ps, @Nullable MethodYield methodYield) {
-    Set<CFG.Block> exceptionBlocks = node.programPoint.block.exceptions();
+  private void enqueueExceptionalPaths(ProgramState ps, Symbol methodSymbol, @Nullable MethodYield methodYield) {
+    Set<CFG.Block> exceptionBlocks = ((CFG.Block) node.programPoint.block).exceptions();
     List<CFG.Block> catchBlocks = exceptionBlocks.stream().filter(CFG.Block.IS_CATCH_BLOCK).collect(Collectors.toList());
     SymbolicValue peekValue = ps.peekValue();
 
     Preconditions.checkState(peekValue instanceof SymbolicValue.ExceptionalSymbolicValue, "Top of stack should always contains exceptional SV");
     SymbolicValue.ExceptionalSymbolicValue exceptionSV = (SymbolicValue.ExceptionalSymbolicValue) peekValue;
     // only consider the first match, as order of catch block is important
-    Optional<CFG.Block> firstMatchingCatchBlock = catchBlocks.stream()
+    List<CFG.Block> caughtBlocks = catchBlocks.stream()
       .filter(b -> isCaughtByBlock(exceptionSV.exceptionType(), b))
       .sorted((b1, b2) -> Integer.compare(b2.id(), b1.id()))
-      .findFirst();
-    if (firstMatchingCatchBlock.isPresent()) {
-      enqueue(new ProgramPoint(firstMatchingCatchBlock.get()), ps, methodYield);
+      .collect(Collectors.toList());
+    if (!caughtBlocks.isEmpty()) {
+      caughtBlocks.forEach(b -> enqueue(new ProgramPoint(b), ps, methodYield));
       return;
     }
 
@@ -730,12 +792,13 @@ public class ExplodedGraphWalker {
 
     // use other exceptional blocks, i.e. finally block and exit blocks
     List<CFG.Block> otherBlocks = exceptionBlocks.stream()
-      .filter(CFG.Block.IS_CATCH_BLOCK.negate())
+      .filter(CFG.Block.IS_CATCH_BLOCK.negate().or(b -> methodSymbol.isUnknown()))
       .collect(Collectors.toList());
     if (otherBlocks.isEmpty()) {
       // explicitly add the exception branching to method exit
       CFG.Block methodExit = node.programPoint.block.successors()
         .stream()
+        .map(b -> (CFG.Block) b)
         .filter(CFG.Block::isMethodExitBlock)
         .findFirst()
         .orElse(exitBlock);
@@ -748,65 +811,65 @@ public class ExplodedGraphWalker {
   private static boolean isCaughtByBlock(@Nullable Type thrownType, CFG.Block catchBlock) {
     if (thrownType != null) {
       Type caughtType = ((VariableTree) catchBlock.elements().get(0)).symbol().type();
-      return thrownType.isSubtypeOf(caughtType);
+      return thrownType.isSubtypeOf(caughtType) || caughtType.isSubtypeOf(thrownType);
     }
     return false;
   }
 
   private static boolean isCatchingUncheckedException(CFG.Block catchBlock) {
     Type caughtType = ((VariableTree) catchBlock.elements().get(0)).symbol().type();
-    return caughtType.isSubtypeOf("java.lang.RuntimeException")
-      || caughtType.isSubtypeOf("java.lang.Error")
-      || caughtType.is("java.lang.Exception")
-      || caughtType.is("java.lang.Throwable");
+    return ExceptionUtils.isUncheckedException(caughtType);
   }
 
   private static List<SymbolicValue> invocationArguments(List<SymbolicValue> values) {
     return Lists.reverse(values.subList(0, values.size() - 1));
   }
 
-  private static boolean isNonNullMethod(Symbol symbol) {
-    return !symbol.isUnknown() && symbol.metadata().isAnnotatedWith("javax.annotation.Nonnull");
-  }
-
   /**
    * @see JLS8 4.12.5 for details
    */
   private void executeVariable(VariableTree variableTree, @Nullable Tree terminator) {
+    Symbol variableSymbol = variableTree.symbol();
     if (variableTree.initializer() == null) {
       SymbolicValue sv = null;
       if (terminator != null && terminator.is(Tree.Kind.FOR_EACH_STATEMENT)) {
         sv = constraintManager.createSymbolicValue(variableTree);
+        if (isAnnotatedNonNull(variableSymbol)) {
+          programState = programState.addConstraint(sv, ObjectConstraint.NOT_NULL);
+        }
       } else if (variableTree.parent().is(Tree.Kind.CATCH)) {
-        sv = getCaughtException(variableTree.symbol().type());
+        sv = handleCatchVariable(variableSymbol.type());
+        // an exception have been thrown and caught, stack must be cleared
+        // see notes in JVMS 8 - §6.5. - instruction "athrow"
+        programState = programState.clearStack();
+        // exception variable is not null by definition
         programState = programState.addConstraint(sv, ObjectConstraint.NOT_NULL);
       }
       if (sv != null) {
-        programState = programState.put(variableTree.symbol(), sv);
+        programState = programState.put(variableSymbol, sv);
       }
     } else {
       ProgramState.Pop unstack = programState.unstackValue(1);
       programState = unstack.state;
-      programState = programState.put(variableTree.symbol(), unstack.values.get(0));
+      programState = programState.put(variableSymbol, unstack.values.get(0));
     }
   }
 
-  private SymbolicValue getCaughtException(Type caughtType) {
-    SymbolicValue sv = null;
+  private SymbolicValue handleCatchVariable(Type caughtType) {
+    SymbolicValue peekValue = programState.peekValue();
+    SymbolicValue.ExceptionalSymbolicValue sv = null;
     Type exceptionType = null;
     // FIXME SONARJAVA-2069 every path conducting to a catch block should have an exceptional symbolic value on top of the stack
-    if (programState.peekValue() instanceof SymbolicValue.ExceptionalSymbolicValue) {
-      ProgramState.Pop unstack = programState.unstackValue(1);
-      programState = unstack.state;
-      // use the Exceptional SV from the stack
-      sv = unstack.values.get(0);
-      exceptionType = ((SymbolicValue.ExceptionalSymbolicValue) sv).exceptionType();
+    if (peekValue instanceof SymbolicValue.ExceptionalSymbolicValue) {
+      sv = (SymbolicValue.ExceptionalSymbolicValue) peekValue;
+      exceptionType = sv.exceptionType();
     }
     if (exceptionType == null || exceptionType.isUnknown()) {
       // unknown exception, create an exception of the adequate type
       sv = constraintManager.createExceptionalSymbolicValue(caughtType);
     }
-    return sv;
+    // use a dedicated SV encapsulating the caught exception
+    return constraintManager.createCaughtExceptionSymbolicValue(sv);
   }
 
   private void executeTypeCast(TypeCastTree typeCast) {
@@ -824,13 +887,12 @@ public class ExplodedGraphWalker {
     }
   }
 
-  private void executeAssignement(AssignmentExpressionTree tree) {
-    ExpressionTree variable = tree.variable();
+  private void executeAssignment(AssignmentExpressionTree tree) {
     ProgramState.Pop unstack;
     SymbolicValue value;
 
-    if (ExpressionUtils.isSimpleAssignment(tree)) {
-      unstack = programState.unstackValue(1);
+    if (tree.is(Tree.Kind.ASSIGNMENT)) {
+      unstack = ExpressionUtils.isSimpleAssignment(tree) ? programState.unstackValue(1) : programState.unstackValue(2);
       value = unstack.values.get(0);
     } else {
       unstack = programState.unstackValue(2);
@@ -838,25 +900,26 @@ public class ExplodedGraphWalker {
     }
 
     programState = unstack.state;
-    programState = programState.stackValue(value);
-    if (variable.is(Tree.Kind.IDENTIFIER)) {
-      // only local variables or fields are added to table of values
-      // FIXME SONARJAVA-1776 fields accessing using "this." should be handled
-      programState = programState.put(((IdentifierTree) variable).symbol(), value);
+    Symbol symbol = null;
+    if (tree.variable().is(Tree.Kind.IDENTIFIER) || ExpressionUtils.isSelectOnThisOrSuper(tree)) {
+      symbol = ExpressionUtils.extractIdentifier(tree).symbol();
+      programState = programState.put(symbol, value);
     }
+    programState = programState.stackValue(value, symbol);
   }
 
   private void executeLogicalAssignment(AssignmentExpressionTree tree) {
     ExpressionTree variable = tree.variable();
+    // FIXME handle also assignments with this SONARJAVA-2242
     if (variable.is(Tree.Kind.IDENTIFIER)) {
       ProgramState.Pop unstack = programState.unstackValue(2);
-      SymbolicValue assignedTo = unstack.values.get(1);
-      SymbolicValue value = unstack.values.get(0);
+      ProgramState.SymbolicValueSymbol assignedTo = unstack.valuesAndSymbols.get(1);
+      ProgramState.SymbolicValueSymbol value = unstack.valuesAndSymbols.get(0);
       programState = unstack.state;
-      SymbolicValue symbolicValue = constraintManager.createSymbolicValue(tree);
-      symbolicValue.computedFrom(ImmutableList.of(assignedTo, value));
-      programState = programState.stackValue(symbolicValue);
-      programState = programState.put(((IdentifierTree) variable).symbol(), symbolicValue);
+      SymbolicValue symbolicValue = constraintManager.createBinarySymbolicValue(tree, ImmutableList.of(assignedTo, value));
+      Symbol symbol = ((IdentifierTree) variable).symbol();
+      programState = programState.stackValue(symbolicValue, symbol);
+      programState = programState.put(symbol, symbolicValue);
     }
   }
 
@@ -880,7 +943,7 @@ public class ExplodedGraphWalker {
     NewClassTree newClassTree = tree;
     programState = programState.unstackValue(newClassTree.arguments().size()).state;
     // Enqueue exceptional paths
-    node.programPoint.block.exceptions().forEach(b -> enqueue(new ProgramPoint(b), programState, !b.isCatchBlock()));
+    ((CFG.Block) node.programPoint.block).exceptions().forEach(b -> enqueue(new ProgramPoint(b), programState, !b.isCatchBlock()));
     SymbolicValue svNewClass = constraintManager.createSymbolicValue(newClassTree);
     programState = programState.stackValue(svNewClass);
     programState = svNewClass.setSingleConstraint(programState, ObjectConstraint.NOT_NULL);
@@ -890,28 +953,8 @@ public class ExplodedGraphWalker {
     // Consume two and produce one SV.
     ProgramState.Pop unstackBinary = programState.unstackValue(2);
     programState = unstackBinary.state;
-    SymbolicValue symbolicValue = constraintManager.createSymbolicValue(tree);
-    symbolicValue.computedFrom(unstackBinary.values);
-    if(tree.is(Tree.Kind.PLUS)) {
-      BinaryExpressionTree bt = (BinaryExpressionTree) tree;
-      if (bt.leftOperand().symbolType().is("java.lang.String")) {
-        ObjectConstraint leftConstraint = programState.getConstraint(unstackBinary.values.get(1), ObjectConstraint.class);
-        if (leftConstraint != null && !leftConstraint.isNull()) {
-          List<ProgramState> programStates = symbolicValue.setConstraint(programState, ObjectConstraint.NOT_NULL);
-          Preconditions.checkState(programStates.size() == 1);
-          programState = programStates.get(0);
-        }
-
-      } else if(bt.rightOperand().symbolType().is("java.lang.String")) {
-        ObjectConstraint rightConstraint = programState.getConstraint(unstackBinary.values.get(0), ObjectConstraint.class);
-        if (rightConstraint != null && !rightConstraint.isNull()) {
-          List<ProgramState> programStates = symbolicValue.setConstraint(programState, ObjectConstraint.NOT_NULL);
-          Preconditions.checkState(programStates.size() == 1);
-          programState = programStates.get(0);
-        }
-
-      }
-    }
+    SymbolicValue symbolicValue = constraintManager.createBinarySymbolicValue(tree, unstackBinary.valuesAndSymbols);
+    programState = programState.addConstraint(symbolicValue, ObjectConstraint.NOT_NULL);
     programState = programState.stackValue(symbolicValue);
   }
 
@@ -920,15 +963,16 @@ public class ExplodedGraphWalker {
     ProgramState.Pop unstackUnary = programState.unstackValue(1);
     programState = unstackUnary.state;
     SymbolicValue unarySymbolicValue = constraintManager.createSymbolicValue(tree);
-    unarySymbolicValue.computedFrom(unstackUnary.values);
+    unarySymbolicValue.computedFrom(unstackUnary.valuesAndSymbols);
+    ProgramState.SymbolicValueSymbol symbolicValueSymbol = unstackUnary.valuesAndSymbols.get(0);
     if (tree.is(Tree.Kind.POSTFIX_DECREMENT, Tree.Kind.POSTFIX_INCREMENT)) {
-      programState = programState.stackValue(unstackUnary.values.get(0));
+      programState = programState.stackValue(symbolicValueSymbol.sv, symbolicValueSymbol.symbol);
     } else {
       programState = programState.stackValue(unarySymbolicValue);
     }
     if (tree.is(Tree.Kind.POSTFIX_DECREMENT, Tree.Kind.POSTFIX_INCREMENT, Tree.Kind.PREFIX_DECREMENT, Tree.Kind.PREFIX_INCREMENT)
-      && ((UnaryExpressionTree) tree).expression().is(Tree.Kind.IDENTIFIER)) {
-      programState = programState.put(((IdentifierTree) ((UnaryExpressionTree) tree).expression()).symbol(), unarySymbolicValue);
+      && symbolicValueSymbol.symbol != null) {
+      programState = programState.put(symbolicValueSymbol.symbol, unarySymbolicValue);
     }
   }
 
@@ -937,15 +981,15 @@ public class ExplodedGraphWalker {
     SymbolicValue value = programState.getValue(symbol);
     if (value == null) {
       value = constraintManager.createSymbolicValue(tree);
-      programState = programState.stackValue(value);
-      learnIdentifierNullConstraints(tree, value);
+      programState = programState.stackValue(value, symbol);
+      learnIdentifierConstraints(tree, value);
     } else {
-      programState = programState.stackValue(value);
+      programState = programState.stackValue(value, symbol);
     }
     programState = programState.put(symbol, value);
   }
 
-  private void learnIdentifierNullConstraints(IdentifierTree tree, SymbolicValue sv) {
+  private void learnIdentifierConstraints(IdentifierTree tree, SymbolicValue sv) {
     if (THIS_SUPER.contains(tree.name())) {
       programState = programState.addConstraint(sv, ObjectConstraint.NOT_NULL);
       return;
@@ -954,14 +998,19 @@ public class ExplodedGraphWalker {
     if (!isFinalField(tree.symbol()) || declaration == null) {
       return;
     }
-    ExpressionTree initializer = ((VariableTree) declaration).initializer();
+    VariableTree variableTree = (VariableTree) declaration;
+    ExpressionTree initializer = variableTree.initializer();
     if (initializer == null) {
       return;
     }
     // only check final field with an initializer
+    initializer = ExpressionUtils.skipParentheses(initializer);
     if (initializer.is(Tree.Kind.NULL_LITERAL)) {
       programState = programState.addConstraint(sv, ObjectConstraint.NULL);
-    } else if (initializer.is(Tree.Kind.NEW_CLASS) || initializer.is(Tree.Kind.NEW_ARRAY)) {
+    } else if (initializer.is(Tree.Kind.NEW_CLASS, Tree.Kind.NEW_ARRAY, Tree.Kind.STRING_LITERAL)
+      || isNonNullMethodInvocation(initializer)
+      || variableTree.symbol().type().isPrimitive()
+      || initializer.symbolType().isPrimitive()) {
       programState = programState.addConstraint(sv, ObjectConstraint.NOT_NULL);
     }
   }
@@ -972,14 +1021,23 @@ public class ExplodedGraphWalker {
       && symbol.owner().isTypeSymbol();
   }
 
+  private static boolean isNonNullMethodInvocation(ExpressionTree expr) {
+    return expr.is(Tree.Kind.METHOD_INVOCATION) && isAnnotatedNonNull(((MethodInvocationTree) expr).symbol());
+  }
+
   private void executeMemberSelect(MemberSelectExpressionTree mse) {
     if (!"class".equals(mse.identifier().name())) {
 
       ProgramState.Pop unstackMSE = programState.unstackValue(1);
       programState = unstackMSE.state;
     }
-    SymbolicValue mseValue = constraintManager.createSymbolicValue(mse);
-    programState = programState.stackValue(mseValue);
+
+    if (ExpressionUtils.isSelectOnThisOrSuper(mse)) {
+      executeIdentifier(mse.identifier());
+    } else {
+      SymbolicValue mseValue = constraintManager.createSymbolicValue(mse);
+      programState = programState.stackValue(mseValue);
+    }
   }
 
   public void clearStack(Tree tree) {
@@ -989,12 +1047,18 @@ public class ExplodedGraphWalker {
   }
 
   private void setSymbolicValueOnFields(MethodInvocationTree tree) {
-    if (isLocalMethodInvocation(tree) || THREAD_SLEEP_MATCHER.matches(tree)) {
-      resetFieldValues();
+    boolean threadSleepMatch = THREAD_SLEEP_MATCHER.matches(tree);
+    boolean providingThisAsArgument = isProvidingThisAsArgument(tree);
+    if (isLocalMethodInvocation(tree) || providingThisAsArgument || threadSleepMatch) {
+      boolean resetOnlyStaticFields = tree.symbol().isStatic() && !threadSleepMatch && !providingThisAsArgument;
+      resetFieldValues(resetOnlyStaticFields);
     }
   }
 
   private static boolean isLocalMethodInvocation(MethodInvocationTree tree) {
+    if(GET_CLASS_MATCHER.matches(tree)) {
+      return false;
+    }
     ExpressionTree methodSelect = tree.methodSelect();
     if (methodSelect.is(Tree.Kind.IDENTIFIER)) {
       return true;
@@ -1009,8 +1073,12 @@ public class ExplodedGraphWalker {
     return false;
   }
 
-  private void resetFieldValues() {
-    programState = programState.resetFieldValues(constraintManager);
+  private static boolean isProvidingThisAsArgument(MethodInvocationTree tree) {
+    return tree.arguments().stream().anyMatch(ExpressionUtils::isThis);
+  }
+
+  private void resetFieldValues(boolean resetOnlyStaticFields) {
+    programState = programState.resetFieldValues(constraintManager, resetOnlyStaticFields);
   }
 
   private void logState(MethodInvocationTree mit) {
@@ -1044,7 +1112,7 @@ public class ExplodedGraphWalker {
     if (nbOfExecution > MAX_EXEC_PROGRAM_POINT) {
       if (isRestartingForEachLoop(programPoint)) {
         // reached the max number of visit by program point, so take the false branch with current program state
-        programPoint = new ProgramPoint(programPoint.block.falseBlock());
+        programPoint = new ProgramPoint(((CFG.Block) programPoint.block).falseBlock());
       } else {
         debugPrint(programPoint);
         return;
@@ -1052,32 +1120,37 @@ public class ExplodedGraphWalker {
     }
     checkExplodedGraphTooBig(programState);
     ProgramState ps = programState.visitedPoint(programPoint, nbOfExecution + 1);
-    ps.lastEvaluated = programState.getLastEvaluated();
     ExplodedGraph.Node cachedNode = explodedGraph.node(programPoint, ps);
-    if (!cachedNode.isNew && exitPath == cachedNode.exitPath) {
+    if (!cachedNode.isNew() && exitPath == cachedNode.exitPath) {
       // has been enqueued earlier
       cachedNode.addParent(node, methodYield);
       return;
     }
     cachedNode.exitPath = exitPath;
-    if(node != null) {
-      cachedNode.happyPath = node.happyPath;
-    }
     cachedNode.addParent(node, methodYield);
     workList.addFirst(cachedNode);
   }
 
   private static boolean isRestartingForEachLoop(ProgramPoint programPoint) {
-    Tree terminator = programPoint.block.terminator();
+    Tree terminator = ((CFG.Block) programPoint.block).terminator();
     return terminator != null && terminator.is(Tree.Kind.FOR_EACH_STATEMENT);
   }
 
   private void checkExplodedGraphTooBig(ProgramState programState) {
     // Arbitrary formula to avoid out of memory errors
-    if (steps + workList.size() > MAX_STEPS / 2 && programState.constraintsSize() > 75) {
+    if (steps + workList.size() > maxSteps() / 2 && programState.constraintsSize() > 75) {
       throw new ExplodedGraphTooBigException("Program state constraints are too big : stopping Symbolic Execution for method "
         + methodTree.simpleName().name() + " in class " + methodTree.symbol().owner().name());
     }
+  }
+
+  @VisibleForTesting
+  protected int maxSteps() {
+    return MAX_STEPS;
+  }
+
+  AlwaysTrueOrFalseExpressionCollector alwaysTrueOrFalseExpressionCollector() {
+    return alwaysTrueOrFalseExpressionCollector;
   }
 
   /**
@@ -1087,20 +1160,26 @@ public class ExplodedGraphWalker {
    */
   public static class ExplodedGraphWalkerFactory {
 
-    private final ConditionAlwaysTrueOrFalseCheck alwaysTrueOrFalseChecker;
     @VisibleForTesting
     final List<SECheck> seChecks = new ArrayList<>();
 
     public ExplodedGraphWalkerFactory(List<JavaFileScanner> scanners) {
+      List<SECheck> debugChecks = new ArrayList<>();
       List<SECheck> checks = new ArrayList<>();
       for (JavaFileScanner scanner : scanners) {
         if (scanner instanceof SECheck) {
-          checks.add((SECheck) scanner);
+          if (scanner instanceof DebugCheck) {
+            debugChecks.add((SECheck) scanner);
+          } else {
+            checks.add((SECheck) scanner);
+          }
         }
       }
-      alwaysTrueOrFalseChecker = removeOrDefault(checks, new ConditionAlwaysTrueOrFalseCheck());
+
+      // Debug checks should be inserted before others to be able to report before branches are potentially interrupted
+      seChecks.addAll(debugChecks);
+
       // This order of the mandatory SE checks is required by the ExplodedGraphWalker
-      seChecks.add(alwaysTrueOrFalseChecker);
       seChecks.add(removeOrDefault(checks, new NullDereferenceCheck()));
       seChecks.add(removeOrDefault(checks, new DivisionByZeroCheck()));
       seChecks.add(removeOrDefault(checks, new UnclosedResourcesCheck()));
@@ -1108,11 +1187,14 @@ public class ExplodedGraphWalker {
       seChecks.add(removeOrDefault(checks, new NonNullSetToNullCheck()));
       seChecks.add(removeOrDefault(checks, new NoWayOutLoopCheck()));
       seChecks.add(removeOrDefault(checks, new OptionalGetBeforeIsPresentCheck()));
+      seChecks.add(removeOrDefault(checks, new StreamConsumedCheck()));
+      seChecks.add(removeOrDefault(checks, new RedundantAssignmentsCheck()));
+
       seChecks.addAll(checks);
     }
 
     public ExplodedGraphWalker createWalker(BehaviorCache behaviorCache, SemanticModel semanticModel) {
-      return new ExplodedGraphWalker(alwaysTrueOrFalseChecker, seChecks, behaviorCache, semanticModel);
+      return new ExplodedGraphWalker(seChecks, behaviorCache, semanticModel);
     }
 
     @SuppressWarnings("unchecked")
@@ -1127,5 +1209,10 @@ public class ExplodedGraphWalker {
       }
       return defaultInstance;
     }
+  }
+
+  @CheckForNull
+  protected MethodBehavior peekMethodBehavior(Symbol.MethodSymbol symbol) {
+    return behaviorCache.peek(symbol.signature());
   }
 }

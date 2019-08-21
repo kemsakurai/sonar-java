@@ -1,5 +1,5 @@
 {
-  "title": "Deprecated code should be removed ",
+  "title": "Deprecated code should be removed",
   "type": "CODE_SMELL",
   "status": "ready",
   "remediation": {
@@ -9,5 +9,8 @@
   "tags": [
     "obsolete"
   ],
-  "defaultSeverity": "Info"
+  "defaultSeverity": "Info",
+  "ruleSpecification": "RSPEC-1133",
+  "sqKey": "S1133",
+  "scope": "All"
 }

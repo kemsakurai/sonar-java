@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,10 +19,11 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
-
+import java.util.Collections;
+import java.util.List;
 import org.sonar.check.Rule;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
+import org.sonar.plugins.java.api.semantic.SymbolMetadata;
 import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.LambdaExpressionTree;
@@ -31,14 +32,12 @@ import org.sonar.plugins.java.api.tree.ReturnStatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 
-import java.util.List;
-
 @Rule(key = "S2447")
 public class BooleanMethodReturnCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Kind.METHOD);
+    return Collections.singletonList(Kind.METHOD);
   }
 
   @Override
@@ -53,7 +52,9 @@ public class BooleanMethodReturnCheck extends IssuableSubscriptionVisitor {
   }
 
   private static boolean isAnnotatedWithCheckForNull(MethodTree methodTree) {
-    return methodTree.symbol().metadata().isAnnotatedWith("javax.annotation.CheckForNull");
+    SymbolMetadata methodMetadata = methodTree.symbol().metadata();
+    return methodMetadata.isAnnotatedWith("javax.annotation.CheckForNull")
+      || methodMetadata.isAnnotatedWith("javax.annotation.Nullable");
   }
 
   private static boolean returnsBoolean(MethodTree methodTree) {

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,21 +20,18 @@
 package org.sonar.plugins.java.api;
 
 import com.google.common.annotations.Beta;
-
-import org.sonar.api.batch.BatchSide;
-import org.sonar.api.batch.fs.InputFile;
-import org.sonarsource.api.sonarlint.SonarLintSide;
-
-import javax.annotation.CheckForNull;
-
 import java.io.File;
 import java.util.Collection;
+import javax.annotation.CheckForNull;
+import org.sonar.api.batch.ScannerSide;
+import org.sonar.api.batch.fs.InputFile;
+import org.sonarsource.api.sonarlint.SonarLintSide;
 
 /**
  * Interface to get the mapping between java classes and files (as multiple classes can be declared in one file).
  */
 @Beta
-@BatchSide
+@ScannerSide
 @SonarLintSide
 public interface JavaResourceLocator extends JavaFileScanner {
 
@@ -45,15 +42,6 @@ public interface JavaResourceLocator extends JavaFileScanner {
    */
   @CheckForNull
   InputFile findResourceByClassName(String className);
-
-  /**
-   * get source file key by class name.
-   * @deprecated since 4.1 : will be dropped with no replacement.
-   * @param className fully qualified name of the analyzed class.
-   * @return key of the source file for the given class.
-   */
-  @Deprecated
-  String findSourceFileKeyByClassName(String className);
 
   /**
    * .class files to be analyzed.

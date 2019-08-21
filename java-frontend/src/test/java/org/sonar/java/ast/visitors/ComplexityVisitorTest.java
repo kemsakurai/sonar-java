@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,6 +20,7 @@
 package org.sonar.java.ast.visitors;
 
 import com.sonar.sslr.api.typed.ActionParser;
+import java.util.List;
 import org.junit.Test;
 import org.sonar.java.ast.parser.JavaParser;
 import org.sonar.plugins.java.api.tree.ClassTree;
@@ -29,14 +30,11 @@ import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
-import java.nio.charset.StandardCharsets;
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class ComplexityVisitorTest {
 
-  private final ActionParser<Tree> p = JavaParser.createParser(StandardCharsets.UTF_8);
+  private final ActionParser<Tree> p = JavaParser.createParser();
 
 
   @Test
@@ -62,5 +60,28 @@ public class ComplexityVisitorTest {
     MethodTree methodTree = (MethodTree) ((ClassTree) cut.types().get(0)).members().get(0);
     List<Tree> nodes = new ComplexityVisitor().getNodes(methodTree);
     assertThat(nodes).hasSize(2);
+  }
+
+  @Test
+  public void switch_handling() throws Exception {
+    CompilationUnitTree cut = (CompilationUnitTree) p.parse(
+      "class A {" +
+        "  String foo(int a) {" +
+        "    switch (a) {" +
+        "      case 0:" +
+        "        return \"none\";" +
+        "      case 1:" +
+        "        return \"one\";" +
+        "      case 2:" +
+        "        return \"many\";" +
+        "      default:" +
+        "        return \"it's complicated\";" +
+        "    }" +
+        "  }" +
+        "}");
+    MethodTree methodTree = (MethodTree) ((ClassTree) cut.types().get(0)).members().get(0);
+    List<Tree> nodes = new ComplexityVisitor().getNodes(methodTree);
+    // default case does not count.
+    assertThat(nodes).hasSize(4);
   }
 }

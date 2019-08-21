@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -27,6 +27,11 @@ public class CompareObjectWithEqualsCheckTest {
   @Test
   public void detected() {
     JavaCheckVerifier.verify("src/test/files/checks/CompareObjectWithEqualsCheck.java", new CompareObjectWithEqualsCheck());
+  }
+
+  @Test
+  public void no_issue_without_semantic() {
+    JavaCheckVerifier.verifyNoIssueWithoutSemantic("src/test/files/checks/CompareObjectWithEqualsCheck.java", new CompareObjectWithEqualsCheck());
   }
 
 }

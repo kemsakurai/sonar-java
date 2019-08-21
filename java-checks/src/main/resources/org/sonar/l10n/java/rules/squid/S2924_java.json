@@ -10,5 +10,8 @@
     "tests",
     "unused"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-2924",
+  "sqKey": "S2924",
+  "scope": "Tests"
 }

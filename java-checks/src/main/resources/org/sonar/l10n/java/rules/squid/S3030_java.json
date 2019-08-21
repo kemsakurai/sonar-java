@@ -9,5 +9,8 @@
   "tags": [
     "brain-overload"
   ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-3030",
+  "sqKey": "S3030",
+  "scope": "All"
 }

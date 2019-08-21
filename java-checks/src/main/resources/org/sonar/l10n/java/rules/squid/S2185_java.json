@@ -9,5 +9,8 @@
   "tags": [
     "clumsy"
   ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-2185",
+  "sqKey": "S2185",
+  "scope": "All"
 }

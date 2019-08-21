@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -150,7 +150,7 @@ public class StatementVisitor extends BaseTreeVisitor {
   @Override
   public void visitTryStatement(TryStatementTree tree) {
     statements++;
-    statements -= tree.resources().size();
+    statements -= tree.resourceList().size();
     statements -= tree.catches().size();
     super.visitTryStatement(tree);
   }

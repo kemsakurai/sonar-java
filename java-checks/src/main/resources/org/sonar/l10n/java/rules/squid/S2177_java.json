@@ -7,8 +7,10 @@
     "constantCost": "30min"
   },
   "tags": [
-    "bug",
     "pitfall"
   ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-2177",
+  "sqKey": "S2177",
+  "scope": "All"
 }

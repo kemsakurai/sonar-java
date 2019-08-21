@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,12 +19,13 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import org.sonar.check.Rule;
-import org.sonar.java.model.declaration.MethodTreeImpl;
+import org.sonar.java.checks.helpers.MethodTreeUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
+import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
+import java.util.Collections;
 import java.util.List;
 
 @Rule(key = "S2096")
@@ -32,13 +33,13 @@ public class MainMethodThrowsExceptionCheck extends IssuableSubscriptionVisitor 
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD);
+    return Collections.singletonList(Tree.Kind.METHOD);
   }
 
   @Override
   public void visitNode(Tree tree) {
-    MethodTreeImpl methodTree = (MethodTreeImpl) tree;
-    if (methodTree.isMainMethod() && !methodTree.throwsClauses().isEmpty()) {
+    MethodTree methodTree = (MethodTree) tree;
+    if (MethodTreeUtils.isMainMethod(methodTree) && !methodTree.throwsClauses().isEmpty()) {
       reportIssue(methodTree.throwsToken(), "Remove this throws clause.");
     }
   }

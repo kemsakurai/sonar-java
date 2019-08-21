@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,7 +20,7 @@
 package org.sonar.java.checks.targets;
 
 @interface CustomAnnotation {
-  String field1();
-  String field2();
+  String field1() default "field1Default";
+  String field2() default "field" + "2Default";
   String field3();
 }

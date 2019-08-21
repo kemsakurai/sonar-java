@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,10 +21,24 @@ package org.sonar.java.cfg;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
 import org.sonar.java.model.ExpressionUtils;
 import org.sonar.java.model.JavaTree;
+import org.sonar.plugins.java.api.cfg.ControlFlowGraph;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.ArrayAccessExpressionTree;
@@ -57,6 +71,7 @@ import org.sonar.plugins.java.api.tree.NewClassTree;
 import org.sonar.plugins.java.api.tree.ParenthesizedTree;
 import org.sonar.plugins.java.api.tree.ReturnStatementTree;
 import org.sonar.plugins.java.api.tree.StatementTree;
+import org.sonar.plugins.java.api.tree.SwitchExpressionTree;
 import org.sonar.plugins.java.api.tree.SwitchStatementTree;
 import org.sonar.plugins.java.api.tree.SynchronizedStatementTree;
 import org.sonar.plugins.java.api.tree.ThrowStatementTree;
@@ -67,22 +82,10 @@ import org.sonar.plugins.java.api.tree.UnaryExpressionTree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 import org.sonar.plugins.java.api.tree.WhileStatementTree;
 
-import javax.annotation.CheckForNull;
-import javax.annotation.Nullable;
+public class CFG implements ControlFlowGraph {
 
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.function.Predicate;
-
-public class CFG {
-
-  private final Symbol.MethodSymbol methodSymbol;
+  private final boolean ignoreBreakAndContinue;
+  private Symbol.MethodSymbol methodSymbol;
   private Block currentBlock;
 
   /**
@@ -106,8 +109,9 @@ public class CFG {
     public void addCatch(Type type, Block catchBlock) {
       if (type.is("java.lang.Exception")
         || type.is("java.lang.Throwable")
-        || type.is("java.lang.Error")
-        || type.isSubtypeOf("java.lang.RuntimeException")) {
+        || type.isSubtypeOf("java.lang.Error")
+        || type.isSubtypeOf("java.lang.RuntimeException")
+        || !type.isSubtypeOf("java.lang.Exception")) {
         runtimeCatches.add(catchBlock);
       }
       catches.put(type, catchBlock);
@@ -116,11 +120,12 @@ public class CFG {
 
   private final Deque<Block> switches = new LinkedList<>();
   private String pendingLabel = null;
-  private Map<String, Block> labelsBreakTarget = Maps.newHashMap();
-  private Map<String, Block> labelsContinueTarget = Maps.newHashMap();
+  private Map<String, Block> labelsBreakTarget = new HashMap<>();
+  private Map<String, Block> labelsContinueTarget = new HashMap<>();
 
-  private CFG(List<? extends Tree> trees, Symbol.MethodSymbol symbol) {
+  private CFG(List<? extends Tree> trees, Symbol.MethodSymbol symbol, boolean ignoreBreakAndContinue) {
     methodSymbol = symbol;
+    this.ignoreBreakAndContinue = ignoreBreakAndContinue;
     exitBlocks.add(createBlock());
     currentBlock = createBlock(exitBlock());
     outerTry = new TryStatement();
@@ -132,6 +137,7 @@ public class CFG {
     computePredecessors(blocks);
   }
 
+  @Override
   public Block exitBlock() {
     return exitBlocks.peek();
   }
@@ -140,10 +146,12 @@ public class CFG {
     return methodSymbol;
   }
 
-  public Block entry() {
+  @Override
+  public Block entryBlock() {
     return currentBlock;
   }
 
+  @Override
   public List<Block> blocks() {
     return Lists.reverse(blocks);
   }
@@ -152,7 +160,16 @@ public class CFG {
     return blocks;
   }
 
-  public static class Block {
+  public interface IBlock<T> {
+    int id();
+    List<T> elements();
+
+    T terminator();
+
+    Set<? extends IBlock<T>> successors();
+  }
+
+  public static class Block implements IBlock<Tree>, ControlFlowGraph.Block {
     public static final Predicate<Block> IS_CATCH_BLOCK = Block::isCatchBlock;
     private int id;
     private final List<Tree> elements = new ArrayList<>();
@@ -162,8 +179,10 @@ public class CFG {
     private Block trueBlock;
     private Block falseBlock;
     private Block exitBlock;
+    private Block successorWithoutJump;
 
     private Tree terminator;
+    private CaseGroupTree caseGroup;
 
     private boolean isFinallyBlock;
     private boolean isCatchBlock = false;
@@ -172,10 +191,12 @@ public class CFG {
       this.id = id;
     }
 
+    @Override
     public int id() {
       return id;
     }
 
+    @Override
     public List<Tree> elements() {
       return Lists.reverse(elements);
     }
@@ -228,6 +249,7 @@ public class CFG {
       return predecessors;
     }
 
+    @Override
     public Set<Block> successors() {
       return successors;
     }
@@ -236,6 +258,7 @@ public class CFG {
       return exceptions;
     }
 
+    @Override
     @CheckForNull
     public Tree terminator() {
       return terminator;
@@ -246,17 +269,18 @@ public class CFG {
     }
 
     private void prune(Block inactiveBlock) {
+      boolean hasUniqueSuccessor = inactiveBlock.successors.size() == 1;
       if (inactiveBlock.equals(trueBlock)) {
-        if (inactiveBlock.successors.size() != 1) {
-          throw new IllegalStateException("True successor must be replaced by a unique successor!");
-        }
+        Preconditions.checkArgument(hasUniqueSuccessor, "True successor must be replaced by a unique successor!");
         trueBlock = inactiveBlock.successors.iterator().next();
       }
       if (inactiveBlock.equals(falseBlock)) {
-        if (inactiveBlock.successors.size() != 1) {
-          throw new IllegalStateException("False successor must be replaced by a unique successor!");
-        }
+        Preconditions.checkArgument(hasUniqueSuccessor, "False successor must be replaced by a unique successor!");
         falseBlock = inactiveBlock.successors.iterator().next();
+      }
+      if (inactiveBlock.equals(successorWithoutJump)) {
+        Preconditions.checkArgument(hasUniqueSuccessor, "SuccessorWithoutJump successor must be replaced by a unique successor!");
+        successorWithoutJump = inactiveBlock.successors.iterator().next();
       }
       if (successors.remove(inactiveBlock)) {
         successors.addAll(inactiveBlock.successors);
@@ -273,6 +297,28 @@ public class CFG {
     public boolean isMethodExitBlock() {
       return successors().isEmpty();
     }
+
+    /**
+     * This method makes the implementation of RSPEC-3626 almost trivial.
+     * @return the block which would be the successor of this one if this one didn't terminate with a jump
+     */
+    @CheckForNull
+    public Block successorWithoutJump() {
+      return successorWithoutJump;
+    }
+
+    /**
+     * Label is used to contain additional information about a block which is not directly related to CFG structure.
+     * Used for simplifying implementation of RSPEC-128.
+     */
+    @CheckForNull
+    public CaseGroupTree caseGroup() {
+      return caseGroup;
+    }
+
+    public void setCaseGroup(CaseGroupTree caseGroup) {
+      this.caseGroup = caseGroup;
+    }
   }
 
   private static void computePredecessors(List<Block> blocks) {
@@ -284,6 +330,38 @@ public class CFG {
         successor.predecessors.add(b);
       }
     }
+    cleanupUnfeasibleBreakPaths(blocks);
+  }
+
+  private static void cleanupUnfeasibleBreakPaths(List<Block> blocks) {
+    for (Block block : blocks) {
+      Set<Block> happyPathPredecessor = block.predecessors.stream().filter(p -> !p.exceptions.contains(block)).collect(Collectors.toSet());
+      if(block.isFinallyBlock && happyPathPredecessor.size() == 1) {
+        Block pred = happyPathPredecessor.iterator().next();
+        if (pred.terminator != null && pred.terminator.is(Tree.Kind.BREAK_STATEMENT)) {
+          Set<Block> succs = block.successors.stream()
+            .map(suc -> isLoop(suc) ? getAfterLoopBlock(suc) : suc)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+          block.successors.clear();
+          block.successors.addAll(succs);
+        }
+      }
+    }
+  }
+
+  private static boolean isLoop(Block successor) {
+    return successor.terminator != null
+      && successor.terminator.is(Tree.Kind.WHILE_STATEMENT, Tree.Kind.DO_STATEMENT, Tree.Kind.FOR_STATEMENT, Tree.Kind.FOR_EACH_STATEMENT);
+  }
+
+  @CheckForNull
+  private static Block getAfterLoopBlock(Block loop) {
+    if (loop.falseBlock != null) {
+      return loop.falseBlock;
+    }
+    // Because 'for' statements without condition are unconditional jumps block
+    return loop.successorWithoutJump;
   }
 
   private void prune() {
@@ -339,13 +417,17 @@ public class CFG {
     blocks.add(result);
     return result;
   }
+  public static CFG buildCFG(List<? extends Tree> trees, boolean ignoreBreak) {
+    return new CFG(trees, null, ignoreBreak);
+  }
+
   public static CFG buildCFG(List<? extends Tree> trees) {
-    return new CFG(trees, null);
+    return new CFG(trees, null, false);
   }
   public static CFG build(MethodTree tree) {
     BlockTree block = tree.block();
     Preconditions.checkArgument(block != null, "Cannot build CFG for method with no body.");
-    return new CFG(block.body(), tree.symbol());
+    return new CFG(block.body(), tree.symbol(), false);
   }
 
   private void build(ListTree<? extends Tree> trees) {
@@ -425,6 +507,9 @@ public class CFG {
         break;
       case SWITCH_STATEMENT:
         buildSwitchStatement((SwitchStatementTree) tree);
+        break;
+      case SWITCH_EXPRESSION:
+        buildSwitchExpression((SwitchExpressionTree) tree);
         break;
       case BREAK_STATEMENT:
         buildBreakStatement((BreakStatementTree) tree);
@@ -514,7 +599,7 @@ public class CFG {
   }
 
   private void buildReturnStatement(ReturnStatementTree returnStatement) {
-    currentBlock = createUnconditionalJump(returnStatement, exitBlock());
+    currentBlock = createUnconditionalJump(returnStatement, exitBlock(), currentBlock);
     ExpressionTree expression = returnStatement.expression();
     if (expression != null) {
       build(expression);
@@ -640,29 +725,48 @@ public class CFG {
   }
 
   private void buildSwitchStatement(SwitchStatementTree switchStatementTree) {
+    buildSwitchExpression(switchStatementTree.asSwitchExpression(), switchStatementTree);
+  }
+
+  private void buildSwitchExpression(SwitchExpressionTree switchExpressionTree) {
+    buildSwitchExpression(switchExpressionTree, switchExpressionTree);
+  }
+
+  private void buildSwitchExpression(SwitchExpressionTree switchExpressionTree, Tree terminator) {
+    if (terminator.is(Tree.Kind.SWITCH_EXPRESSION)) {
+      // force a switch expression in the current block
+      currentBlock.elements.add(terminator);
+    }
     Block switchSuccessor = currentBlock;
     // process condition
     currentBlock = createBlock();
-    currentBlock.terminator = switchStatementTree;
+    currentBlock.terminator = terminator;
     switches.addLast(currentBlock);
-    build(switchStatementTree.expression());
+    build(switchExpressionTree.expression());
     Block conditionBlock = currentBlock;
     // process body
     currentBlock = createBlock(switchSuccessor);
     breakTargets.addLast(switchSuccessor);
     boolean hasDefaultCase = false;
-    if (!switchStatementTree.cases().isEmpty()) {
-      CaseGroupTree firstCase = switchStatementTree.cases().get(0);
-      for (CaseGroupTree caseGroupTree : Lists.reverse(switchStatementTree.cases())) {
-        build(caseGroupTree.body());
-        caseGroupTree.labels().forEach(l -> {
-          if (l.expression() != null) {
-            build(l.expression());
-          }
-        });
-        if (!hasDefaultCase) {
-          hasDefaultCase = containsDefaultCase(caseGroupTree.labels());
+    if (!switchExpressionTree.cases().isEmpty()) {
+      boolean withoutFallTrough = switchWithoutFallThrough(switchExpressionTree);
+      CaseGroupTree firstCase = switchExpressionTree.cases().get(0);
+      for (CaseGroupTree caseGroupTree : Lists.reverse(switchExpressionTree.cases())) {
+        if (withoutFallTrough) {
+          currentBlock.successors().clear();
+          currentBlock.addSuccessor(switchSuccessor);
         }
+        build(caseGroupTree.body());
+        List<CaseLabelTree> labels = caseGroupTree.labels();
+        Lists.reverse(labels).stream()
+          .map(CaseLabelTree::expressions)
+          .map(Lists::reverse)
+          .flatMap(Collection::stream)
+          .forEach(this::build);
+        if (!hasDefaultCase) {
+          hasDefaultCase = containsDefaultCase(labels);
+        }
+        currentBlock.setCaseGroup(caseGroupTree);
         switches.getLast().addSuccessor(currentBlock);
         if (!caseGroupTree.equals(firstCase)) {
           // No block predecessing the first case group.
@@ -679,41 +783,71 @@ public class CFG {
     currentBlock = conditionBlock;
   }
 
+  /**
+   * A switch expression can use the traditional cases with 'colon' (with fall-through) or,
+   * starting with java 12, the 'arrow' cases (without fall-through). Cases can not be mixed.
+   *
+   * @param switchExpressionTree the switch to evaluate
+   * @return true if the switch uses fall-through
+   */
+  private static boolean switchWithoutFallThrough(SwitchExpressionTree switchExpressionTree) {
+    return switchExpressionTree.cases().stream()
+      .map(CaseGroupTree::labels)
+      .flatMap(List::stream)
+      .noneMatch(CaseLabelTree::isFallThrough);
+  }
+
   private static boolean containsDefaultCase(List<CaseLabelTree> labels) {
-    for (CaseLabelTree caseLabel : labels) {
-      if ("default".equals(caseLabel.caseOrDefaultKeyword().text())) {
-        return true;
-      }
-    }
-    return false;
+    return labels.stream().anyMatch(caseLabel -> "default".equals(caseLabel.caseOrDefaultKeyword().text()));
   }
 
   private void buildBreakStatement(BreakStatementTree tree) {
     IdentifierTree label = tree.label();
-    Block targetBlock;
+    boolean isLabel = false;
+    Block targetBlock = null;
     if (label == null) {
       if (breakTargets.isEmpty()) {
-        throw new IllegalStateException("'break' statement not in loop or switch statement");
+        if (!ignoreBreakAndContinue) {
+          throw new IllegalStateException("'break' statement not in loop or switch statement");
+        }
+      } else {
+        targetBlock = breakTargets.getLast();
       }
-      targetBlock = breakTargets.getLast();
     } else {
-      targetBlock = labelsBreakTarget.get(label.name());
+      isLabel = label.symbol() instanceof Symbol.LabelSymbol;
+      if (isLabel) {
+        targetBlock = labelsBreakTarget.get(label.name());
+      } else {
+        targetBlock = breakTargets.getLast();
+      }
     }
-    currentBlock = createUnconditionalJump(tree, targetBlock);
+    currentBlock = createUnconditionalJump(tree, targetBlock, currentBlock);
+    ExpressionTree value = tree.value();
+    if (value != null && !isLabel) {
+      build(value);
+    }
+    if(currentBlock.exitBlock != null) {
+      currentBlock.exitBlock = null;
+    }
   }
 
   private void buildContinueStatement(ContinueStatementTree tree) {
     IdentifierTree label = tree.label();
-    Block targetBlock;
+    Block targetBlock = null;
     if (label == null) {
       if (continueTargets.isEmpty()) {
-        throw new IllegalStateException("'continue' statement not in loop or switch statement");
+        if (!ignoreBreakAndContinue) {
+          throw new IllegalStateException("'continue' statement not in loop or switch statement");
+        }
+      } else {
+        targetBlock = continueTargets.getLast();
       }
-      targetBlock = continueTargets.getLast();
     } else {
       targetBlock = labelsContinueTarget.get(label.name());
     }
-    currentBlock = createUnconditionalJump(tree, targetBlock);
+    currentBlock = createUnconditionalJump(tree, targetBlock, currentBlock);
+    // cleanup for continue statement to a finally: continue block can't have an exit block.
+    currentBlock.exitBlock = null;
   }
 
   private void buildWhileStatement(WhileStatementTree whileStatement) {
@@ -741,8 +875,8 @@ public class CFG {
     currentBlock = createBranch(doWhileStatementTree, loopback, falseBranch);
     buildCondition(doWhileStatementTree.condition(), loopback, falseBranch);
     // process body
+    addContinueTarget(currentBlock);
     currentBlock = createBlock(currentBlock);
-    addContinueTarget(loopback);
     breakTargets.addLast(falseBranch);
     build(doWhileStatementTree.statement());
     breakTargets.removeLast();
@@ -798,7 +932,7 @@ public class CFG {
       currentBlock = createBranch(tree, body, falseBranch);
       buildCondition(condition, body, falseBranch);
     } else {
-      currentBlock = createUnconditionalJump(tree, body);
+      currentBlock = createUnconditionalJump(tree, body, falseBranch);
     }
     updateBlock.addSuccessor(currentBlock);
     // process init
@@ -816,6 +950,9 @@ public class CFG {
       build(finallyBlockTree);
       finallyBlock.addExitSuccessor(exitBlock());
       exitBlocks.push(currentBlock);
+      addContinueTarget(currentBlock);
+      currentBlock.isFinallyBlock = true;
+      breakTargets.addLast(currentBlock);
     }
     Block finallyOrEndBlock = currentBlock;
     Block beforeFinally = createBlock(currentBlock);
@@ -825,30 +962,38 @@ public class CFG {
     enclosedByCatch.push(false);
     for (CatchTree catchTree : Lists.reverse(tryStatementTree.catches())) {
       currentBlock = createBlock(finallyOrEndBlock);
-      if (!catchTree.block().body().isEmpty()) {
-        enclosedByCatch.push(true);
-        build(catchTree.block());
-        buildVariable(catchTree.parameter());
-        currentBlock.isCatchBlock = true;
-        enclosedByCatch.pop();
-      }
+      enclosedByCatch.push(true);
+      build(catchTree.block());
+      buildVariable(catchTree.parameter());
+      currentBlock.isCatchBlock = true;
+      enclosedByCatch.pop();
       tryStatement.addCatch(catchTree.parameter().type().symbolType(), currentBlock);
     }
     currentBlock = beforeFinally;
     build(tryStatementTree.block());
-    build((List<? extends Tree>) tryStatementTree.resources());
+    build((List<? extends Tree>) tryStatementTree.resourceList());
     enclosingTry.pop();
     enclosedByCatch.pop();
     currentBlock = createBlock(currentBlock);
     currentBlock.elements.add(tryStatementTree);
     if (finallyBlockTree != null) {
       exitBlocks.pop();
+      continueTargets.removeLast();
+      breakTargets.removeLast();
     }
   }
 
   private void buildThrowStatement(ThrowStatementTree throwStatementTree) {
-    // TODO check enclosing try to determine jump target
-    currentBlock = createUnconditionalJump(throwStatementTree, exitBlock());
+    Block jumpTo = exitBlock();
+    TryStatement enclosingTryCatch = enclosingTry.peek();
+    if(enclosingTryCatch != null){
+      jumpTo = enclosingTryCatch.catches.keySet().stream()
+        .filter(t -> throwStatementTree.expression().symbolType().isSubtypeOf(t))
+        .findFirst()
+        .map(t -> enclosingTryCatch.catches.get(t))
+        .orElse(exitBlock());
+    }
+    currentBlock = createUnconditionalJump(throwStatementTree, jumpTo, currentBlock);
     build(throwStatementTree.expression());
   }
 
@@ -856,7 +1001,7 @@ public class CFG {
     // First create the block of the statement,
     build(sst.block());
     // Then create a single block with the SYNCHRONIZED tree as terminator
-    currentBlock = createUnconditionalJump(sst, currentBlock);
+    currentBlock = createUnconditionalJump(sst, currentBlock, null);
     build(sst.expression());
   }
 
@@ -891,6 +1036,7 @@ public class CFG {
   private void handleExceptionalPaths(Symbol symbol) {
     TryStatement pop = enclosingTry.pop();
     TryStatement tryStatement;
+    Block exceptionPredecessor = currentBlock;
     if (enclosedByCatch.peek()) {
       tryStatement = enclosingTry.peek();
     } else {
@@ -900,18 +1046,26 @@ public class CFG {
     if(pop != outerTry) {
       currentBlock = createBlock(currentBlock);
       currentBlock.exceptions.add(exitBlocks.peek());
+      if(!enclosedByCatch.peek()) {
+        exceptionPredecessor = currentBlock;
+      }
     }
     if (symbol.isMethodSymbol()) {
       List<Type> thrownTypes = ((Symbol.MethodSymbol) symbol).thrownTypes();
       thrownTypes.forEach(thrownType -> {
         for (Type caughtType : tryStatement.catches.keySet()) {
-          if (thrownType.isSubtypeOf(caughtType) || caughtType.isSubtypeOf(thrownType)) {
+          if (thrownType.isSubtypeOf(caughtType) ||
+            caughtType.isSubtypeOf(thrownType) ||
+            thrownType.isUnknown() ||
+            // note that this condition is not necessary, because unknown type will be added to runtimeCatches due to condition in
+            // org.sonar.java.cfg.CFG.TryStatement#addCatch ,however, it is here for clarity
+            caughtType.isUnknown()) {
             currentBlock.exceptions.add(tryStatement.catches.get(caughtType));
           }
         }
       });
     }
-    currentBlock.exceptions.addAll(tryStatement.runtimeCatches);
+    exceptionPredecessor.exceptions.addAll(tryStatement.runtimeCatches);
   }
 
   private void buildTypeCast(Tree tree) {
@@ -944,7 +1098,7 @@ public class CFG {
     build(assertStatementTree.condition());
   }
 
-  private Block createUnconditionalJump(Tree terminator, @Nullable Block target) {
+  private Block createUnconditionalJump(Tree terminator, @Nullable Block target, @Nullable Block successorWithoutJump) {
     Block result = createBlock();
     result.terminator = terminator;
     if (target != null) {
@@ -954,6 +1108,7 @@ public class CFG {
         result.addSuccessor(target);
       }
     }
+    result.successorWithoutJump = successorWithoutJump;
     return result;
   }
 
@@ -999,6 +1154,10 @@ public class CFG {
     result.addFalseSuccessor(falseBranch);
     result.addTrueSuccessor(trueBranch);
     return result;
+  }
+
+  public void setMethodSymbol(Symbol.MethodSymbol methodSymbol) {
+    this.methodSymbol = methodSymbol;
   }
 
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -121,7 +121,7 @@ public class NestedIfStatementsCheck extends BaseTreeVisitor implements JavaFile
     nestingLevel.push(tryKeyword);
     scan(tree.block());
     nestingLevel.pop();
-    scan(tree.resources());
+    scan(tree.resourceList());
     scan(tree.catches());
     scan(tree.finallyBlock());
   }

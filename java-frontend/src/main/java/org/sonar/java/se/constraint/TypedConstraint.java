@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,6 +19,43 @@
  */
 package org.sonar.java.se.constraint;
 
+import java.util.Objects;
+import org.sonar.java.resolve.SemanticModel;
+import org.sonar.java.resolve.Symbols;
+import org.sonar.plugins.java.api.semantic.Type;
+
 public class TypedConstraint implements Constraint {
-  // Empty class for now, but should store the resolved type for instanceof operator.
+
+  public final String type;
+
+  public TypedConstraint(String type) {
+    this.type = type;
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+    if (type.charAt(0) == '!') {
+      return false;
+    }
+    TypedConstraint that = (TypedConstraint) o;
+    return type.equals(that.type);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(type);
+  }
+
+  public Type getType(SemanticModel semanticModel) {
+    if (type.charAt(0) == '!') {
+      return Symbols.unknownType;
+    }
+    return semanticModel.getClassType(type);
+  }
 }

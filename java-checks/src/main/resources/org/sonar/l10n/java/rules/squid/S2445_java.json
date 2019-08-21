@@ -1,5 +1,5 @@
 {
-  "title": "Blocks should be synchronized on \"private final\" fields or parameters",
+  "title": "Blocks should be synchronized on \"private final\" fields",
   "type": "BUG",
   "status": "ready",
   "remediation": {
@@ -9,12 +9,16 @@
   "tags": [
     "cwe",
     "multi-threading",
-    "bug",
     "cert"
   ],
-  "standards": [
-    "CWE",
-    "CERT"
-  ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-2445",
+  "sqKey": "S2445",
+  "scope": "All",
+  "securityStandards": {
+    "CWE": [
+      412,
+      413
+    ]
+  }
 }

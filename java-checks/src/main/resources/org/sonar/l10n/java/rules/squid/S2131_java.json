@@ -1,14 +1,16 @@
 {
   "title": "Primitives should not be boxed just for \"String\" conversion",
-  "type": "BUG",
+  "type": "CODE_SMELL",
   "status": "ready",
   "remediation": {
     "func": "Constant\/Issue",
     "constantCost": "5min"
   },
   "tags": [
-    "performance",
-    "bug"
+    "performance"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-2131",
+  "sqKey": "S2131",
+  "scope": "All"
 }

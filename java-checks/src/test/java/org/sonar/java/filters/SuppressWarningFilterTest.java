@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,18 +21,24 @@ package org.sonar.java.filters;
 
 import org.junit.Test;
 import org.sonar.java.checks.SuppressWarningsCheck;
+import org.sonar.java.checks.TodoTagPresenceCheck;
 import org.sonar.java.checks.naming.BadConstantNameCheck;
 import org.sonar.java.checks.unused.UnusedPrivateFieldCheck;
 
 public class SuppressWarningFilterTest {
-
+  /**
+   * Constant used in test for rule key.
+   */
+  public static final String CONSTANT_RULE_KEY = "repo:S00115";
   @Test
   public void verify() {
     FilterVerifier.verify("src/test/files/filters/SuppressWarningFilter.java", new SuppressWarningFilter(),
       // activated rules
       new UnusedPrivateFieldCheck(),
       new BadConstantNameCheck(),
-      new SuppressWarningsCheck());
+      new SuppressWarningsCheck(),
+      new TodoTagPresenceCheck()
+    );
   }
 
 }

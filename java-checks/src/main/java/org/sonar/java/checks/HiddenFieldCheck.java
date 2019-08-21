@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,7 +21,6 @@ package org.sonar.java.checks;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Lists;
 import org.sonar.check.Rule;
 import org.sonar.java.RspecKey;
 import org.sonar.java.model.JavaTree;
@@ -37,20 +36,24 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Deque;
+import java.util.LinkedList;
 import java.util.List;
 
 @Rule(key = "HiddenFieldCheck")
 @RspecKey("S1117")
 public class HiddenFieldCheck extends IssuableSubscriptionVisitor {
 
-  private final Deque<ImmutableMap<String, VariableTree>> fields = Lists.newLinkedList();
-  private final Deque<List<VariableTree>> excludedVariables = Lists.newLinkedList();
-  private final List<VariableTree> flattenExcludedVariables = Lists.newArrayList();
+  private final Deque<ImmutableMap<String, VariableTree>> fields = new LinkedList<>();
+  private final Deque<List<VariableTree>> excludedVariables = new LinkedList<>();
+  private final List<VariableTree> flattenExcludedVariables = new ArrayList<>();
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(
+    return Arrays.asList(
         Tree.Kind.CLASS,
         Tree.Kind.ENUM,
         Tree.Kind.INTERFACE,
@@ -63,17 +66,18 @@ public class HiddenFieldCheck extends IssuableSubscriptionVisitor {
   }
 
   @Override
-  public void scanFile(JavaFileScannerContext context) {
+  public void setContext(JavaFileScannerContext context) {
     fields.clear();
     excludedVariables.clear();
     flattenExcludedVariables.clear();
-    if (context.getSemanticModel() != null) {
-      super.scanFile(context);
-    }
+    super.setContext(context);
   }
 
   @Override
   public void visitNode(Tree tree) {
+    if(!hasSemantic()) {
+      return;
+    }
     if (isClassTree(tree)) {
       ClassTree classTree = (ClassTree) tree;
       ImmutableMap.Builder<String, VariableTree> builder = ImmutableMap.builder();
@@ -84,7 +88,7 @@ public class HiddenFieldCheck extends IssuableSubscriptionVisitor {
         }
       }
       fields.push(builder.build());
-      excludedVariables.push(Lists.<VariableTree>newArrayList());
+      excludedVariables.push(new ArrayList<>());
     } else if (tree.is(Tree.Kind.VARIABLE)) {
       VariableTree variableTree = (VariableTree) tree;
       isVariableHidingField(variableTree);
@@ -133,6 +137,9 @@ public class HiddenFieldCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public void leaveNode(Tree tree) {
+    if(!hasSemantic()) {
+      return;
+    }
     if (isClassTree(tree)) {
       fields.pop();
       flattenExcludedVariables.removeAll(excludedVariables.pop());
@@ -156,13 +163,13 @@ public class HiddenFieldCheck extends IssuableSubscriptionVisitor {
     List<VariableTree> scan(Tree tree) {
       visitNodes = nodesToVisit();
       excludedNodes = excludedNodes();
-      variables = Lists.newArrayList();
+      variables = new ArrayList<>();
       visit(tree);
       return variables;
     }
 
     public List<Tree.Kind> nodesToVisit() {
-      return ImmutableList.of(Tree.Kind.VARIABLE);
+      return Collections.singletonList(Tree.Kind.VARIABLE);
     }
 
     public List<Tree.Kind> excludedNodes() {

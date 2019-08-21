@@ -12,14 +12,18 @@ import a.b.c.*;
 import static a.b.c.Foo.*;
 import a.b.c.MyException;
 import a.b.c.MyException2;
+import a.b.c.MyAnnotation1;
+import a.b.c.MyAnnotation2;
+import a.b.c.MyAnnotation3;
 import java.lang.String;            // Noncompliant {{Remove this unnecessary import: java.lang classes are always implicitly imported.}}
 import java.lang.*;                 // Noncompliant {{Remove this unnecessary import: java.lang classes are always implicitly imported.}}
 import a.b.c.Foo;                   // Noncompliant {{Remove this duplicated import.}}
-;
+
 import checks.UselessImportCheck.*;              // Noncompliant {{Remove this unnecessary import: same package classes are always implicitly imported.}}
 import checks.UselessImportCheckClose.*;
 import static checks.UselessImportCheck.Foo.*;
 import checks.UselessImportCheck.foo.*;
+import checks.UselessImportCheck.foo.Foo;
 import pkg.NonCompliant1;           // Noncompliant
 import pkg.CompliantClass1;
 import pkg.CompliantClass2;
@@ -33,7 +37,13 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashMap;
 import javax.annotation.Nonnull;
-class Foo2 extends Foo {
+import checks.UselessImportCheck.WithPackageAux; // Noncompliant {{Remove this unnecessary import: same package classes are always implicitly imported.}}
+
+import static checks.UselessImportCheck.Foo2.A.BAR; // Noncompliant
+import static checks.UselessImportCheck.Foo2.A.FLUP; // compliant, used outside of owning class
+import static checks.UselessImportCheck.Foo2.A.qix; // compliant : Method symbols are ignored.
+
+public class Foo2 extends Foo {
   Bar a = new Baz<String>();
   Map<@Nonnull String, @Nonnull String> modulesMap = new HashMap<>();
   @Qux
@@ -52,5 +62,27 @@ class Foo2 extends Foo {
     foo(ArrayList::new);
     return new a.b.c.NonCompliant();
   }
-  void foo(@Nullable int x){}
+  void foo(@Nullable int x){
+    System.out.println(FLUP);;
+  }
+  static class A {
+    public static final String BAR = "value";
+    public static final String FLUP = "value";
+    public static void qix() {}
+    byte @MyAnnotation2 [] table = null;
+    org.foo.@MyAnnotation1 B myB;
+
+
+    void foo(java.util.List<String> list) {
+      for (@MyAnnotation3 Object o : list) {
+        o.toString();
+      }
+    }
+
+    void foo() {
+      System.out.println(BAR);
+      qix();
+    }
+  }
+
 }

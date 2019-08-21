@@ -9,5 +9,8 @@
   "tags": [
     "pitfall"
   ],
-  "defaultSeverity": "Blocker"
+  "defaultSeverity": "Blocker",
+  "ruleSpecification": "RSPEC-3282",
+  "sqKey": "S3282",
+  "scope": "Main"
 }

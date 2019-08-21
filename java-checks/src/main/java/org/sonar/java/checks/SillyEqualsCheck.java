@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,12 +19,14 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
+
+import java.util.Collections;
+import java.util.List;
 import org.sonar.check.Rule;
-import org.sonar.java.checks.helpers.MethodsHelper;
 import org.sonar.java.checks.methods.AbstractMethodDetection;
 import org.sonar.java.matcher.MethodMatcher;
+import org.sonar.java.model.ExpressionUtils;
 import org.sonar.java.resolve.JavaType;
 import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
@@ -32,8 +34,6 @@ import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.Tree;
-
-import java.util.List;
 
 @Rule(key = "S2159")
 public class SillyEqualsCheck extends AbstractMethodDetection {
@@ -44,7 +44,7 @@ public class SillyEqualsCheck extends AbstractMethodDetection {
 
   @Override
   protected List<MethodMatcher> getMethodInvocationMatchers() {
-    return ImmutableList.of(MethodMatcher.create()
+    return Collections.singletonList(MethodMatcher.create()
       .name("equals")
       .addParameter(JAVA_LANG_OBJECT));
   }
@@ -57,7 +57,7 @@ public class SillyEqualsCheck extends AbstractMethodDetection {
       argumentType = ((JavaType) argumentType).primitiveWrapperType();
     }
     Type ownerType = getMethodOwnerType(tree).erasure();
-    IdentifierTree methodInvocationName = MethodsHelper.methodName(tree);
+    IdentifierTree methodInvocationName = ExpressionUtils.methodName(tree);
     if (isLiteralNull(firstArgument)) {
       reportIssue(methodInvocationName, "Remove this call to \"equals\"; comparisons against null always return false; consider using '== null' to check for nullity.");
     } else if (ownerType.isArray()) {

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,12 +19,13 @@
  */
 package org.sonar.java.ast.parser;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import org.sonar.java.model.InternalSyntaxToken;
 import org.sonar.java.model.declaration.AnnotationTreeImpl;
 import org.sonar.java.model.declaration.VariableTreeImpl;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class FormalParametersListTreeImpl extends ListTreeImpl<VariableTreeImpl> {
@@ -33,7 +34,7 @@ public class FormalParametersListTreeImpl extends ListTreeImpl<VariableTreeImpl>
   private InternalSyntaxToken closeParenToken;
 
   public FormalParametersListTreeImpl(InternalSyntaxToken openParenToken, InternalSyntaxToken closeParenToken) {
-    super(JavaLexer.FORMAL_PARAMETERS, ImmutableList.<VariableTreeImpl>of());
+    super(JavaLexer.FORMAL_PARAMETERS, new ArrayList<>());
 
     this.openParenToken = openParenToken;
     this.closeParenToken = closeParenToken;

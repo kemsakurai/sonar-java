@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,20 +19,17 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
-import org.apache.commons.lang.BooleanUtils;
+import java.util.Arrays;
+import java.util.Deque;
+import java.util.LinkedList;
+import java.util.List;
 import org.sonar.check.Rule;
-import org.sonar.java.model.declaration.MethodTreeImpl;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.ThrowStatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.TypeTree;
-
-import java.util.Deque;
-import java.util.LinkedList;
-import java.util.List;
 
 @Rule(key = "S1162")
 public class ThrowCheckedExceptionCheck extends IssuableSubscriptionVisitor {
@@ -41,7 +38,7 @@ public class ThrowCheckedExceptionCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD, Tree.Kind.THROW_STATEMENT);
+    return Arrays.asList(Tree.Kind.METHOD, Tree.Kind.THROW_STATEMENT);
   }
 
   @Override
@@ -84,6 +81,6 @@ public class ThrowCheckedExceptionCheck extends IssuableSubscriptionVisitor {
   }
 
   private static boolean isOverriding(MethodTree methodTree) {
-    return BooleanUtils.isTrue(((MethodTreeImpl) methodTree).isOverriding());
+    return Boolean.TRUE.equals(methodTree.isOverriding());
   }
 }

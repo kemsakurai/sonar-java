@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,7 +19,6 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import org.sonar.check.Rule;
 import org.sonar.java.model.ExpressionUtils;
 import org.sonar.java.model.LiteralUtils;
@@ -33,6 +32,7 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.Tree.Kind;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
+import java.util.Arrays;
 import java.util.List;
 
 @Rule(key = "S3052")
@@ -40,7 +40,7 @@ public class DefaultInitializedFieldCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Kind.CLASS, Kind.ENUM);
+    return Arrays.asList(Kind.CLASS, Kind.ENUM);
   }
 
   @Override
@@ -75,7 +75,7 @@ public class DefaultInitializedFieldCheck extends IssuableSubscriptionVisitor {
         String charValue = ((LiteralTree) expression).value();
         return "'\\u0000'".equals(charValue) || "'\\0'".equals(charValue);
       case BOOLEAN_LITERAL:
-        return "false".equals(((LiteralTree) expression).value());
+        return LiteralUtils.isFalse(expression);
       case INT_LITERAL:
       case LONG_LITERAL:
         Long value = LiteralUtils.longLiteralValue(expression);

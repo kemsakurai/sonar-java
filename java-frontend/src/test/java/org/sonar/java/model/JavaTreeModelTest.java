@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,9 +20,8 @@
 package org.sonar.java.model;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
 import com.sonar.sslr.api.typed.ActionParser;
-import org.apache.commons.io.FileUtils;
+import java.util.List;
 import org.junit.Test;
 import org.sonar.java.ast.parser.JavaParser;
 import org.sonar.java.ast.parser.TypeParameterListTreeImpl;
@@ -32,7 +31,6 @@ import org.sonar.plugins.java.api.tree.ArrayDimensionTree;
 import org.sonar.plugins.java.api.tree.ArrayTypeTree;
 import org.sonar.plugins.java.api.tree.AssertStatementTree;
 import org.sonar.plugins.java.api.tree.AssignmentExpressionTree;
-import org.sonar.plugins.java.api.tree.BaseTreeVisitor;
 import org.sonar.plugins.java.api.tree.BinaryExpressionTree;
 import org.sonar.plugins.java.api.tree.BlockTree;
 import org.sonar.plugins.java.api.tree.BreakStatementTree;
@@ -73,6 +71,7 @@ import org.sonar.plugins.java.api.tree.PrimitiveTypeTree;
 import org.sonar.plugins.java.api.tree.ReturnStatementTree;
 import org.sonar.plugins.java.api.tree.StatementTree;
 import org.sonar.plugins.java.api.tree.StaticInitializerTree;
+import org.sonar.plugins.java.api.tree.SwitchExpressionTree;
 import org.sonar.plugins.java.api.tree.SwitchStatementTree;
 import org.sonar.plugins.java.api.tree.SynchronizedStatementTree;
 import org.sonar.plugins.java.api.tree.SyntaxToken;
@@ -91,15 +90,11 @@ import org.sonar.plugins.java.api.tree.VariableTree;
 import org.sonar.plugins.java.api.tree.WhileStatementTree;
 import org.sonar.plugins.java.api.tree.WildcardTree;
 
-import java.io.File;
-import java.nio.charset.StandardCharsets;
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class JavaTreeModelTest {
 
-  private final ActionParser<Tree> p = JavaParser.createParser(StandardCharsets.UTF_8);
+  private final ActionParser<Tree> p = JavaParser.createParser();
 
   @Test
   public void line_of_tree() throws Exception {
@@ -108,20 +103,6 @@ public class JavaTreeModelTest {
     ClassTree classTree = firstType("class A {}");
     assertThat(((JavaTree) classTree).getLine()).isEqualTo(1);
     assertThat(((JavaTree) classTree.modifiers()).getLine()).isEqualTo(-1);
-  }
-
-  @Test
-  public void integration_test() {
-    Iterable<File> files = Iterables.concat(
-        FileUtils.listFiles(new File("src/main/java/"), new String[]{"java"}, true),
-        FileUtils.listFiles(new File("src/test/java/"), new String[]{"java"}, true),
-        FileUtils.listFiles(new File("src/test/files/"), new String[]{"java"}, true)
-    );
-    BaseTreeVisitor visitor = new BaseTreeVisitor();
-    for (File file : files) {
-      Tree tree = p.parse(file);
-      tree.accept(visitor);
-    }
   }
 
   @Test
@@ -617,6 +598,12 @@ public class JavaTreeModelTest {
     assertThat(type.is(Tree.Kind.PRIMITIVE_TYPE)).isTrue();
     assertThat(type.annotations()).hasSize(1);
     assertThatChildrenIteratorHasSize(type, 2);
+  }
+
+  @Test
+  public void annotations_in_for_each_statements() {
+    ForEachStatement tree = (ForEachStatement) firstMethodFirstStatement("class C { void foo(Object[] values) { for(@Nullable Object value : values) { } } }");
+    assertThat(tree.variable().modifiers().annotations()).hasSize(1);
   }
 
   @Test
@@ -1205,48 +1192,70 @@ public class JavaTreeModelTest {
    * 14.11. The switch Statement
    */
   @Test
-  public void switch_statement() {
-    SwitchStatementTree tree = (SwitchStatementTree) firstMethodFirstStatement("class T { void m() { switch (e) { case 1: case 2: ; default: ; } } }");
+  public void switch_statement_and_expression() {
+    SwitchStatementTree tree = (SwitchStatementTree) firstMethodFirstStatement("class T { void m() { switch (e) { case 1: case 2, 3 -> ; default: ; } } }");
     assertThat(tree.is(Tree.Kind.SWITCH_STATEMENT)).isTrue();
     assertThat(tree.switchKeyword().text()).isEqualTo("switch");
+    assertThat(tree.openBraceToken().text()).isEqualTo("{");
+    assertThat(tree.closeBraceToken().text()).isEqualTo("}");
     assertThat(tree.openParenToken().text()).isEqualTo("(");
     assertThat(tree.expression()).isNotNull();
     assertThat(tree.closeParenToken().text()).isEqualTo(")");
     assertThat(tree.cases()).hasSize(2);
-    assertThatChildrenIteratorHasSize(tree, 8);
+
+    SwitchExpressionTree switchExpression = tree.asSwitchExpression();
+    assertThat(switchExpression.is(Tree.Kind.SWITCH_EXPRESSION)).isTrue();
+    assertThat(tree.switchKeyword()).isEqualTo(switchExpression.switchKeyword());
+    assertThat(tree.openBraceToken()).isEqualTo(switchExpression.openBraceToken());
+    assertThat(tree.closeBraceToken()).isEqualTo(switchExpression.closeBraceToken());
+    assertThat(tree.openParenToken()).isEqualTo(switchExpression.openParenToken());
+    assertThat(tree.expression()).isEqualTo(switchExpression.expression());
+    assertThat(tree.closeParenToken()).isEqualTo(switchExpression.closeParenToken());
+    assertThat(tree.cases()).isEqualTo(switchExpression.cases());
+    assertThatChildrenIteratorHasSize(switchExpression, 8);
 
     CaseGroupTree c = tree.cases().get(0);
     assertThat(c.is(Tree.Kind.CASE_GROUP)).isTrue();
     assertThat(c.labels()).hasSize(2);
     CaseLabelTree caseLabelTree = c.labels().get(0);
-    assertThat(caseLabelTree.is(Tree.Kind.CASE_LABEL)).isTrue();
+    assertThat(caseLabelTree.isFallThrough()).isTrue();
     assertThat(caseLabelTree.caseOrDefaultKeyword().text()).isEqualTo("case");
     assertThat(caseLabelTree.expression()).isNotNull();
+    assertThat(caseLabelTree.expressions()).hasSize(1);
+    assertThat(((LiteralTree)caseLabelTree.expression()).value()).isEqualTo("1");
+    assertThat(((LiteralTree)caseLabelTree.expressions().get(0)).value()).isEqualTo("1");
     assertThat(caseLabelTree.colonToken().text()).isEqualTo(":");
+    assertThat(caseLabelTree.colonOrArrowToken().text()).isEqualTo(":");
     assertThatChildrenIteratorHasSize(caseLabelTree, 3);
+
     caseLabelTree = c.labels().get(1);
-    assertThat(caseLabelTree.is(Tree.Kind.CASE_LABEL)).isTrue();
+    assertThat(caseLabelTree.isFallThrough()).isFalse();
     assertThat(caseLabelTree.caseOrDefaultKeyword().text()).isEqualTo("case");
     assertThat(caseLabelTree.expression()).isNotNull();
-    assertThat(caseLabelTree.colonToken().text()).isEqualTo(":");
-    assertThatChildrenIteratorHasSize(caseLabelTree, 3);
+    assertThat(caseLabelTree.expressions()).hasSize(2);
+    assertThat(((LiteralTree)caseLabelTree.expression()).value()).isEqualTo("2");
+    assertThat(((LiteralTree)caseLabelTree.expressions().get(0)).value()).isEqualTo("2");
+    assertThat(((LiteralTree)caseLabelTree.expressions().get(1)).value()).isEqualTo("3");
+    assertThat(caseLabelTree.colonToken().text()).isEqualTo("->");
+    assertThat(caseLabelTree.colonOrArrowToken().text()).isEqualTo("->");
+    assertThatChildrenIteratorHasSize(caseLabelTree, 4);
     assertThat(c.body()).hasSize(1);
 
     c = tree.cases().get(1);
     assertThat(c.is(Tree.Kind.CASE_GROUP)).isTrue();
     assertThat(c.labels()).hasSize(1);
     caseLabelTree = c.labels().get(0);
-    assertThat(caseLabelTree.is(Tree.Kind.CASE_LABEL)).isTrue();
+    assertThat(caseLabelTree.isFallThrough()).isTrue();
     assertThat(caseLabelTree.caseOrDefaultKeyword().text()).isEqualTo("default");
     assertThat(caseLabelTree.expression()).isNull();
-    assertThat(caseLabelTree.colonToken().text()).isEqualTo(":");
+    assertThat(caseLabelTree.colonOrArrowToken().text()).isEqualTo(":");
     assertThatChildrenIteratorHasSize(caseLabelTree, 2);
     assertThat(c.body()).hasSize(1);
 
     tree = (SwitchStatementTree) firstMethodFirstStatement("class T { void m() { switch (e) { default: } } }");
     assertThat(tree.cases()).hasSize(1);
     assertThat(tree.cases().get(0).body()).isEmpty();
-    assertThatChildrenIteratorHasSize(tree, 7);
+    assertThatChildrenIteratorHasSize(tree, 1);
   }
 
   /**
@@ -1369,6 +1378,15 @@ public class JavaTreeModelTest {
     assertThat(tree.is(Tree.Kind.BREAK_STATEMENT)).isTrue();
     assertThat(tree.breakKeyword().text()).isEqualTo("break");
     assertThat(tree.label().name()).isEqualTo("label");
+    assertThat(((IdentifierTree)tree.value()).name()).isEqualTo("label");
+    assertThat(tree.semicolonToken().text()).isEqualTo(";");
+    assertThatChildrenIteratorHasSize(tree, 3);
+
+    tree = (BreakStatementTree) firstMethodFirstStatement("class T { void m() { break 1 + 1 ; } }");
+    assertThat(tree.is(Tree.Kind.BREAK_STATEMENT)).isTrue();
+    assertThat(tree.breakKeyword().text()).isEqualTo("break");
+    assertThat(tree.label()).isNull();
+    assertThat(tree.value()).isInstanceOf(BinaryExpressionTree.class);
     assertThat(tree.semicolonToken().text()).isEqualTo(";");
     assertThatChildrenIteratorHasSize(tree, 3);
   }
@@ -1555,6 +1573,38 @@ public class JavaTreeModelTest {
     assertThat(type.typeAlternatives()).hasSize(2);
     assertThat(type.typeAlternatives().separators()).hasSize(1);
     assertThatChildrenIteratorHasSize(tree, 3);
+
+    tree = (TryStatementTree) firstMethodFirstStatement("class T { void m() { try (r1) { } } }");
+    assertThat(tree.resources()).isEmpty();
+    assertThat(tree.resources().separators()).isEmpty();
+    assertThat(tree.resourceList()).hasSize(1);
+    assertThat(tree.resourceList().separators()).isEmpty();
+
+    tree = (TryStatementTree) firstMethodFirstStatement("class T { void m() { try (r1; super.field; new A().f) { } } }");
+    assertThat(tree.resources()).isEmpty();
+    assertThat(tree.resources().separators()).isEmpty();
+    assertThat(tree.resourceList()).hasSize(3);
+    assertThat(tree.resourceList().separators()).hasSize(2);
+
+    tree = (TryStatementTree) firstMethodFirstStatement("class T { void m() { try (r1; Resource r2 = open();) { } } }");
+    assertThat(tree.resources()).hasSize(1);
+    assertThat(tree.resources().separators()).hasSize(1);
+    assertThat(tree.resources().separators().get(0).column()).isEqualTo(50);
+    assertThat(tree.resourceList()).hasSize(2);
+    assertThat(tree.resourceList().separators()).hasSize(2);
+
+    tree = (TryStatementTree) firstMethodFirstStatement("class T { void m() { try (r1; Resource r2 = open()) { } } }");
+    assertThat(tree.resources()).hasSize(1);
+    assertThat(tree.resources().separators()).isEmpty();
+    assertThat(tree.resourceList()).hasSize(2);
+    assertThat(tree.resourceList().separators()).hasSize(1);
+
+    tree = (TryStatementTree) firstMethodFirstStatement("class T { void m() { try (Resource r2 = open(); r1;) { } } }");
+    assertThat(tree.resources()).hasSize(1);
+    assertThat(tree.resources().separators()).hasSize(1);
+    assertThat(tree.resources().separators().get(0).column()).isEqualTo(46);
+    assertThat(tree.resourceList()).hasSize(2);
+    assertThat(tree.resourceList().separators()).hasSize(2);
   }
 
   /*

@@ -1,12 +1,20 @@
-package javax.annotation;
-
-@interface Nonnull {}
+import javax.annotation.CheckForNull;
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+import javax.annotation.meta.When;
+import javax.annotation.ParametersAreNonnullByDefault;
+import org.eclipse.jdt.annotation.DefaultLocation;
+import org.eclipse.jdt.annotation.NonNullByDefault;
 
 public class MainClass {
 
   @Nonnull
   private String primary;
   private String secondary;
+
+  @Nonnull
+  private static final Integer STATIC_FIELD; // Compliant as static fields are not reported
+  private static final Integer STATIC_FIELD_NO_ANNOTATION;
 
   public MainClass(String color) {
     if (color != null) {
@@ -22,13 +30,28 @@ public class MainClass {
     testObject = new Object();
   }
 
-  public MainClass() { // Noncompliant  {{"primary" is marked "javax.annotation.Nonnull" but is not initialized in this constructor.}}
+  public MainClass() { // Noncompliant [[sc=10;ec=19]] {{"primary" is marked "javax.annotation.Nonnull" but is not initialized in this constructor.}}
     return; // Just for coverage
   }
 
   @Nonnull
   public String colorMix() {
     return null;  // Noncompliant {{This method's return value is marked "javax.annotation.Nonnull" but null is returned.}}
+  }
+
+  @Nonnull(when = When.MAYBE)
+  public String maybeNull() {
+    return null; // Compliant
+  }
+
+  @Nonnull(when = When.UNKNOWN)
+  public String unknownNull() {
+    return null; // Compliant
+  }
+
+  @Nonnull(when = When.ALWAYS)
+  public String neverNull() {
+    return null; // Noncompliant
   }
 
   @Nonnull
@@ -88,24 +111,24 @@ public class MainClass {
 
   public String returnColor() {
     if (secondary == null) {
-      this.primary = null; // FN does not handle fields accessed by this.
+      this.primary = null; // Noncompliant {{"primary" is marked "javax.annotation.Nonnull" but is set to null.}}
       return secondary;
     }
     return primary;
   }
 
   public static void initialize1() {
-    MainClass instance = new MainClass(null, "Blue");  // Noncompliant {{Parameter 1 to this constructor is marked "javax.annotation.Nonnull" but null is passed.}}
+    MainClass instance = new MainClass(null, "Blue");  // Noncompliant {{Parameter 1 to this constructor is marked "javax.annotation.Nonnull" but null could be passed.}}
   }
 
   public static void initialize2() {
     MainClass instance = new MainClass("Black", null);
-    instance.setColors(null, "Green");  // Noncompliant {{Parameter 1 to this call is marked "javax.annotation.Nonnull" but null is passed.}}
+    instance.setColors(null, "Green");  // Noncompliant {{Parameter 1 to this call is marked "javax.annotation.Nonnull" but null could be passed.}}
   }
 
   public static void initialize3() {
     MainClass instance = new MainClass("Red", null);
-    instance.setSecondary(null);  // Noncompliant {{Parameter 1 to this call is marked "javax.annotation.Nonnull" but null is passed.}}
+    instance.setSecondary(null);  // Noncompliant {{Parameter 1 to this call is marked "javax.annotation.Nonnull" but null could be passed.}}
   }
 
   public static void initiliaze4() {
@@ -163,7 +186,7 @@ public class JpaEntityInvalidDefault {
 
   private String otherField;
 
-  public JpaEntity() { // Noncompliant  {{"itemName" is marked "javax.annotation.Nonnull" but is not initialized in this constructor.}}
+  public JpaEntityInvalidDefault() { // Noncompliant  {{"itemName" is marked "javax.annotation.Nonnull" but is not initialized in this constructor.}}
     otherField = "test";
   }
 }
@@ -181,10 +204,27 @@ public class JpaEmbeddable {
   public JpaEmbeddable(String name) {
     itemName = name;
   }
+}
 
+@javax.persistence.MappedSuperclass
+public class JpaMappedSuperClass {
+
+  @Nonnull
+  private String itemName;
+
+  public JpaMappedSuperclass() { // Compliant
+    // Default constructor for JPA
+  }
+
+  public JpaMappedSuperclass(String name) {
+    itemName = name;
+  }
 }
 
 class FieldWithInitializer {
+  @Nonnull
+  private static final Integer STATIC_FIELD = null; // Compliant as static fields are not reported
+  private static final Integer STATIC_FIELD_NO_ANNOTATION = null;
   @Nonnull
   private final Integer val1 = calculate();
   @Nonnull
@@ -196,4 +236,112 @@ class FieldWithInitializer {
   private Integer calculate() {
     return 42;
   }
+}
+
+class CallingOtherConstructor {
+  @Nonnull
+  private final Integer value;
+
+  CallingOtherConstructor(String s) { // Compliant - calls other constructor
+    this(Integer.valueOf(s));
+  }
+
+  CallingOtherConstructor(Object o) { // Noncompliant - calls super constructor but do not initialize value
+    super();
+  }
+
+  CallingOtherConstructor(String s, Object o) { // Noncompliant - calls other method
+    this.foo(o);
+  }
+
+  CallingOtherConstructor(Integer i) {
+    this.value = i;
+  }
+
+  void foo(Object o) {}
+}
+
+class ExitWithException {
+
+  @Nonnull
+  private Object self;
+
+  public ExitWithException() {
+    self = getSelf(); // Compliant
+  }
+
+  public ExitWithException(int i) throws MyException {
+    self = getOtherSelf(); // Compliant
+  }
+
+  @Nonnull
+  public Object getSelf() throws IllegalArgumentException {
+    return self;
+  }
+
+  @Nonnull
+  public Object getOtherSelf() throws MyException {
+    return self;
+  }
+}
+
+class MyException extends Exception { }
+
+@ParametersAreNonnullByDefault
+class HandleParametersAreNonnullByDefault {
+  HandleParametersAreNonnullByDefault(Object o) {
+  }
+
+  void foo(Object o) {
+    foo(null); // Compliant - @ParametersAreNonnullByDefault not handled
+    new HandleParametersAreNonnullByDefault(null); // Compliant - @ParametersAreNonnullByDefault not handled
+  }
+
+  void bar(@Nullable Object o) {
+    bar(null); // Compliant
+  }
+
+  @Override
+  public boolean equals(Object obj) {
+    return equals(null); // Compliant
+  }
+}
+
+class HandleEclipseParametersNonNull {
+  @NonNullByDefault(DefaultLocation.PARAMETER)
+  void foo(Object o) {
+    foo(null); // Compliant - @NonNullByDefault not handled
+  }
+
+  @NonNullByDefault(DefaultLocation.RETURN_TYPE)
+  Object bar(Object o) {
+    return bar(null); // Compliant
+  }
+}
+
+abstract class ExcludedMethods {
+  @CheckForNull
+  abstract Object getMyObject();
+
+  void foo() {
+    com.google.common.base.Preconditions.checkNotNull(getMyObject()); // Compliant
+    com.google.common.base.Preconditions.checkNotNull(getMyObject(), "yolo"); // Compliant
+    com.google.common.base.Preconditions.checkNotNull(getMyObject(), "yolo", new Object(), 2); // Compliant
+  }
+}
+
+
+public class MultipleConstructors {
+
+  @Nonnull
+  private final String a;
+
+  MultipleConstructors() {
+    this("test");
+  }
+
+  private MultipleConstructors(@Nonnull String b) {
+    this.a = b;
+  }
+
 }

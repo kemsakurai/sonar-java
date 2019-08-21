@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -27,24 +27,23 @@ import org.junit.runner.notification.RunListener;
  */
 public class JUnitListener extends RunListener {
 
-  protected final JacocoController jacoco;
-
-  public JUnitListener() {
-    this(JacocoController.getInstance());
-  }
-
-  JUnitListener(JacocoController jacoco) {
-    this.jacoco = jacoco;
-  }
+  protected JacocoController jacoco;
 
   @Override
   public void testStarted(Description description) {
-    jacoco.onTestStart();
+    getJacocoController().onTestStart();
   }
 
   @Override
   public void testFinished(Description description) {
     jacoco.onTestFinish(getName(description));
+  }
+
+  protected JacocoController getJacocoController() {
+    if (jacoco == null) {
+      jacoco = JacocoController.getInstance();
+    }
+    return jacoco;
   }
 
   private static String getName(Description description) {

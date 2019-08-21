@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,12 +19,10 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
 import org.sonar.check.Rule;
 import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.java.matcher.MethodMatcherCollection;
 import org.sonar.java.resolve.ParametrizedTypeJavaType;
-import org.sonar.java.resolve.TypeVariableJavaType;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
@@ -32,6 +30,8 @@ import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
 import javax.annotation.CheckForNull;
+
+import java.util.Arrays;
 import java.util.List;
 
 @Rule(key = "S2112")
@@ -45,7 +45,7 @@ public class URLHashCodeAndEqualsCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.VARIABLE, Tree.Kind.METHOD_INVOCATION);
+    return Arrays.asList(Tree.Kind.VARIABLE, Tree.Kind.METHOD_INVOCATION);
   }
 
   @Override
@@ -76,9 +76,10 @@ public class URLHashCodeAndEqualsCheck extends IssuableSubscriptionVisitor {
   private static Type getFirstTypeParameter(Type type) {
     if (type instanceof ParametrizedTypeJavaType) {
       ParametrizedTypeJavaType parametrizedTypeType = (ParametrizedTypeJavaType) type;
-      for (TypeVariableJavaType variableType : parametrizedTypeType.typeParameters()) {
-        return parametrizedTypeType.substitution(variableType);
-      }
+      return parametrizedTypeType.typeParameters().stream()
+        .findFirst()
+        .map(parametrizedTypeType::substitution)
+        .orElse(null);
     }
     return null;
   }

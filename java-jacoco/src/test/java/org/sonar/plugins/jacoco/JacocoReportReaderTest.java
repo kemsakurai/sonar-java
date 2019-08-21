@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2010-2017 SonarSource SA
+ * Copyright (C) 2010-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -20,17 +20,15 @@
 package org.sonar.plugins.jacoco;
 
 import com.google.common.collect.Lists;
+import java.io.File;
+import java.util.Collection;
 import org.apache.commons.io.FileUtils;
 import org.assertj.core.api.Fail;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 import org.junit.rules.TemporaryFolder;
-import org.sonar.squidbridge.api.AnalysisException;
-import org.sonar.test.TestUtils;
-
-import java.io.File;
-import java.util.Collection;
+import org.sonar.java.AnalysisException;
 
 public class JacocoReportReaderTest {
 
@@ -56,9 +54,10 @@ public class JacocoReportReaderTest {
 
   }
   @Test
-  public void not_existing_class_files_should_not_be_analyzed_for_previous() {
+  public void previous_version_should_fail() {
     File report = TestUtils.getResource("/org/sonar/plugins/jacoco/JaCoCo_incompatible_merge/jacoco-0.7.4.exec");
     Collection<File> classFile = Lists.newArrayList(dummy);
+    expectedException.expect(AnalysisException.class);
     new JacocoReportReader(report).analyzeFiles(null, classFile);
   }
 

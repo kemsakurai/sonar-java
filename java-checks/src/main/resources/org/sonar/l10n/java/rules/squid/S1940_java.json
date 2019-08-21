@@ -9,5 +9,8 @@
   "tags": [
     "pitfall"
   ],
-  "defaultSeverity": "Minor"
+  "defaultSeverity": "Minor",
+  "ruleSpecification": "RSPEC-1940",
+  "sqKey": "S1940",
+  "scope": "All"
 }

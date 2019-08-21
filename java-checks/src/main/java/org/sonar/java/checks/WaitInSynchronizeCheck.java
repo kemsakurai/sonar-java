@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,15 +19,16 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Arrays;
+import java.util.List;
 import org.sonar.check.Rule;
 import org.sonar.java.matcher.MethodMatcher;
+import org.sonar.java.model.ExpressionUtils;
+import org.sonar.plugins.java.api.tree.ExpressionTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MemberSelectExpressionTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.Tree;
-
-import java.util.List;
 
 @Rule(key = "S2273")
 public class WaitInSynchronizeCheck extends AbstractInSynchronizeChecker {
@@ -35,27 +36,25 @@ public class WaitInSynchronizeCheck extends AbstractInSynchronizeChecker {
   @Override
   protected void onMethodInvocationFound(MethodInvocationTree mit) {
     if (!isInSyncBlock()) {
-      IdentifierTree methodName;
+      IdentifierTree methodName = ExpressionUtils.methodName(mit);
+      ExpressionTree methodSelect = mit.methodSelect();
       String lockName;
-      if (mit.methodSelect().is(Tree.Kind.MEMBER_SELECT)) {
-        MemberSelectExpressionTree mse = (MemberSelectExpressionTree) mit.methodSelect();
-        methodName = mse.identifier();
-        lockName = mse.expression().symbolType().name();
+      if (methodSelect.is(Tree.Kind.MEMBER_SELECT)) {
+        lockName = ((MemberSelectExpressionTree) methodSelect).expression().symbolType().name();
       } else {
-        methodName = (IdentifierTree) mit.methodSelect();
         lockName = "this";
       }
-      reportIssue(methodName, "Make this call to \"" + methodName + "()\" only inside a synchronized block to be sure to hold the monitor on \"" + lockName + "\" object.");
+      reportIssue(methodName, "Move this call to \"" + methodName + "()\" into a synchronized block to be sure the monitor on \"" + lockName + "\" is held.");
     }
   }
 
   @Override
   protected List<MethodMatcher> getMethodInvocationMatchers() {
-    return ImmutableList.<MethodMatcher>builder()
-      .add(MethodMatcher.create().name("wait").withoutParameter())
-      .add(MethodMatcher.create().name("wait").addParameter("long"))
-      .add(MethodMatcher.create().name("wait").addParameter("long").addParameter("int"))
-      .add(MethodMatcher.create().name("notify").withoutParameter())
-      .add(MethodMatcher.create().name("notifyAll").withoutParameter()).build();
+    return Arrays.asList(
+      MethodMatcher.create().name("wait").withoutParameter(),
+      MethodMatcher.create().name("wait").addParameter("long"),
+      MethodMatcher.create().name("wait").addParameter("long").addParameter("int"),
+      MethodMatcher.create().name("notify").withoutParameter(),
+      MethodMatcher.create().name("notifyAll").withoutParameter());
   }
 }

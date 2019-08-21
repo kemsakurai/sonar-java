@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,9 +19,12 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Collections;
+import java.util.List;
 import org.sonar.check.Rule;
 import org.sonar.java.matcher.MethodMatcher;
+import org.sonar.java.matcher.MethodMatcherCollection;
+import org.sonar.java.matcher.NameCriteria;
 import org.sonar.java.resolve.ParametrizedTypeJavaType;
 import org.sonar.java.resolve.TypeVariableJavaType;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
@@ -33,18 +36,20 @@ import org.sonar.plugins.java.api.tree.Tree.Kind;
 import org.sonar.plugins.java.api.tree.TypeTree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
-import java.util.List;
-
 @Rule(key = "S1641")
 public class EnumSetCheck extends IssuableSubscriptionVisitor {
 
   private static final MethodMatcher COLLECTIONS_UNMODIFIABLE = MethodMatcher.create().typeDefinition("java.util.Collections").name("unmodifiableSet").withAnyParameters();
-  private static final MethodMatcher GUAVA_IMMUTABLE_ENUM_SET = MethodMatcher.create().typeDefinition("com.google.common.collect.Sets").name("immutableEnumSet")
-    .withAnyParameters();
+  private static final MethodMatcherCollection SET_CREATION_METHODS = MethodMatcherCollection.create(
+    // Java 9 factory methods
+    MethodMatcher.create().typeDefinition("java.util.Set").name("of").withAnyParameters(),
+    // guava
+    MethodMatcher.create().typeDefinition("com.google.common.collect.ImmutableSet").name("of").withAnyParameters(),
+    MethodMatcher.create().typeDefinition("com.google.common.collect.Sets").name(NameCriteria.any()).withAnyParameters());
 
   @Override
   public List<Kind> nodesToVisit() {
-    return ImmutableList.of(Kind.VARIABLE);
+    return Collections.singletonList(Kind.VARIABLE);
   }
 
   @Override
@@ -54,16 +59,25 @@ public class EnumSetCheck extends IssuableSubscriptionVisitor {
     }
     VariableTree variableTree = (VariableTree) tree;
     ExpressionTree initializer = variableTree.initializer();
-    if (initializer != null) {
-      if(initializer.is(Kind.METHOD_INVOCATION) && COLLECTIONS_UNMODIFIABLE.matches((MethodInvocationTree) initializer)) {
-        initializer = ((MethodInvocationTree) initializer).arguments().get(0);
-      }
-      checkIssue(initializer.symbolType(), initializer, variableTree.type());
+    if (initializer == null) {
+      return;
     }
+    if (initializer.is(Kind.METHOD_INVOCATION)) {
+      MethodInvocationTree mit = (MethodInvocationTree) initializer;
+      if (COLLECTIONS_UNMODIFIABLE.matches(mit)) {
+        // check the collection used as parameter
+        initializer = mit.arguments().get(0);
+      } else if (!SET_CREATION_METHODS.anyMatch(mit) || "immutableEnumSet".equals(mit.symbol().name())) {
+        // Methods from Guava 'Sets' except 'immutableEnumSet' should be checked,
+        // but discard any other method invocations (killing the noise)
+        return;
+      }
+    }
+    checkIssue(initializer.symbolType(), initializer, variableTree.type());
   }
 
   private void checkIssue(Type type, Tree reportTree, TypeTree typeTree) {
-    if (type.isSubtypeOf("java.util.Set") && !callToImmutableEnumSet(reportTree) && !type.isSubtypeOf("java.util.EnumSet") && type instanceof ParametrizedTypeJavaType) {
+    if (type.isSubtypeOf("java.util.Set") && !type.isSubtypeOf("java.util.EnumSet") && type instanceof ParametrizedTypeJavaType) {
       ParametrizedTypeJavaType parametrizedType = (ParametrizedTypeJavaType) type;
       List<TypeVariableJavaType> typeParameters = parametrizedType.typeParameters();
       Type variableType = typeTree.symbolType();
@@ -79,10 +93,6 @@ public class EnumSetCheck extends IssuableSubscriptionVisitor {
         }
       }
     }
-  }
-
-  private static boolean callToImmutableEnumSet(Tree tree) {
-    return tree.is(Tree.Kind.METHOD_INVOCATION) && GUAVA_IMMUTABLE_ENUM_SET.matches((MethodInvocationTree) tree);
   }
 
 }

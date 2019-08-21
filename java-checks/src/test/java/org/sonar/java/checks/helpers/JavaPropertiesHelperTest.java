@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,29 +19,29 @@
  */
 package org.sonar.java.checks.helpers;
 
-import com.google.common.collect.Lists;
 import com.sonar.sslr.api.typed.ActionParser;
 import org.junit.Test;
 import org.sonar.java.ast.parser.JavaParser;
+import org.sonar.java.bytecode.loader.SquidClassLoader;
 import org.sonar.java.resolve.SemanticModel;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.CompilationUnitTree;
 import org.sonar.plugins.java.api.tree.ExpressionStatementTree;
 import org.sonar.plugins.java.api.tree.ExpressionTree;
+import org.sonar.plugins.java.api.tree.LambdaExpressionTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.StatementTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import java.io.File;
 import java.lang.reflect.Constructor;
-import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class JavaPropertiesHelperTest {
 
-  private final ActionParser<Tree> p = JavaParser.createParser(StandardCharsets.UTF_8);
+  private final ActionParser<Tree> p = JavaParser.createParser();
 
   @Test
   public void private_constructor() throws Exception {
@@ -124,9 +124,18 @@ public class JavaPropertiesHelperTest {
     assertThat(defaultValue).isNull();
   }
 
+  @Test
+  public void null_if_unknown_symbol() throws Exception {
+    ExpressionTree tree = firstExpression("void foo() { unknown(e -> e.method()); }");
+    ExpressionTree functionCallArgument = ((MethodInvocationTree) tree).arguments().get(0);
+    MethodInvocationTree methodCallInsideLambda = (MethodInvocationTree)((LambdaExpressionTree)functionCallArgument).body();
+    ExpressionTree defaultValue = JavaPropertiesHelper.retrievedPropertyDefaultValue(methodCallInsideLambda);
+    assertThat(defaultValue).isNull();
+  }
+
   private ExpressionTree firstExpression(String code) {
     CompilationUnitTree compilationUnitTree = (CompilationUnitTree) p.parse("class A { " + code + "}");
-    SemanticModel.createFor(compilationUnitTree, Lists.<File>newArrayList());
+    SemanticModel.createFor(compilationUnitTree, new SquidClassLoader(Collections.emptyList()));
     ClassTree firstType = (ClassTree) compilationUnitTree.types().get(0);
     StatementTree firstStatement = ((MethodTree) firstType.members().get(0)).block().body().get(0);
     return ((ExpressionStatementTree) firstStatement).expression();

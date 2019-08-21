@@ -1,5 +1,5 @@
 {
-  "title": "\"assert\" should only be used with boolean variables",
+  "title": "Expressions used in \"assert\" should not produce side effects",
   "type": "BUG",
   "status": "ready",
   "remediation": {
@@ -7,12 +7,10 @@
     "constantCost": "5min"
   },
   "tags": [
-    "bug",
-    "cert",
-    "suspicious"
+    "cert"
   ],
-  "standards": [
-    "CERT"
-  ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-3346",
+  "sqKey": "S3346",
+  "scope": "Main"
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,38 +21,38 @@ package org.sonar.java.checks;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
-import org.apache.commons.lang.BooleanUtils;
+
+import java.util.Collections;
+import java.util.List;
 import org.sonar.check.Rule;
-import org.sonar.java.model.declaration.MethodTreeImpl;
+import org.sonar.java.checks.helpers.MethodTreeUtils;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Symbol;
 import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.MethodTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import java.util.List;
-
 @Rule(key = "S1160")
 public class ThrowsSeveralCheckedExceptionCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.METHOD);
+    return Collections.singletonList(Tree.Kind.METHOD);
   }
 
   @Override
   public void visitNode(Tree tree) {
     MethodTree methodTree = (MethodTree) tree;
-    if (hasSemantic() && isPublic(methodTree) && !((MethodTreeImpl) methodTree).isMainMethod()) {
+    if (hasSemantic() && isPublic(methodTree) && !MethodTreeUtils.isMainMethod(methodTree)) {
       List<String> thrownCheckedExceptions = getThrownCheckedExceptions(methodTree);
-      if (thrownCheckedExceptions.size() > 1 && isNotOverriden(methodTree)) {
+      if (thrownCheckedExceptions.size() > 1 && isNotOverridden(methodTree)) {
         reportIssue(methodTree.simpleName(), "Refactor this method to throw at most one checked exception instead of: " + Joiner.on(", ").join(thrownCheckedExceptions));
       }
     }
   }
 
-  private static boolean isNotOverriden(MethodTree methodTree) {
-    return BooleanUtils.isFalse(((MethodTreeImpl) methodTree).isOverriding());
+  private static boolean isNotOverridden(MethodTree methodTree) {
+    return Boolean.FALSE.equals(methodTree.isOverriding());
   }
 
   private static boolean isPublic(MethodTree methodTree) {

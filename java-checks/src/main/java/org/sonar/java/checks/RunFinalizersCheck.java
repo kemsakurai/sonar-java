@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,28 +19,34 @@
  */
 package org.sonar.java.checks;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Arrays;
+import java.util.List;
 import org.sonar.check.Rule;
-import org.sonar.java.checks.helpers.MethodsHelper;
+import org.sonar.java.JavaVersionAwareVisitor;
 import org.sonar.java.checks.methods.AbstractMethodDetection;
 import org.sonar.java.matcher.MethodMatcher;
+import org.sonar.java.model.ExpressionUtils;
+import org.sonar.plugins.java.api.JavaVersion;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 
-import java.util.List;
-
 @Rule(key = "S2151")
-public class RunFinalizersCheck extends AbstractMethodDetection {
+public class RunFinalizersCheck extends AbstractMethodDetection implements JavaVersionAwareVisitor {
 
   @Override
   protected List<MethodMatcher> getMethodInvocationMatchers() {
-    return ImmutableList.<MethodMatcher>builder()
-        .add(MethodMatcher.create().typeDefinition("java.lang.Runtime").name("runFinalizersOnExit").addParameter("boolean"))
-        .add(MethodMatcher.create().typeDefinition("java.lang.System").name("runFinalizersOnExit").addParameter("boolean"))
-        .build();
+    return Arrays.asList(
+      MethodMatcher.create().typeDefinition("java.lang.Runtime").name("runFinalizersOnExit").addParameter("boolean"),
+      MethodMatcher.create().typeDefinition("java.lang.System").name("runFinalizersOnExit").addParameter("boolean"));
   }
 
   @Override
   protected void onMethodInvocationFound(MethodInvocationTree mit) {
-    reportIssue(MethodsHelper.methodName(mit), "Remove this call to \"" + mit.symbol().owner().name() + ".runFinalizersOnExit()\".");
+    reportIssue(ExpressionUtils.methodName(mit), "Remove this call to \"" + mit.symbol().owner().name() + ".runFinalizersOnExit()\".");
   }
+
+  @Override
+  public boolean isCompatibleWithJavaVersion(JavaVersion version) {
+    return version.isNotSet() || version.asInt() < 11;
+  }
+
 }

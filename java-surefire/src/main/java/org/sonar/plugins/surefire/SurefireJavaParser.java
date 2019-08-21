@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,8 +19,18 @@
  */
 package org.sonar.plugins.surefire;
 
+import java.io.File;
+import java.io.Serializable;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import javax.annotation.CheckForNull;
+import javax.xml.stream.XMLStreamException;
 import org.apache.commons.lang.StringUtils;
-import org.sonar.api.batch.BatchSide;
+import org.sonar.api.batch.ScannerSide;
 import org.sonar.api.batch.fs.InputFile;
 import org.sonar.api.batch.sensor.SensorContext;
 import org.sonar.api.component.ResourcePerspectives;
@@ -30,22 +40,16 @@ import org.sonar.api.test.MutableTestPlan;
 import org.sonar.api.test.TestCase;
 import org.sonar.api.utils.log.Logger;
 import org.sonar.api.utils.log.Loggers;
+import org.sonar.java.AnalysisException;
 import org.sonar.plugins.java.api.JavaResourceLocator;
 import org.sonar.plugins.surefire.data.UnitTestClassReport;
 import org.sonar.plugins.surefire.data.UnitTestIndex;
 import org.sonar.plugins.surefire.data.UnitTestResult;
-import org.sonar.squidbridge.api.AnalysisException;
-
-import javax.annotation.Nullable;
-import javax.xml.stream.XMLStreamException;
-import java.io.File;
-import java.io.Serializable;
-import java.util.Map;
 
 /**
  * @since 2.4
  */
-@BatchSide
+@ScannerSide
 public class SurefireJavaParser {
 
   private static final Logger LOGGER = Loggers.get(SurefireJavaParser.class);
@@ -57,17 +61,22 @@ public class SurefireJavaParser {
     this.javaResourceLocator = javaResourceLocator;
   }
 
-  public void collect(SensorContext context, File reportsDir, boolean reportDirSetByUser) {
-    File[] xmlFiles = getReports(reportsDir, reportDirSetByUser);
-    if (xmlFiles.length > 0) {
+  public void collect(SensorContext context, List<File> reportsDirs, boolean reportDirSetByUser) {
+    List<File> xmlFiles = getReports(reportsDirs, reportDirSetByUser);
+    if (!xmlFiles.isEmpty()) {
       parseFiles(context, xmlFiles);
     }
   }
 
-  private static File[] getReports(@Nullable File dir, boolean reportDirSetByUser) {
-    if (dir == null) {
-      return new File[0];
-    } else if (!dir.isDirectory()) {
+  private static List<File> getReports(List<File> dirs, boolean reportDirSetByUser) {
+    return dirs.stream()
+      .map(dir -> getReports(dir, reportDirSetByUser))
+      .flatMap(Arrays::stream)
+      .collect(Collectors.toList());
+  }
+
+  private static File[] getReports(File dir, boolean reportDirSetByUser) {
+    if (!dir.isDirectory()) {
       if(reportDirSetByUser) {
         LOGGER.error("Reports path not found or is not a directory: " + dir.getAbsolutePath());
       }
@@ -88,14 +97,14 @@ public class SurefireJavaParser {
     return dir.listFiles((parentDir, name) -> name.startsWith(fileNameStart) && name.endsWith(".xml"));
   }
 
-  private void parseFiles(SensorContext context, File[] reports) {
+  private void parseFiles(SensorContext context, List<File> reports) {
     UnitTestIndex index = new UnitTestIndex();
     parseFiles(reports, index);
     sanitize(index);
     save(index, context);
   }
 
-  private static void parseFiles(File[] reports, UnitTestIndex index) {
+  private static void parseFiles(List<File> reports, UnitTestIndex index) {
     StaxParser parser = new StaxParser(index);
     for (File report : reports) {
       try {
@@ -118,21 +127,32 @@ public class SurefireJavaParser {
 
   private void save(UnitTestIndex index, SensorContext context) {
     long negativeTimeTestNumber = 0;
-    for (Map.Entry<String, UnitTestClassReport> entry : index.getIndexByClassname().entrySet()) {
+    Map<InputFile, UnitTestClassReport> indexByInputFile = mapToInputFile(index.getIndexByClassname());
+    for (Map.Entry<InputFile, UnitTestClassReport> entry : indexByInputFile.entrySet()) {
       UnitTestClassReport report = entry.getValue();
       if (report.getTests() > 0) {
         negativeTimeTestNumber += report.getNegativeTimeTestNumber();
-        InputFile resource = getUnitTestResource(entry.getKey());
-        if (resource != null) {
-          save(report, resource, context);
-        } else {
-          LOGGER.warn("Resource not found: {}", entry.getKey());
-        }
+        save(report, entry.getKey(), context);
       }
     }
     if (negativeTimeTestNumber > 0) {
       LOGGER.warn("There is {} test(s) reported with negative time by surefire, total duration may not be accurate.", negativeTimeTestNumber);
     }
+  }
+
+  private Map<InputFile, UnitTestClassReport> mapToInputFile(Map<String, UnitTestClassReport> indexByClassname) {
+    Map<InputFile, UnitTestClassReport> result = new HashMap<>();
+    indexByClassname.forEach((className, index) -> {
+      InputFile resource = getUnitTestResource(className, index);
+      if (resource != null) {
+        UnitTestClassReport report = result.computeIfAbsent(resource, r -> new UnitTestClassReport());
+        // in case of repeated/parameterized tests (JUnit 5.x) we may end up with tests having the same name
+        index.getResults().forEach(report::add);
+      } else {
+        LOGGER.debug("Resource not found: {}", className);
+      }
+    });
+    return result;
   }
 
   private void save(UnitTestClassReport report, InputFile inputFile, SensorContext context) {
@@ -158,8 +178,19 @@ public class SurefireJavaParser {
     }
   }
 
-  protected InputFile getUnitTestResource(String classKey) {
-    return javaResourceLocator.findResourceByClassName(classKey);
+  @CheckForNull
+  private InputFile getUnitTestResource(String className, UnitTestClassReport unitTestClassReport) {
+    InputFile resource = javaResourceLocator.findResourceByClassName(className);
+    if (resource == null) {
+      // fall back on testSuite class name (repeated and parameterized tests from JUnit 5.0 are using test name as classname)
+      // Should be fixed with JUnit 5.1, see: https://github.com/junit-team/junit5/issues/1182
+      return unitTestClassReport.getResults().stream()
+        .map(r -> javaResourceLocator.findResourceByClassName(r.getTestSuiteClassName()))
+        .filter(Objects::nonNull)
+        .findFirst()
+        .orElse(null);
+    }
+    return resource;
   }
 
   private static <T extends Serializable> void saveMeasure(SensorContext context, InputFile inputFile, Metric<T> metric, T value) {

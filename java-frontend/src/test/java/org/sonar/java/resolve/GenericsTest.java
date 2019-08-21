@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -26,23 +26,21 @@ import org.assertj.core.api.AbstractAssert;
 import org.assertj.core.api.Assertions;
 import org.junit.Test;
 import org.sonar.java.ast.parser.JavaParser;
+import org.sonar.java.bytecode.loader.SquidClassLoader;
 import org.sonar.java.resolve.JavaSymbol.MethodJavaSymbol;
 import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.ClassTree;
 import org.sonar.plugins.java.api.tree.CompilationUnitTree;
 import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
-import org.sonar.plugins.java.api.tree.SyntaxToken;
 import org.sonar.plugins.java.api.tree.Tree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -497,7 +495,7 @@ public class GenericsTest {
       "A<? extends T>",
       "A<? super T>");
 
-    Type a = elementTypes.get(0);
+    Type a = elementTypes.get(0).erasure();
     Type aWc = elementTypes.get(1);
     Type aAnimal = elementTypes.get(2);
     Type aCat = elementTypes.get(3);
@@ -657,7 +655,7 @@ public class GenericsTest {
     methodHasUsagesWithSameTypeAs(aType, "f14", "bString");
     methodHasUsagesWithSameTypeAs(aType, "f15", "object");
 
-    methodHasUsagesWithSameTypeAs(aType, "f16", "bObject", "bObject", "bObject", "comparable", "bString");
+    methodHasUsagesWithSameTypeAs(aType, "f16", "bRawType", "bRawType", "bRawType", "comparable", "bString");
 
     methodHasUsagesWithSameTypeAs(aType, "f17", "object");
   }
@@ -856,12 +854,11 @@ public class GenericsTest {
   public void parametrized_method_resolution_with_bounded_type_variable() {
     List<Type> elementTypes = declaredTypesFromFile("src/test/files/resolve/GenericMethodsBoundedTypeVariables.java");
 
-    JavaType type = (JavaType) elementTypes.get(0);
-    JavaSymbol.MethodJavaSymbol methodSymbol = getMethodSymbol(type, "foo");
-    // FIXME SONARJAVA-1859 should be 12 - explicit type arguments not handled
-    assertThat(methodSymbol.usages()).hasSize(6);
-    List<Integer> lines = methodSymbol.usages().stream().map(IdentifierTree::identifierToken).map(SyntaxToken::line).collect(Collectors.toList());
-    assertThat(lines).containsExactly(9, 10, 18, 19, 27, 28);
+    JavaSymbol.MethodJavaSymbol classMethod = getMethodSymbol((JavaType) elementTypes.get(0), "foo");
+    assertThat(classMethod.usages()).hasSize(12);
+
+    JavaSymbol.MethodJavaSymbol interfaceMethod = getMethodSymbol((JavaType) elementTypes.get(1), "bar");
+    assertThat(interfaceMethod.usages()).hasSize(12);
   }
 
   private static void methodHasUsagesWithSameTypeAs(JavaType type, String methodName, String... variables) {
@@ -880,7 +877,7 @@ public class GenericsTest {
       if (variableName != null) {
         Type methodInvocationType = getMethodInvocationType(method, i);
         Type variableType = getVariableType(type, variableName);
-        assertThat(methodInvocationType).overridingErrorMessage("Type of expression should be the same as type of variable '" + variableName + "'.").isSameAs(variableType);
+        assertThat(methodInvocationType).overridingErrorMessage("Type of expression "+methodInvocationType+" should be the same as type of variable '" + variableName + "'.").isSameAs(variableType);
       }
     }
   }
@@ -1049,8 +1046,8 @@ public class GenericsTest {
     for (String line : lines) {
       builder.append(line).append(System.lineSeparator());
     }
-    CompilationUnitTree cut = (CompilationUnitTree) JavaParser.createParser(StandardCharsets.UTF_8).parse(builder.toString());
-    SemanticModel.createFor(cut, Lists.newArrayList(new File("target/test-classes"), new File("target/classes")));
+    CompilationUnitTree cut = (CompilationUnitTree) JavaParser.createParser().parse(builder.toString());
+    SemanticModel.createFor(cut, new SquidClassLoader(Lists.newArrayList(new File("target/test-classes"), new File("target/classes"))));
     return cut;
   }
 
@@ -1065,8 +1062,8 @@ public class GenericsTest {
   }
 
   private static CompilationUnitTree treeOf(File file) {
-    CompilationUnitTree cut = (CompilationUnitTree) JavaParser.createParser(StandardCharsets.UTF_8).parse(file);
-    SemanticModel.createFor(cut, Lists.newArrayList(new File("target/test-classes"), new File("target/classes")));
+    CompilationUnitTree cut = (CompilationUnitTree) JavaParser.createParser().parse(file);
+    SemanticModel.createFor(cut, new SquidClassLoader(Lists.newArrayList(new File("target/test-classes"), new File("target/classes"))));
     return cut;
   }
 }

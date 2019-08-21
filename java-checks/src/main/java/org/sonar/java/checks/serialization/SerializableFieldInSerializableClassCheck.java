@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,14 +19,12 @@
  */
 package org.sonar.java.checks.serialization;
 
-import com.google.common.collect.ImmutableList;
-import java.util.List;
-import javax.annotation.Nullable;
 import org.sonar.check.Rule;
 import org.sonar.java.model.ModifiersUtils;
 import org.sonar.java.resolve.JavaType;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.semantic.Symbol;
+import org.sonar.plugins.java.api.semantic.SymbolMetadata;
 import org.sonar.plugins.java.api.semantic.Type;
 import org.sonar.plugins.java.api.tree.AssignmentExpressionTree;
 import org.sonar.plugins.java.api.tree.ClassTree;
@@ -39,12 +37,16 @@ import org.sonar.plugins.java.api.tree.TypeTree;
 import org.sonar.plugins.java.api.tree.VariableTree;
 import org.sonar.plugins.java.api.tree.WildcardTree;
 
+import javax.annotation.Nullable;
+import java.util.Collections;
+import java.util.List;
+
 @Rule(key = "S1948")
 public class SerializableFieldInSerializableClassCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.CLASS);
+    return Collections.singletonList(Tree.Kind.CLASS);
   }
 
   @Override
@@ -53,7 +55,9 @@ public class SerializableFieldInSerializableClassCheck extends IssuableSubscript
       return;
     }
     ClassTree classTree = (ClassTree) tree;
-    if (isSerializable(classTree) && !SerializableContract.hasSpecialHandlingSerializationMethods(classTree)) {
+    if (isSerializable(classTree)
+      && !SerializableContract.hasSpecialHandlingSerializationMethods(classTree)
+      && !classTree.symbol().type().isSubtypeOf("javax.servlet.http.HttpServlet")) {
       for (Tree member : classTree.members()) {
         if (member.is(Tree.Kind.VARIABLE)) {
           checkVariableMember((VariableTree) member);
@@ -69,7 +73,7 @@ public class SerializableFieldInSerializableClassCheck extends IssuableSubscript
         if (!ModifiersUtils.hasModifier(variableTree.modifiers(), Modifier.PRIVATE)) {
           reportIssue(simpleName, "Make \"" + simpleName.name() + "\" private or transient.");
         } else if (isUnserializableCollection(variableTree.type().symbolType())
-          || initializerIsUnserializableCollection(variableTree.initializer())) {
+          || isUnserializableCollection(variableTree.initializer())) {
           reportIssue(simpleName);
         }
         checkCollectionAssignments(variableTree.symbol().usages());
@@ -79,8 +83,8 @@ public class SerializableFieldInSerializableClassCheck extends IssuableSubscript
     }
   }
 
-  private static boolean initializerIsUnserializableCollection(@Nullable ExpressionTree initializer) {
-    return initializer != null && isUnserializableCollection(initializer.symbolType());
+  private static boolean isUnserializableCollection(@Nullable ExpressionTree expression) {
+    return expression != null && !expression.is(Tree.Kind.NULL_LITERAL) && isUnserializableCollection(expression.symbolType());
   }
 
   private static boolean isUnserializableCollection(Type type) {
@@ -92,8 +96,7 @@ public class SerializableFieldInSerializableClassCheck extends IssuableSubscript
       Tree parentTree = usage.parent();
       if (parentTree.is(Tree.Kind.ASSIGNMENT)) {
         AssignmentExpressionTree assignment = (AssignmentExpressionTree) parentTree;
-        ExpressionTree expression = assignment.expression();
-        if (usage.equals(assignment.variable()) && !expression.is(Tree.Kind.NULL_LITERAL) && isUnserializableCollection(expression.symbolType())) {
+        if (usage.equals(assignment.variable()) && isUnserializableCollection(assignment.expression())) {
           reportIssue(usage);
         }
       }
@@ -127,7 +130,11 @@ public class SerializableFieldInSerializableClassCheck extends IssuableSubscript
   }
 
   private static boolean isTransientSerializableOrInjected(VariableTree member) {
-    return ModifiersUtils.hasModifier(member.modifiers(), Modifier.TRANSIENT) || isSerializable(member.type()) || member.symbol().metadata().isAnnotatedWith("javax.inject.Inject");
+    if (ModifiersUtils.hasModifier(member.modifiers(), Modifier.TRANSIENT) || (isSerializable(member.type()) && !isSubtypeOfCollectionApi(member.type().symbolType()))) {
+      return true;
+    }
+    SymbolMetadata metadata = member.symbol().metadata();
+    return metadata.isAnnotatedWith("javax.inject.Inject") || metadata.isAnnotatedWith("javax.ejb.EJB");
   }
 
   private static boolean isSerializable(Tree tree) {

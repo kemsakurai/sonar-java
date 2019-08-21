@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,13 +19,22 @@
  */
 package org.sonar.java.checks.verifier;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.LinkedListMultimap;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Multimap;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.stream.Collectors;
 import org.assertj.core.api.Fail;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.sonar.api.batch.fs.internal.DefaultInputFile;
+import org.sonar.api.batch.fs.internal.TestInputFileBuilder;
 import org.sonar.check.Rule;
 import org.sonar.java.AnalyzerMessage;
 import org.sonar.java.RspecKey;
@@ -33,18 +42,9 @@ import org.sonar.java.model.InternalSyntaxToken;
 import org.sonar.java.model.statement.ReturnStatementTreeImpl;
 import org.sonar.plugins.java.api.IssuableSubscriptionVisitor;
 import org.sonar.plugins.java.api.JavaFileScannerContext;
-import org.sonar.plugins.java.api.tree.SyntaxTrivia;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.stream.Collectors;
-
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
@@ -57,7 +57,7 @@ public class JavaCheckVerifierTest {
   private static final IssuableSubscriptionVisitor NO_EFFECT_VISITOR = new IssuableSubscriptionVisitor() {
     @Override
     public List<Tree.Kind> nodesToVisit() {
-      return ImmutableList.of();
+      return Collections.emptyList();
     }
   };
 
@@ -129,6 +129,13 @@ public class JavaCheckVerifierTest {
     String expectedMessage = "messageOnFile";
     IssuableSubscriptionVisitor visitor = new FakeVisitor().withIssueOnFile(expectedMessage);
     JavaCheckVerifier.verifyIssueOnFile(FILENAME_ISSUES, expectedMessage, visitor);
+  }
+
+  @Test
+  public void verify_issue_on_project() {
+    String expectedMessage = "messageOnProject";
+    IssuableSubscriptionVisitor visitor = new FakeVisitor().withIssueOnProject(expectedMessage);
+    JavaCheckVerifier.verifyIssueOnProject(FILENAME_ISSUES, expectedMessage, visitor);
   }
 
   @Test(expected = IllegalStateException.class)
@@ -320,7 +327,7 @@ public class JavaCheckVerifierTest {
   @Test
   public void rule_with_constant_remediation_function_should_not_provide_cost() throws Exception {
     FakeVisitor fakeVisitor = new FakeVisitor();
-    fakeVisitor.withPreciseIssue(new AnalyzerMessage(fakeVisitor, new File("a"), new AnalyzerMessage.TextSpan(1), "message", 1));
+    fakeVisitor.withPreciseIssue(new AnalyzerMessage(fakeVisitor, emptyInputFile(), new AnalyzerMessage.TextSpan(1), "message", 1));
     Throwable throwable = catchThrowable(() -> JavaCheckVerifier.verify("src/test/files/JavaCheckVerifierNoCost.java", fakeVisitor));
     assertThat(throwable)
       .isInstanceOf(IllegalStateException.class)
@@ -332,7 +339,7 @@ public class JavaCheckVerifierTest {
     @Rule(key = "DoesntExists")
     class WrongJson extends FakeVisitor {}
     WrongJson check = new WrongJson();
-    check.withPreciseIssue(new AnalyzerMessage(check, new File("a"), 1, "message", 0));
+    check.withPreciseIssue(new AnalyzerMessage(check, emptyInputFile(), 1, "message", 0));
     JavaCheckVerifier.verify("src/test/files/JavaCheckVerifierNoCost.java", check);
   }
 
@@ -341,7 +348,7 @@ public class JavaCheckVerifierTest {
     @Rule(key = "BrokenJSON")
     class WrongJson extends FakeVisitor {}
     WrongJson check = new WrongJson();
-    check.withPreciseIssue(new AnalyzerMessage(check, new File("a"), 1, "message", 0));
+    check.withPreciseIssue(new AnalyzerMessage(check, emptyInputFile(), 1, "message", 0));
     JavaCheckVerifier.verify("src/test/files/JavaCheckVerifierNoCost.java", check);
   }
 
@@ -350,7 +357,7 @@ public class JavaCheckVerifierTest {
     @Rule(key = "ExponentialRemediationFunc")
     class WrongJson extends FakeVisitor {}
     WrongJson check = new WrongJson();
-    check.withPreciseIssue(new AnalyzerMessage(check, new File("a"), 1, "message", 0));
+    check.withPreciseIssue(new AnalyzerMessage(check, emptyInputFile(), 1, "message", 0));
     JavaCheckVerifier.verify("src/test/files/JavaCheckVerifierNoCost.java", check);
   }
 
@@ -359,8 +366,35 @@ public class JavaCheckVerifierTest {
     @Rule(key = "UndefinedRemediationFunc")
     class WrongJson extends FakeVisitor {}
     WrongJson check = new WrongJson();
-    check.withPreciseIssue(new AnalyzerMessage(check, new File("a"), 1, "message", 0));
+    check.withPreciseIssue(new AnalyzerMessage(check, emptyInputFile(), 1, "message", 0));
     JavaCheckVerifier.verify("src/test/files/JavaCheckVerifierNoCost.java", check);
+  }
+
+  @Test
+  public void rule_without_annotation_should_fail_with_a_clear_message() {
+    class NotAnnotatedCheck extends IssuableSubscriptionVisitor {
+      @Override
+      public List<Tree.Kind> nodesToVisit() {
+        return Collections.singletonList(Tree.Kind.METHOD);
+      }
+
+      @Override
+      public void visitNode(Tree tree) {
+        reportIssue(tree, "yolo", Collections.emptyList(), 42);
+      }
+    }
+    NotAnnotatedCheck check = new NotAnnotatedCheck();
+    Throwable throwable = catchThrowable(() -> JavaCheckVerifier.verify("src/test/files/JavaCheckVerifierNoIssue.java", check));
+    assertThat(throwable)
+      .isInstanceOf(AssertionError.class)
+      .hasMessage("Rules should be annotated with '@Rule(key = \"...\")' annotation (org.sonar.check.Rule).");
+  }
+
+  private static DefaultInputFile emptyInputFile() {
+    return new TestInputFileBuilder("", "randomFile")
+      .setCharset(UTF_8)
+      .setLanguage("java")
+      .build();
   }
 
   @RspecKey("Dummy_fake_JSON")
@@ -372,25 +406,26 @@ public class JavaCheckVerifierTest {
   }
 
   @Rule(key = "ConstantJSON")
-  private static class FakeVisitor extends IssuableSubscriptionVisitor {
+  static class FakeVisitor extends IssuableSubscriptionVisitor {
 
     Multimap<Integer, String> issues = LinkedListMultimap.create();
     Multimap<Integer, AnalyzerMessage> preciseIssues = LinkedListMultimap.create();
-    List<String> issuesOnFile = Lists.newLinkedList();
+    List<String> issuesOnFile = new LinkedList<>();
+    List<String> issuesOnProject = new LinkedList<>();
 
     protected FakeVisitor withDefaultIssues() {
-      AnalyzerMessage withMultipleLocation = new AnalyzerMessage(this, new File("a"), new AnalyzerMessage.TextSpan(10, 9, 10, 10), "message4", 0);
-      withMultipleLocation.flows.add(Collections.singletonList(new AnalyzerMessage(this, new File("a"), 3, "no message", 0)));
-      withMultipleLocation.flows.add(Collections.singletonList(new AnalyzerMessage(this, new File("a"), 4, "no message", 0)));
+      AnalyzerMessage withMultipleLocation = new AnalyzerMessage(this, emptyInputFile(), new AnalyzerMessage.TextSpan(10, 9, 10, 10), "message4", 0);
+      withMultipleLocation.flows.add(Collections.singletonList(new AnalyzerMessage(this, emptyInputFile(), 3, "no message", 0)));
+      withMultipleLocation.flows.add(Collections.singletonList(new AnalyzerMessage(this, emptyInputFile(), 4, "no message", 0)));
       return this.withIssue(1, "message")
         .withIssue(3, "message1")
         .withIssue(7, "message2")
         .withIssue(8, "message3")
         .withIssue(8, "message3")
         .withPreciseIssue(withMultipleLocation)
-        .withPreciseIssue(new AnalyzerMessage(this, new File("a"), 11, "no message", 0))
-        .withPreciseIssue(new AnalyzerMessage(this, new File("a"), 12, "message12", 0))
-        .withPreciseIssue(new AnalyzerMessage(this, new File("a"), new AnalyzerMessage.TextSpan(14, 5, 15, 11), "message12", 0))
+        .withPreciseIssue(new AnalyzerMessage(this, emptyInputFile(), 11, "no message", 0))
+        .withPreciseIssue(new AnalyzerMessage(this, emptyInputFile(), 12, "message12", 0))
+        .withPreciseIssue(new AnalyzerMessage(this, emptyInputFile(), new AnalyzerMessage.TextSpan(14, 5, 15, 11), "message12", 0))
         .withIssue(17, "message17");
     }
 
@@ -399,12 +434,12 @@ public class JavaCheckVerifierTest {
       return this;
     }
 
-    private FakeVisitor withIssue(int line, String message) {
+    protected FakeVisitor withIssue(int line, String message) {
       issues.put(line, message);
       return this;
     }
 
-    private FakeVisitor withoutIssue(int line) {
+    protected FakeVisitor withoutIssue(int line) {
       issues.removeAll(line);
       preciseIssues.removeAll(line);
       return this;
@@ -415,14 +450,19 @@ public class JavaCheckVerifierTest {
       return this;
     }
 
-    @Override
-    public List<Tree.Kind> nodesToVisit() {
-      return ImmutableList.of();
+    private FakeVisitor withIssueOnProject(String message) {
+      issuesOnProject.add(message);
+      return this;
     }
 
     @Override
-    public void scanFile(JavaFileScannerContext context) {
-      super.scanFile(context);
+    public List<Tree.Kind> nodesToVisit() {
+      return Collections.emptyList();
+    }
+
+    @Override
+    public void setContext(JavaFileScannerContext context) {
+      super.setContext(context);
       for (Integer line : issues.keySet()) {
         for (String message : issues.get(line)) {
           addIssue(line, message);
@@ -439,18 +479,20 @@ public class JavaCheckVerifierTest {
       for (String message : issuesOnFile) {
         addIssueOnFile(message);
       }
+      for (String message : issuesOnProject) {
+        context.addIssueOnProject(this, message);
+      }
     }
 
     private static Tree mockTree(final AnalyzerMessage analyzerMessage) {
       AnalyzerMessage.TextSpan textSpan = analyzerMessage.primaryLocation();
       if (textSpan.onLine()) {
-        return new InternalSyntaxToken(textSpan.startLine, 0, "mock", Lists.<SyntaxTrivia>newArrayList(), 0, 0, false);
+        return new InternalSyntaxToken(textSpan.startLine, 0, "mock", new ArrayList<>(), 0, 0, false);
       }
       return new ReturnStatementTreeImpl(
-        new InternalSyntaxToken(textSpan.startLine, textSpan.startCharacter - 1, "", Lists.<SyntaxTrivia>newArrayList(), 0, 0, false),
+        new InternalSyntaxToken(textSpan.startLine, textSpan.startCharacter - 1, "", new ArrayList<>(), 0, 0, false),
         null,
-        new InternalSyntaxToken(textSpan.endLine, textSpan.endCharacter - 1, "", Lists.<SyntaxTrivia>newArrayList(), 0, 0, false));
+        new InternalSyntaxToken(textSpan.endLine, textSpan.endCharacter - 1, "", new ArrayList<>(), 0, 0, false));
     }
-
   }
 }

@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -30,6 +30,7 @@ public class CompilationUnitTest {
   @Test
   public void realLife() {
     assertThat(JavaLexer.COMPILATION_UNIT)
+      // Ordinary Compilation Unit
       .matches(lines(
         "package org.example;",
         "",
@@ -37,6 +38,18 @@ public class CompilationUnitTest {
         "  public static void main(String[] args) {",
         "    System.out.println(\"Hello World!\");",
         "  }",
+        "}"))
+      // Modular Compilation Unit
+      .matches(lines(
+        "import com.google.common.annotations.Beta;",
+        "",
+        "@Beta",
+        "open module com.greetings {",
+        "  requires transitive org.foo.bar;",
+        "  exports foo.bar to com.module1, gul.bar.qix;",
+        "  opens gul.lom to moc.loe.module2, ahah.bro.force;",
+        "  uses bar.foo.MyInterface;",
+        "  provides com.Greetings with org.foo.Greetings, foo.bar.Salutations;",
         "}"));
   }
 

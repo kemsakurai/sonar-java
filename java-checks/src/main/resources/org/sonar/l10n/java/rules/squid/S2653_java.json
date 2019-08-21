@@ -8,13 +8,20 @@
   },
   "tags": [
     "cwe",
-    "security",
     "cert",
-    "jee"
+    "jee",
+    "owasp-a3"
   ],
-  "standards": [
-    "CWE",
-    "CERT"
-  ],
-  "defaultSeverity": "Critical"
+  "defaultSeverity": "Critical",
+  "ruleSpecification": "RSPEC-2653",
+  "sqKey": "S2653",
+  "scope": "Main",
+  "securityStandards": {
+    "CWE": [
+      489
+    ],
+    "OWASP": [
+      "A3"
+    ]
+  }
 }

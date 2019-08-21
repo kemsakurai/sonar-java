@@ -9,5 +9,8 @@
   "tags": [
     "confusing"
   ],
-  "defaultSeverity": "Major"
+  "defaultSeverity": "Major",
+  "ruleSpecification": "RSPEC-3042",
+  "sqKey": "S3042",
+  "scope": "All"
 }

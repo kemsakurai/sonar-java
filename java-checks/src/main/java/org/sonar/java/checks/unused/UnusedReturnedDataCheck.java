@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -19,9 +19,11 @@
  */
 package org.sonar.java.checks.unused;
 
-import com.google.common.collect.ImmutableList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import javax.annotation.CheckForNull;
 import org.sonar.check.Rule;
-import org.sonar.java.checks.helpers.MethodsHelper;
 import org.sonar.java.matcher.MethodMatcher;
 import org.sonar.java.matcher.TypeCriteria;
 import org.sonar.java.model.ExpressionUtils;
@@ -33,15 +35,10 @@ import org.sonar.plugins.java.api.tree.IdentifierTree;
 import org.sonar.plugins.java.api.tree.MethodInvocationTree;
 import org.sonar.plugins.java.api.tree.Tree;
 
-import javax.annotation.CheckForNull;
-
-import java.util.List;
-import java.util.Objects;
-
 @Rule(key = "S2677")
 public class UnusedReturnedDataCheck extends IssuableSubscriptionVisitor {
 
-  private static final List<MethodMatcher> CHECKED_METHODS = ImmutableList.of(
+  private static final List<MethodMatcher> CHECKED_METHODS = Arrays.asList(
     MethodMatcher.create()
       .typeDefinition(TypeCriteria.subtypeOf("java.io.BufferedReader"))
       .name("readLine")
@@ -53,7 +50,7 @@ public class UnusedReturnedDataCheck extends IssuableSubscriptionVisitor {
 
   @Override
   public List<Tree.Kind> nodesToVisit() {
-    return ImmutableList.of(Tree.Kind.EXPRESSION_STATEMENT, Tree.Kind.EQUAL_TO, Tree.Kind.NOT_EQUAL_TO);
+    return Arrays.asList(Tree.Kind.EXPRESSION_STATEMENT, Tree.Kind.EQUAL_TO, Tree.Kind.NOT_EQUAL_TO);
   }
 
   @Override
@@ -62,7 +59,7 @@ public class UnusedReturnedDataCheck extends IssuableSubscriptionVisitor {
       CHECKED_METHODS.stream()
         .map(matcher -> isTreeMethodInvocation(((ExpressionStatementTree) tree).expression(), matcher))
         .filter(Objects::nonNull)
-        .forEach(mit -> raiseIssue(MethodsHelper.methodName(mit)));
+        .forEach(mit -> raiseIssue(ExpressionUtils.methodName(mit)));
     } else {
       BinaryExpressionTree expressionTree = (BinaryExpressionTree) tree;
       ExpressionTree leftOperand = expressionTree.leftOperand();
@@ -70,11 +67,11 @@ public class UnusedReturnedDataCheck extends IssuableSubscriptionVisitor {
       for (MethodMatcher matcher : CHECKED_METHODS) {
         MethodInvocationTree leftMit = isTreeMethodInvocation(leftOperand, matcher);
         if (leftMit != null && isTreeLiteralNull(rightOperand)) {
-          raiseIssue(MethodsHelper.methodName(leftMit));
+          raiseIssue(ExpressionUtils.methodName(leftMit));
         }
         MethodInvocationTree rightMit = isTreeMethodInvocation(rightOperand, matcher);
         if (rightMit != null && isTreeLiteralNull(leftOperand)) {
-          raiseIssue(MethodsHelper.methodName(rightMit));
+          raiseIssue(ExpressionUtils.methodName(rightMit));
         }
       }
     }

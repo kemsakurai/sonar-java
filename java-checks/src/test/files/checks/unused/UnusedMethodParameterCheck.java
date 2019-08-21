@@ -13,6 +13,8 @@ import org.apache.struts.action.Action;
 import org.apache.struts.actions.BaseAction;
 
 class A extends B{
+  void doSomething() { }
+
   void doSomething(int a, int b) { // Noncompliant {{Remove this unused method parameter "b".}} [[sc=31;ec=32]]
     compute(a);
   }
@@ -48,7 +50,8 @@ class C extends B {
 }
 
 class D extends C {
-  void foo(int b, int a) { // Noncompliant {{Remove this unused method parameter "b".}} [[sc=16;ec=17;secondary=51]]
+  void foo(int b, // Noncompliant {{Remove these unused method parameters.}} [[sc=16;ec=17;secondary=53,54]]
+           int a) {
     System.out.println("");
   }
 }
@@ -200,4 +203,123 @@ class NotStrutsAction {
   }
 }
 
+class DocumentedMethod {
+  /**
+   * @param firstArg proper javadoc description
+   * @param secondArg proper javadoc description
+   * @param fourthArg proper javadoc description
+   */
+  void foo(String firstArg, int secondArg, double thirdArg, float fourthArg) { // Noncompliant {{Remove this unused method parameter "thirdArg".}}
+    doSomething();
+  }
+
+  /**
+   * @param firstArg proper javadoc description
+   */
+  protected void bar(String firstArg) { // Compliant - parameter has proper javadoc
+    doSomething();
+  }
+
+  /**
+   * Overridable method, but a proper javadoc description is missing for unused parameter
+   * @param firstArg
+   */
+  public void foobar(String firstArg) { // Noncompliant
+    doSomething();
+  }
+
+  /**
+   * @param firstArg proper javadoc description
+   */
+  private void nonOverrideableMethod(String firstArg) { // Noncompliant  {{Remove this unused method parameter "firstArg".}}
+    doSomething();
+  }
+
+  /**
+   * @param firstArg proper javadoc description
+   */
+  static void nonOverrideableMethod(int firstArg) { // Noncompliant  {{Remove this unused method parameter "firstArg".}}
+    doSomething();
+  }
+
+  /**
+   * @param firstArg proper javadoc description
+   */
+  final void nonOverrideableMethod(Object firstArg) { // Noncompliant  {{Remove this unused method parameter "firstArg".}}
+    doSomething();
+  }
+}
+
+final class FinalDocumentedMethod {
+  /**
+   * @param firstArg proper javadoc description
+   */
+  void nonOverrideableMethod(int firstArg) { // Noncompliant  {{Remove this unused method parameter "firstArg".}}
+    doSomething();
+  }
+}
+
+class Parent {
+  public void foo(Object param) {
+    throw new Exception();
+  }
+}
+final class FinalClass extends Parent {
+
+  @Override
+  public void foo(Object param) { // Compliant
+    // do nothing
+  }
+
+  void barPackage(Object o) { // Noncompliant
+    // do something
+  }
+
+  protected void barProtected(Object o) { // Noncompliant
+    // do something
+  }
+
+  public void barPublic(Object o) {  // Noncompliant
+    // do something
+  }
+
+  private void barPrivate(Object o) { // Noncompliant
+    // do something
+  }
+}
+
 @interface MyAnnotation {}
+
+class UnknownUsage {
+  static class Member {
+    private Member(String firstName, String lastName, String memberID) { } // Noncompliant
+
+    public static LastNameBuilder member(String firstName) { // Compliant
+      return lastName -> memberID -> new Member(firstName, lastName, memberID);
+    }
+
+    @FunctionalInterface
+    public interface LastNameBuilder {
+      MemberIDBuilder lastName(String lastName);
+    }
+
+    @FunctionalInterface
+    public interface MemberIDBuilder {
+      Member memberID(String memberID);
+    }
+  }
+}
+
+class UsingMethodReference {
+
+  void foo() {
+    java.util.function.Predicate<Object> bar = bar("hello", "world")::equals; // uses 'bar', but not as targeted method reference
+    java.util.function.BiFunction<String, String, String> foo = this::bar; // uses 'bar', contract of BiConsumer forces 2 parameters
+    bar("hello", "world"); // other irrelevant usage
+  }
+
+  private String bar(String a, String b) { // Compliant - used as method reference
+    System.out.println(a);
+    return a;
+  }
+}

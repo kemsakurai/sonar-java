@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -49,6 +49,31 @@ public class ArrayJavaType extends JavaType implements Type.ArrayType {
   @Override
   public int hashCode() {
     return new HashCodeBuilder(31, 37).append(elementType).hashCode();
+  }
+
+  @Override
+  public boolean is(String fullyQualifiedName) {
+    return fullyQualifiedName.endsWith("[]") && elementType.is(fullyQualifiedName.substring(0, fullyQualifiedName.length() - 2));
+  }
+
+  @Override
+  public boolean isSubtypeOf(String fullyQualifiedName) {
+    return "java.lang.Object".equals(fullyQualifiedName)
+      || (fullyQualifiedName.endsWith("[]") && elementType.isSubtypeOf(fullyQualifiedName.substring(0, fullyQualifiedName.length() - 2)));
+  }
+
+  @Override
+  public boolean isSubtypeOf(Type superType) {
+    JavaType supType = (JavaType) superType;
+    // Handle covariance of arrays.
+    if (supType.isTagged(ARRAY)) {
+      return elementType.isSubtypeOf(((ArrayType) supType).elementType());
+    }
+    if (supType.isTagged(WILDCARD)) {
+      return ((WildCardType) superType).isSubtypeOfBound(this);
+    }
+    // Only possibility to be supertype of array without being an array is to be Object.
+    return "java.lang.Object".equals(supType.fullyQualifiedName());
   }
 
   @Override

@@ -20,7 +20,6 @@ class A {
     new Integer.Foo().toString(); // Compliant
 
     foo++; // Compliant
-    new Integer(0).this; // Compliant
     (foo).toString(); // Compliant
     foo();
   }

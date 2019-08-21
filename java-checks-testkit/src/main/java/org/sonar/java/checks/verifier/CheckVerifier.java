@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -30,27 +30,35 @@ import com.google.common.collect.Multimap;
 import com.google.common.collect.Multiset;
 import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
-import org.apache.commons.lang.StringUtils;
-import org.assertj.core.api.Fail;
-import org.sonar.api.utils.AnnotationUtils;
-import org.sonar.api.utils.log.Logger;
-import org.sonar.api.utils.log.Loggers;
-import org.sonar.check.Rule;
-import org.sonar.java.AnalyzerMessage;
-import org.sonar.java.RspecKey;
-
-import javax.annotation.CheckForNull;
-import javax.annotation.Nullable;
+import com.sonar.sslr.api.RecognitionException;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
+import org.apache.commons.lang.StringUtils;
+import org.assertj.core.api.Fail;
+import org.sonar.api.batch.fs.InputFile;
+import org.sonar.api.batch.sensor.internal.SensorContextTester;
+import org.sonar.api.config.internal.MapSettings;
+import org.sonar.api.internal.SonarRuntimeImpl;
+import org.sonar.api.utils.AnnotationUtils;
+import org.sonar.api.utils.Version;
+import org.sonar.api.utils.log.Logger;
+import org.sonar.api.utils.log.Loggers;
+import org.sonar.check.Rule;
+import org.sonar.java.AnalyzerMessage;
+import org.sonar.java.RspecKey;
+import org.sonar.java.SonarComponents;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -83,6 +91,7 @@ public abstract class CheckVerifier {
   private final ArrayListMultimap<Integer, Map<IssueAttribute, String>> expected = ArrayListMultimap.create();
   private boolean expectNoIssues = false;
   private String expectFileIssue;
+  private String expectedProjectIssue;
 
   public void expectNoIssues() {
     this.expectNoIssues = true;
@@ -90,6 +99,10 @@ public abstract class CheckVerifier {
 
   public void setExpectedFileIssue(String expectFileIssue) {
     this.expectFileIssue = expectFileIssue;
+  }
+
+  public void setExpectedProjectIssue(String expectedProjectIssue) {
+    this.expectedProjectIssue = expectedProjectIssue;
   }
 
   public abstract String getExpectedIssueTrigger();
@@ -166,25 +179,52 @@ public abstract class CheckVerifier {
     if (expectNoIssues) {
       assertNoIssues(issues, bypassNoIssue);
     } else if (StringUtils.isNotEmpty(expectFileIssue)) {
-      assertSingleIssue(issues);
+      assertSingleIssue(issues, true, expectFileIssue);
+    } else if (StringUtils.isNotEmpty(expectedProjectIssue)) {
+      assertSingleIssue(issues, false, expectedProjectIssue);
     } else {
       assertMultipleIssue(issues);
     }
   }
 
+  static SonarComponents sonarComponents(InputFile inputFile) {
+    SensorContextTester context = SensorContextTester.create(new File("")).setRuntime(SonarRuntimeImpl.forSonarLint(Version.create(6, 7)));
+    context.setSettings(new MapSettings().setProperty("sonar.java.failOnException", true));
+    SonarComponents sonarComponents = new SonarComponents(null, context.fileSystem(), null, null, null) {
+      @Override
+      public boolean reportAnalysisError(RecognitionException re, InputFile inputFile) {
+        return false;
+      }
+    };
+    sonarComponents.setSensorContext(context);
+    context.fileSystem().add(inputFile);
+    return sonarComponents;
+  }
+
   private void assertMultipleIssue(Set<AnalyzerMessage> issues) throws AssertionError {
     Preconditions.checkState(!issues.isEmpty(), "At least one issue expected");
-    List<Integer> unexpectedLines = Lists.newLinkedList();
+    List<Integer> unexpectedLines = new LinkedList<>();
     RemediationFunction remediationFunction = remediationFunction(issues.iterator().next());
     for (AnalyzerMessage issue : issues) {
       validateIssue(expected, unexpectedLines, issue, remediationFunction);
     }
     if (!expected.isEmpty() || !unexpectedLines.isEmpty()) {
       Collections.sort(unexpectedLines);
-      String expectedMsg = !expected.isEmpty() ? ("Expected " + expected) : "";
-      String unexpectedMsg = !unexpectedLines.isEmpty() ? ((expectedMsg.isEmpty() ? "" : ", ") + "Unexpected at " + unexpectedLines) : "";
+      String expectedMsg = expectedMessage();
+      String unexpectedMsg = unexpectedMessage(unexpectedLines);
       Fail.fail(expectedMsg + unexpectedMsg);
     }
+  }
+
+  private String expectedMessage() {
+    return !expected.isEmpty() ? ("Expected " + expected) : "";
+  }
+
+  private String unexpectedMessage(List<Integer> unexpectedLines) {
+    if (unexpectedLines.isEmpty()) {
+      return "";
+    }
+    return (expected.isEmpty() ? "" : ", ") + "Unexpected at " + unexpectedLines;
   }
 
   enum RemediationFunction {
@@ -216,7 +256,7 @@ public abstract class CheckVerifier {
       }
     } catch (IOException | JsonParseException e) {
       // Failed to open json file, as this is not part of API yet, we should not fail because of this
-      LOG.warn("Exception parsing JSON for rule " + ruleKey, e);
+      LOG.debug("Remediation function and cost not provided, \"constant\" is assumed.");
       return null;
     }
   }
@@ -237,7 +277,14 @@ public abstract class CheckVerifier {
     if(rspecKeyAnnotation != null) {
       ruleKey = rspecKeyAnnotation.value();
     } else {
-      ruleKey = AnnotationUtils.getAnnotation(issue.getCheck().getClass(), Rule.class).key();
+      Rule ruleAnnotation = AnnotationUtils.getAnnotation(issue.getCheck().getClass(), Rule.class);
+      if (ruleAnnotation != null) {
+        ruleKey = ruleAnnotation.key();
+      } else {
+        Fail.fail("Rules should be annotated with '@Rule(key = \"...\")' annotation (org.sonar.check.Rule).");
+        // unreachable
+        return null;
+      }
     }
     return ruleKey;
   }
@@ -247,30 +294,30 @@ public abstract class CheckVerifier {
     int line = issue.getLine();
     if (expected.containsKey(line)) {
       Map<IssueAttribute, String> attrs = Iterables.getLast(expected.get(line));
-      assertEquals(issue.getMessage(), attrs, IssueAttribute.MESSAGE);
+      assertEquals(line, issue.getMessage(), attrs, IssueAttribute.MESSAGE);
       Double cost = issue.getCost();
       if (cost != null) {
         Preconditions.checkState(remediationFunction != RemediationFunction.CONST, "Rule with constant remediation function shall not provide cost");
-        assertEquals(Integer.toString(cost.intValue()), attrs, IssueAttribute.EFFORT_TO_FIX);
+        assertEquals(line, Integer.toString(cost.intValue()), attrs, IssueAttribute.EFFORT_TO_FIX);
       } else if(remediationFunction == RemediationFunction.LINEAR){
         Fail.fail("A cost should be provided for a rule with linear remediation function");
       }
-      validateAnalyzerMessage(attrs, issue);
+      validateAnalyzerMessage(line, attrs, issue);
       expected.remove(line, attrs);
     } else {
       unexpectedLines.add(line);
     }
   }
 
-  private static void validateAnalyzerMessage(Map<IssueAttribute, String> attrs, AnalyzerMessage analyzerMessage) {
+  private static void validateAnalyzerMessage(int line, Map<IssueAttribute, String> attrs, AnalyzerMessage analyzerMessage) {
     Double effortToFix = analyzerMessage.getCost();
     if (effortToFix != null) {
-      assertEquals(Integer.toString(effortToFix.intValue()), attrs, IssueAttribute.EFFORT_TO_FIX);
+      assertEquals(line, Integer.toString(effortToFix.intValue()), attrs, IssueAttribute.EFFORT_TO_FIX);
     }
     AnalyzerMessage.TextSpan textSpan = analyzerMessage.primaryLocation();
-    assertEquals(normalizeColumn(textSpan.startCharacter), attrs, IssueAttribute.START_COLUMN);
-    assertEquals(Integer.toString(textSpan.endLine), attrs, IssueAttribute.END_LINE);
-    assertEquals(normalizeColumn(textSpan.endCharacter), attrs, IssueAttribute.END_COLUMN);
+    assertEquals(line, normalizeColumn(textSpan.startCharacter), attrs, IssueAttribute.START_COLUMN);
+    assertEquals(line, Integer.toString(textSpan.endLine), attrs, IssueAttribute.END_LINE);
+    assertEquals(line, normalizeColumn(textSpan.endCharacter), attrs, IssueAttribute.END_COLUMN);
     if (attrs.containsKey(IssueAttribute.SECONDARY_LOCATIONS)) {
       List<AnalyzerMessage> secondaryLocations = analyzerMessage.flows.stream().map(l -> l.get(0)).collect(Collectors.toList());
       Multiset<String> actualLines = HashMultiset.create();
@@ -294,7 +341,7 @@ public abstract class CheckVerifier {
   }
 
   private static String normalizedFilePath(AnalyzerMessage analyzerMessage) {
-    String absolutePath = analyzerMessage.getFile().getPath();
+    String absolutePath = analyzerMessage.getInputComponent().toString();
     return absolutePath.replace("\\", "/");
   }
 
@@ -302,17 +349,18 @@ public abstract class CheckVerifier {
     return Integer.toString(startCharacter + 1);
   }
 
-  private static void assertEquals(String value, Map<IssueAttribute, String> attributes, IssueAttribute attribute) {
+  private static void assertEquals(int line, String value, Map<IssueAttribute, String> attributes, IssueAttribute attribute) {
     if (attributes.containsKey(attribute)) {
-      assertThat(value).as("attribute mismatch for " + attribute + ": " + attributes).isEqualTo(attributes.get(attribute));
+      assertThat(value).as("Line: " + line + " attribute mismatch for " + attribute + ": " + attributes).isEqualTo(attributes.get(attribute));
     }
   }
 
-  private void assertSingleIssue(Set<AnalyzerMessage> issues) {
+  private static void assertSingleIssue(Set<AnalyzerMessage> issues, boolean issueOnFile, String expectedMessage) {
     Preconditions.checkState(issues.size() == 1, "A single issue is expected on the file");
     AnalyzerMessage issue = Iterables.getFirst(issues, null);
+    assertThat(issue.getInputComponent().isFile()).isEqualTo(issueOnFile);
     assertThat(issue.getLine()).isNull();
-    assertThat(issue.getMessage()).isEqualTo(expectFileIssue);
+    assertThat(issue.getMessage()).isEqualTo(expectedMessage);
   }
 
   private void assertNoIssues(Set<AnalyzerMessage> issues, boolean bypass) {

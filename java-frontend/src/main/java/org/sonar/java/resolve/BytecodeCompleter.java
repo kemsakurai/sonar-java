@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2012-2017 SonarSource SA
+ * Copyright (C) 2012-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -21,48 +21,41 @@ package org.sonar.java.resolve;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
-import com.google.common.base.Throwables;
-import com.google.common.collect.ImmutableList;
 import com.google.common.io.Closeables;
+import java.io.InputStream;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
 import org.apache.commons.lang.StringUtils;
 import org.objectweb.asm.ClassReader;
-import org.sonar.api.utils.log.Logger;
-import org.sonar.api.utils.log.Loggers;
-import org.sonar.java.bytecode.ClassLoaderBuilder;
+import org.objectweb.asm.ClassVisitor;
+import org.objectweb.asm.FieldVisitor;
+import org.objectweb.asm.Opcodes;
 import org.sonar.java.bytecode.loader.SquidClassLoader;
-
-import javax.annotation.Nullable;
-
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import org.sonar.plugins.java.api.semantic.Symbol;
 
 public class BytecodeCompleter implements JavaSymbol.Completer {
 
-  private static final Logger LOG = Loggers.get(BytecodeCompleter.class);
-
-  private static final int ACCEPTABLE_BYTECODE_FLAGS = Flags.ACCESS_FLAGS |
-      Flags.INTERFACE | Flags.ANNOTATION | Flags.ENUM |
-      Flags.STATIC | Flags.FINAL | Flags.SYNCHRONIZED | Flags.VOLATILE | Flags.TRANSIENT | Flags.VARARGS | Flags.NATIVE |
-      Flags.ABSTRACT | Flags.STRICTFP | Flags.DEPRECATED;
+  public static final int ASM_API_VERSION = Opcodes.ASM7;
 
   private Symbols symbols;
-  private final List<File> projectClasspath;
   private final ParametrizedTypeCache parametrizedTypeCache;
-
+  private final SquidClassLoader classLoader;
   /**
    * Indexed by flat name.
    */
   private final Map<String, JavaSymbol.TypeJavaSymbol> classes = new HashMap<>();
   private final Map<String, JavaSymbol.PackageJavaSymbol> packages = new HashMap<>();
+  private final Map<JavaSymbol.TypeJavaSymbol, Map<String, Object>> constantValues = new HashMap<>();
 
-  private ClassLoader classLoader;
+  private Set<String> classesNotFound = new TreeSet<>();
 
-  public BytecodeCompleter(List<File> projectClasspath, ParametrizedTypeCache parametrizedTypeCache) {
-    this.projectClasspath = projectClasspath;
+  public BytecodeCompleter(SquidClassLoader classLoader, ParametrizedTypeCache parametrizedTypeCache) {
+    this.classLoader = classLoader;
     this.parametrizedTypeCache = parametrizedTypeCache;
   }
 
@@ -89,35 +82,50 @@ public class BytecodeCompleter implements JavaSymbol.Completer {
     }
     Preconditions.checkState(symbol.isPackageSymbol() || classSymbol == symbol);
 
-    InputStream inputStream = null;
-    ClassReader classReader = null;
-    try {
-      inputStream = inputStreamFor(bytecodeName);
-      if(inputStream != null) {
-        classReader = new ClassReader(inputStream);
-      }
-    } catch (IOException e) {
-      throw Throwables.propagate(e);
-    } finally {
-      Closeables.closeQuietly(inputStream);
-    }
-    if (classReader != null) {
+    byte[] bytes = classLoader.getBytesForClass(bytecodeName);
+    if (bytes != null) {
+      ClassReader classReader = new ClassReader(bytes);
       classReader.accept(
-          new BytecodeVisitor(this, symbols, classSymbol, parametrizedTypeCache),
-          ClassReader.SKIP_CODE | ClassReader.SKIP_FRAMES | ClassReader.SKIP_DEBUG);
+        new BytecodeVisitor(this, symbols, classSymbol, parametrizedTypeCache),
+        ClassReader.SKIP_CODE | ClassReader.SKIP_FRAMES | ClassReader.SKIP_DEBUG);
     }
   }
+
+  /**
+   * This method reads constant values in bytecode. It should be called when resolving semantics from source.
+   */
+  @CheckForNull
+  public Object constantValue(Symbol owner, String constantName) {
+    if (constantValues.containsKey(owner)) {
+      return constantValues.get(owner).get(constantName);
+    }
+    if (owner.isTypeSymbol()) {
+      JavaSymbol.TypeJavaSymbol typeSymbol = (JavaSymbol.TypeJavaSymbol) owner;
+      String bytecodeName = typeSymbol.getFullyQualifiedName();
+      byte[] bytes = classLoader.getBytesForClass(bytecodeName);
+      if (bytes != null) {
+        Map<String, Object> valuesByFieldName = new HashMap<>();
+        ClassReader classReader = new ClassReader(bytes);
+        classReader.accept(
+          new ClassVisitor(ASM_API_VERSION) {
+            @Override
+            public FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
+              valuesByFieldName.put(name, value);
+              return super.visitField(access, name, descriptor, signature, value);
+            }
+          },
+          ClassReader.SKIP_CODE | ClassReader.SKIP_FRAMES | ClassReader.SKIP_DEBUG);
+        constantValues.put(typeSymbol, valuesByFieldName);
+        return valuesByFieldName.get(constantName);
+      }
+    }
+    return null;
+  }
+
 
   @Nullable
   private InputStream inputStreamFor(String fullname) {
-    return getClassLoader().getResourceAsStream(Convert.bytecodeName(fullname) + ".class");
-  }
-
-  private ClassLoader getClassLoader() {
-    if (classLoader == null) {
-      classLoader = ClassLoaderBuilder.create(projectClasspath);
-    }
-    return classLoader;
+    return classLoader.getResourceAsStream(Convert.bytecodeName(fullname) + ".class");
   }
 
   private String formFullName(JavaSymbol symbol) {
@@ -159,29 +167,28 @@ public class BytecodeCompleter implements JavaSymbol.Completer {
       String packageName = Convert.packagePart(flatName);
       JavaSymbol.TypeJavaSymbol owner = classSymbolOwner;
       if(owner == null) {
-        String enclosingClassName = Convert.enclosingClassName(shortName);
-        if(StringUtils.isNotEmpty(enclosingClassName)) {
-          owner = getClassSymbol(Convert.fullName(packageName, enclosingClassName));
-        }
+        owner = getEnclosingClass(shortName, packageName);
       }
-      if ( owner != null) {
+      int classFlags = Flags.filterAccessBytecodeFlags(flags);
+      if (owner != null) {
         //handle innerClasses
         String name = Convert.innerClassName(Convert.shortName(owner.getFullyQualifiedName()), shortName);
-        symbol = new JavaSymbol.TypeJavaSymbol(filterBytecodeFlags(flags), name, owner, bytecodeName);
+        symbol = new JavaSymbol.TypeJavaSymbol(classFlags, name, owner, bytecodeName);
       } else {
-        symbol = new JavaSymbol.TypeJavaSymbol(filterBytecodeFlags(flags), shortName, enterPackage(packageName));
+        symbol = new JavaSymbol.TypeJavaSymbol(classFlags, shortName, enterPackage(packageName));
       }
       symbol.members = new Scope(symbol);
       symbol.typeParameters = new Scope(symbol);
 
       // (Godin): IOException will happen without this condition in case of missing class:
-      if (getClassLoader().getResource(Convert.bytecodeName(flatName) + ".class") != null) {
+      if (classLoader.getResource(Convert.bytecodeName(flatName) + ".class") != null) {
         symbol.completer = this;
       } else {
-        if (!bytecodeName.endsWith("package-info")) {
-          LOG.warn("Class not found: " + bytecodeName);
+        // Do not log missing annotation as they are not necessarily required in classpath for compiling
+        if (!bytecodeName.endsWith("package-info") && isNotAnnotation(flags)) {
+          classesNotFound.add(bytecodeName);
         }
-        ((ClassJavaType) symbol.type).interfaces = ImmutableList.of();
+        ((ClassJavaType) symbol.type).interfaces = Collections.emptyList();
         ((ClassJavaType) symbol.type).supertype = Symbols.unknownType;
       }
 
@@ -190,8 +197,29 @@ public class BytecodeCompleter implements JavaSymbol.Completer {
     return symbol;
   }
 
-  public int filterBytecodeFlags(int flags) {
-    return flags & ACCEPTABLE_BYTECODE_FLAGS;
+  private static boolean isNotAnnotation(int flags) {
+    return (flags & Flags.ANNOTATION) == 0;
+  }
+
+  @Nullable
+  private JavaSymbol.TypeJavaSymbol getEnclosingClass(String shortName, String packageName) {
+    JavaSymbol.TypeJavaSymbol owner = null;
+    String enclosingClassName = Convert.enclosingClassName(shortName);
+    if (StringUtils.isNotEmpty(enclosingClassName)) {
+      enclosingClassName = Convert.fullName(packageName, enclosingClassName);
+      InputStream inputStream = null;
+      try {
+        inputStream = inputStreamFor(enclosingClassName);
+        while (inputStream == null && enclosingClassName.endsWith("$")) {
+          enclosingClassName = enclosingClassName.substring(0, enclosingClassName.length() - 1);
+          inputStream = inputStreamFor(enclosingClassName);
+        }
+      } finally {
+        Closeables.closeQuietly(inputStream);
+      }
+      owner = getClassSymbol(enclosingClassName);
+    }
+    return owner;
   }
 
   /**
@@ -208,26 +236,16 @@ public class BytecodeCompleter implements JavaSymbol.Completer {
       return symbol;
     }
 
-    // TODO(Godin): pull out conversion of name from the next method to avoid unnecessary conversion afterwards:
-    InputStream inputStream = inputStreamFor(fullname);
-    String bytecodeName = Convert.bytecodeName(fullname);
-
-    if (inputStream == null) {
+    byte[] bytesForClass = classLoader.getBytesForClass(fullname);
+    if (bytesForClass == null) {
       return new Resolve.JavaSymbolNotFound();
     }
 
-    try {
-      ClassReader classReader = new ClassReader(inputStream);
-      String className = classReader.getClassName();
-      if (!className.equals(bytecodeName)) {
-        return new Resolve.JavaSymbolNotFound();
-      }
-    } catch (IOException e) {
-      throw Throwables.propagate(e);
-    } finally {
-      Closeables.closeQuietly(inputStream);
+    ClassReader classReader = new ClassReader(bytesForClass);
+    String className = classReader.getClassName();
+    if (!className.equals(Convert.bytecodeName(fullname))) {
+      return new Resolve.JavaSymbolNotFound();
     }
-
     return getClassSymbol(fullname);
   }
 
@@ -235,26 +253,14 @@ public class BytecodeCompleter implements JavaSymbol.Completer {
     if (StringUtils.isBlank(fullname)) {
       return symbols.defaultPackage;
     }
-    JavaSymbol.PackageJavaSymbol result = packages.get(fullname);
-    if (result == null) {
-      result = new JavaSymbol.PackageJavaSymbol(fullname, symbols.defaultPackage);
-      result.completer = this;
-      packages.put(fullname, result);
-    }
-    return result;
+    return packages.computeIfAbsent(fullname, name -> {
+      JavaSymbol.PackageJavaSymbol pck  = new JavaSymbol.PackageJavaSymbol(fullname, symbols.defaultPackage);
+      pck.completer = this;
+      return pck;
+    });
   }
 
-  public void done() {
-    if (classLoader != null && classLoader instanceof SquidClassLoader) {
-      ((SquidClassLoader) classLoader).close();
-    }
+  public Set<String> classesNotFound() {
+    return classesNotFound;
   }
-
-  /**
-   * Compiler marks all artifacts not presented in the source code as {@link Flags#SYNTHETIC}.
-   */
-  static boolean isSynthetic(int flags) {
-    return (flags & Flags.SYNTHETIC) != 0;
-  }
-
 }

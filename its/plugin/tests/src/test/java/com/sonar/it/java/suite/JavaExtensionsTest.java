@@ -1,6 +1,6 @@
 /*
  * SonarQube Java
- * Copyright (C) 2013-2017 SonarSource SA
+ * Copyright (C) 2013-2019 SonarSource SA
  * mailto:info AT sonarsource DOT com
  *
  * This program is free software; you can redistribute it and/or
@@ -39,18 +39,18 @@ public class JavaExtensionsTest {
   @Test
   public void test() {
     MavenBuild build = MavenBuild.create(TestUtils.projectPom("java-extension"))
-      .setCleanSonarGoals()
-      .setProperty("sonar.profile", "java-extension");
+      .setCleanSonarGoals();
+    TestUtils.provisionProject(orchestrator, "org.sonarsource.it.projects:java-extension","java-extension","java","java-extension");
     orchestrator.executeBuild(build);
 
     IssueClient issueClient = orchestrator.getServer().wsClient().issueClient();
 
-    List<Issue> issues = issueClient.find(IssueQuery.create().rules("java-extension:example").componentRoots("com.sonarsource.it.projects:java-extension")).list();
+    List<Issue> issues = issueClient.find(IssueQuery.create().rules("java-extension:example").componentRoots("org.sonarsource.it.projects:java-extension")).list();
     //We found issues so the extension rule was properly set.
     assertThat(issues).hasSize(4);
-    issues = issueClient.find(IssueQuery.create().rules("java-extension:subscriptionexamplecheck").componentRoots("com.sonarsource.it.projects:java-extension")).list();
+    issues = issueClient.find(IssueQuery.create().rules("java-extension:subscriptionexamplecheck").componentRoots("org.sonarsource.it.projects:java-extension")).list();
     assertThat(issues).hasSize(3);
-    issues = issueClient.find(IssueQuery.create().rules("java-extension:subscriptionexampletestcheck").componentRoots("com.sonarsource.it.projects:java-extension")).list();
+    issues = issueClient.find(IssueQuery.create().rules("java-extension:subscriptionexampletestcheck").componentRoots("org.sonarsource.it.projects:java-extension")).list();
     assertThat(issues).hasSize(1);
   }
 
