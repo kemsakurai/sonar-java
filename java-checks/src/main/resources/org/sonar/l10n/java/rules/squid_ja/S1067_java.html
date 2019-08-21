@@ -1,0 +1,15 @@
+<p>式の複雑さが、演算子 <code>&amp;&amp;</code>, <code>||</code> and <code>condition ? ifTrue : ifFalse</code>
+の数により定義されています。</p>
+<p>コードを読みやすくするために、単一の式が複雑になりすぎないようにします。</p>
+<h2>違反コード例</h2>
+<p>デフォルトの閾値は3です。</p>
+<pre>
+if (((condition1 &amp;&amp; condition2) || (condition3 &amp;&amp; condition4)) &amp;&amp; condition5) { ... }
+</pre>
+<h2>準拠方法</h2>
+<pre>
+if ( (myFirstCondition() || mySecondCondition()) &amp;&amp; myLastCondition()) { ... }
+</pre>
+<h2>例外</h2>
+<p><code>equals</code>メソッドの内部では問題は報告されません。このメソッドの内部ではクラスのすべてのフィールドが等しいかどうかを比較するのが一般的だからです。</p>
+
