@@ -45,16 +45,17 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 
 ## 翻訳状況  
 
-- [X] S100_java.html
-- [X] S100_java.json
-- [X] S101_java.html
-- [X] S101_java.json
-- [X] S103_java.html
-- [X] S103_java.json
-- [X] S104_java.html
-- [X] S104_java.json
-- [X] S105_java.html
-- [X] S105_java.json
+- [X] README.md 
+- [X] S100_java.html 
+- [X] S100_java.json 
+- [X] S101_java.html 
+- [X] S101_java.json 
+- [X] S103_java.html 
+- [X] S103_java.json 
+- [X] S104_java.html 
+- [X] S104_java.json 
+- [X] S105_java.html 
+- [X] S105_java.json 
 - [ ] S1065_java.html
 - [ ] S1065_java.json
 - [ ] S1066_java.html
@@ -63,14 +64,16 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S1067_java.json
 - [ ] S1068_java.html
 - [ ] S1068_java.json
-- [X] S106_java.html
-- [X] S106_java.json
-- [X] S107_java.html
-- [X] S107_java.json
-- [X] S108_java.html
-- [X] S108_java.json
-- [X] S109_java.html
-- [X] S109_java.json
+- [X] S106_java.html 
+- [X] S106_java.json 
+- [ ] S1075_java.html
+- [ ] S1075_java.json
+- [X] S107_java.html 
+- [X] S107_java.json 
+- [X] S108_java.html 
+- [X] S108_java.json 
+- [X] S109_java.html 
+- [X] S109_java.json 
 - [ ] S1104_java.html
 - [ ] S1104_java.json
 - [ ] S1105_java.html
@@ -83,8 +86,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S1108_java.json
 - [ ] S1109_java.html
 - [ ] S1109_java.json
-- [X] S110_java.html
-- [X] S110_java.json
+- [X] S110_java.html 
+- [X] S110_java.json 
 - [ ] S1110_java.html
 - [ ] S1110_java.json
 - [ ] S1111_java.html
@@ -115,8 +118,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S1126_java.json
 - [ ] S1128_java.html
 - [ ] S1128_java.json
-- [X] S112_java.html
-- [X] S112_java.json
+- [X] S112_java.html 
+- [X] S112_java.json 
 - [ ] S1130_java.html
 - [ ] S1130_java.json
 - [ ] S1132_java.html
@@ -127,8 +130,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S1134_java.json
 - [ ] S1135_java.html
 - [ ] S1135_java.json
-- [X] S113_java.html
-- [X] S113_java.json
+- [X] S113_java.html 
+- [X] S113_java.json 
 - [ ] S1141_java.html
 - [ ] S1141_java.json
 - [ ] S1142_java.html
@@ -145,8 +148,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S1148_java.json
 - [ ] S1149_java.html
 - [ ] S1149_java.json
-- [X] S114_java.html
-- [X] S114_java.json
+- [X] S114_java.html 
+- [X] S114_java.json 
 - [ ] S1150_java.html
 - [ ] S1150_java.json
 - [ ] S1151_java.html
@@ -159,8 +162,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S1157_java.json
 - [ ] S1158_java.html
 - [ ] S1158_java.json
-- [X] S115_java.html
-- [X] S115_java.json
+- [X] S115_java.html 
+- [X] S115_java.json 
 - [ ] S1160_java.html
 - [ ] S1160_java.json
 - [ ] S1161_java.html
@@ -175,8 +178,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S1166_java.json
 - [ ] S1168_java.html
 - [ ] S1168_java.json
-- [X] S116_java.html
-- [X] S116_java.json
+- [X] S116_java.html 
+- [X] S116_java.json 
 - [ ] S1170_java.html
 - [ ] S1170_java.json
 - [ ] S1171_java.html
@@ -215,8 +218,6 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S1194_java.json
 - [ ] S1195_java.html
 - [ ] S1195_java.json
-- [ ] S1196_java.html
-- [ ] S1196_java.json
 - [ ] S1197_java.html
 - [ ] S1197_java.json
 - [ ] S1199_java.html
@@ -233,8 +234,6 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S120_java.json
 - [ ] S1210_java.html
 - [ ] S1210_java.json
-- [ ] S1212_java.html
-- [ ] S1212_java.json
 - [ ] S1213_java.html
 - [ ] S1213_java.json
 - [ ] S1214_java.html
@@ -269,6 +268,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S125_java.json
 - [ ] S1264_java.html
 - [ ] S1264_java.json
+- [ ] S126_java.html
+- [ ] S126_java.json
 - [ ] S127_java.html
 - [ ] S127_java.json
 - [ ] S128_java.html
@@ -371,14 +372,16 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S1710_java.json
 - [ ] S1711_java.html
 - [ ] S1711_java.json
+- [ ] S1751_java.html
+- [ ] S1751_java.json
 - [ ] S1764_java.html
 - [ ] S1764_java.json
 - [ ] S1774_java.html
 - [ ] S1774_java.json
-- [ ] S1815_java.html
-- [ ] S1815_java.json
 - [ ] S1820_java.html
 - [ ] S1820_java.json
+- [ ] S1821_java.html
+- [ ] S1821_java.json
 - [ ] S1844_java.html
 - [ ] S1844_java.json
 - [ ] S1845_java.html
@@ -423,6 +426,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S1996_java.json
 - [ ] S2039_java.html
 - [ ] S2039_java.json
+- [ ] S2047_java.html
+- [ ] S2047_java.json
 - [ ] S2055_java.html
 - [ ] S2055_java.json
 - [ ] S2057_java.html
@@ -445,12 +450,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S2068_java.json
 - [ ] S2070_java.html
 - [ ] S2070_java.json
-- [ ] S2076_java.html
-- [ ] S2076_java.json
 - [ ] S2077_java.html
 - [ ] S2077_java.json
-- [ ] S2078_java.html
-- [ ] S2078_java.json
 - [ ] S2089_java.html
 - [ ] S2089_java.json
 - [ ] S2092_java.html
@@ -475,10 +476,16 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S2112_java.json
 - [ ] S2114_java.html
 - [ ] S2114_java.json
+- [ ] S2115_java.html
+- [ ] S2115_java.json
 - [ ] S2116_java.html
 - [ ] S2116_java.json
 - [ ] S2118_java.html
 - [ ] S2118_java.json
+- [ ] S2119_java.html
+- [ ] S2119_java.json
+- [ ] S2121_java.html
+- [ ] S2121_java.json
 - [ ] S2122_java.html
 - [ ] S2122_java.json
 - [ ] S2123_java.html
@@ -495,12 +502,16 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S2133_java.json
 - [ ] S2134_java.html
 - [ ] S2134_java.json
+- [ ] S2139_java.html
+- [ ] S2139_java.json
 - [ ] S2140_java.html
 - [ ] S2140_java.json
 - [ ] S2141_java.html
 - [ ] S2141_java.json
 - [ ] S2142_java.html
 - [ ] S2142_java.json
+- [ ] S2143_java.html
+- [ ] S2143_java.json
 - [ ] S2147_java.html
 - [ ] S2147_java.json
 - [ ] S2148_java.html
@@ -553,18 +564,24 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S2188_java.json
 - [ ] S2189_java.html
 - [ ] S2189_java.json
+- [ ] S2196_java.html
+- [ ] S2196_java.json
 - [ ] S2197_java.html
 - [ ] S2197_java.json
 - [ ] S2200_java.html
 - [ ] S2200_java.json
 - [ ] S2201_java.html
 - [ ] S2201_java.json
+- [ ] S2203_java.html
+- [ ] S2203_java.json
 - [ ] S2204_java.html
 - [ ] S2204_java.json
 - [ ] S2208_java.html
 - [ ] S2208_java.json
 - [ ] S2209_java.html
 - [ ] S2209_java.json
+- [ ] S2211_java.html
+- [ ] S2211_java.json
 - [ ] S2221_java.html
 - [ ] S2221_java.json
 - [ ] S2222_java.html
@@ -573,10 +590,14 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S2225_java.json
 - [ ] S2226_java.html
 - [ ] S2226_java.json
+- [ ] S2229_java.html
+- [ ] S2229_java.json
 - [ ] S2230_java.html
 - [ ] S2230_java.json
 - [ ] S2232_java.html
 - [ ] S2232_java.json
+- [ ] S2234_java.html
+- [ ] S2234_java.json
 - [ ] S2235_java.html
 - [ ] S2235_java.json
 - [ ] S2236_java.html
@@ -593,6 +614,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S2253_java.json
 - [ ] S2254_java.html
 - [ ] S2254_java.json
+- [ ] S2255_java.html
+- [ ] S2255_java.json
 - [ ] S2257_java.html
 - [ ] S2257_java.json
 - [ ] S2258_java.html
@@ -637,6 +660,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S2387_java.json
 - [ ] S2388_java.html
 - [ ] S2388_java.json
+- [ ] S2390_java.html
+- [ ] S2390_java.json
 - [ ] S2391_java.html
 - [ ] S2391_java.json
 - [ ] S2437_java.html
@@ -659,6 +684,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S2447_java.json
 - [ ] S2583_java.html
 - [ ] S2583_java.json
+- [ ] S2589_java.html
+- [ ] S2589_java.json
 - [ ] S2629_java.html
 - [ ] S2629_java.json
 - [ ] S2637_java.html
@@ -667,6 +694,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S2638_java.json
 - [ ] S2639_java.html
 - [ ] S2639_java.json
+- [ ] S2647_java.html
+- [ ] S2647_java.json
 - [ ] S2653_java.html
 - [ ] S2653_java.json
 - [ ] S2658_java.html
@@ -681,6 +710,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S2677_java.json
 - [ ] S2681_java.html
 - [ ] S2681_java.json
+- [ ] S2689_java.html
+- [ ] S2689_java.json
 - [ ] S2692_java.html
 - [ ] S2692_java.json
 - [ ] S2693_java.html
@@ -701,6 +732,12 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S2718_java.json
 - [ ] S2737_java.html
 - [ ] S2737_java.json
+- [ ] S2755_java.html
+- [ ] S2755_java.json
+- [ ] S2757_java.html
+- [ ] S2757_java.json
+- [ ] S2761_java.html
+- [ ] S2761_java.json
 - [ ] S2786_java.html
 - [ ] S2786_java.json
 - [ ] S2789_java.html
@@ -733,16 +770,28 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S2976_java.json
 - [ ] S3008_java.html
 - [ ] S3008_java.json
+- [ ] S3010_java.html
+- [ ] S3010_java.json
+- [ ] S3011_java.html
+- [ ] S3011_java.json
+- [ ] S3012_java.html
+- [ ] S3012_java.json
+- [ ] S3014_java.html
+- [ ] S3014_java.json
 - [ ] S3020_java.html
 - [ ] S3020_java.json
 - [ ] S3027_java.html
 - [ ] S3027_java.json
 - [ ] S3030_java.html
 - [ ] S3030_java.json
+- [ ] S3032_java.html
+- [ ] S3032_java.json
 - [ ] S3034_java.html
 - [ ] S3034_java.json
 - [ ] S3038_java.html
 - [ ] S3038_java.json
+- [ ] S3039_java.html
+- [ ] S3039_java.json
 - [ ] S3042_java.html
 - [ ] S3042_java.json
 - [ ] S3046_java.html
@@ -751,24 +800,48 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S3047_java.json
 - [ ] S3052_java.html
 - [ ] S3052_java.json
+- [ ] S3064_java.html
+- [ ] S3064_java.json
+- [ ] S3065_java.html
+- [ ] S3065_java.json
 - [ ] S3066_java.html
 - [ ] S3066_java.json
 - [ ] S3067_java.html
 - [ ] S3067_java.json
+- [ ] S3077_java.html
+- [ ] S3077_java.json
+- [ ] S3078_java.html
+- [ ] S3078_java.json
+- [ ] S3242_java.html
+- [ ] S3242_java.json
+- [ ] S3252_java.html
+- [ ] S3252_java.json
+- [ ] S3254_java.html
+- [ ] S3254_java.json
 - [ ] S3281_java.html
 - [ ] S3281_java.json
 - [ ] S3282_java.html
 - [ ] S3282_java.json
+- [ ] S3305_java.html
+- [ ] S3305_java.json
 - [ ] S3306_java.html
 - [ ] S3306_java.json
-- [ ] S3318_java.html
-- [ ] S3318_java.json
+- [ ] S3329_java.html
+- [ ] S3329_java.json
+- [ ] S3330_java.html
+- [ ] S3330_java.json
+- [ ] S3331_java.html
+- [ ] S3331_java.json
 - [ ] S3340_java.html
 - [ ] S3340_java.json
 - [ ] S3346_java.html
 - [ ] S3346_java.json
 - [ ] S3355_java.html
 - [ ] S3355_java.json
+- [ ] S3358_java.html
+- [ ] S3358_java.json
+- [ ] S3366_java.html
+- [ ] S3366_java.json
 - [ ] S3369_java.html
 - [ ] S3369_java.json
 - [ ] S3373_java.html
@@ -779,6 +852,10 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S3398_java.json
 - [ ] S3400_java.html
 - [ ] S3400_java.json
+- [ ] S3415_java.html
+- [ ] S3415_java.json
+- [ ] S3416_java.html
+- [ ] S3416_java.json
 - [ ] S3417_java.html
 - [ ] S3417_java.json
 - [ ] S3419_java.html
@@ -791,14 +868,26 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S3422_java.json
 - [ ] S3423_java.html
 - [ ] S3423_java.json
+- [ ] S3436_java.html
+- [ ] S3436_java.json
 - [ ] S3437_java.html
 - [ ] S3437_java.json
 - [ ] S3438_java.html
 - [ ] S3438_java.json
+- [ ] S3439_java.html
+- [ ] S3439_java.json
+- [ ] S3457_java.html
+- [ ] S3457_java.json
+- [ ] S3510_java.html
+- [ ] S3510_java.json
+- [ ] S3516_java.html
+- [ ] S3516_java.json
 - [ ] S3518_java.html
 - [ ] S3518_java.json
 - [ ] S3546_java.html
 - [ ] S3546_java.json
+- [ ] S3551_java.html
+- [ ] S3551_java.json
 - [ ] S3553_java.html
 - [ ] S3553_java.json
 - [ ] S3577_java.html
@@ -807,6 +896,8 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S3578_java.json
 - [ ] S3599_java.html
 - [ ] S3599_java.json
+- [ ] S3626_java.html
+- [ ] S3626_java.json
 - [ ] S3631_java.html
 - [ ] S3631_java.json
 - [ ] S3655_java.html
@@ -817,8 +908,214 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S3688_java.json
 - [ ] S3725_java.html
 - [ ] S3725_java.json
+- [ ] S3749_java.html
+- [ ] S3749_java.json
+- [ ] S3750_java.html
+- [ ] S3750_java.json
+- [ ] S3751_java.html
+- [ ] S3751_java.json
+- [ ] S3752_java.html
+- [ ] S3752_java.json
+- [ ] S3753_java.html
+- [ ] S3753_java.json
 - [ ] S3776_java.html
 - [ ] S3776_java.json
+- [ ] S3822_java.html
+- [ ] S3822_java.json
+- [ ] S3824_java.html
+- [ ] S3824_java.json
+- [ ] S3864_java.html
+- [ ] S3864_java.json
+- [ ] S3878_java.html
+- [ ] S3878_java.json
+- [ ] S3923_java.html
+- [ ] S3923_java.json
+- [ ] S3937_java.html
+- [ ] S3937_java.json
+- [ ] S3958_java.html
+- [ ] S3958_java.json
+- [ ] S3959_java.html
+- [ ] S3959_java.json
+- [ ] S3972_java.html
+- [ ] S3972_java.json
+- [ ] S3973_java.html
+- [ ] S3973_java.json
+- [ ] S3981_java.html
+- [ ] S3981_java.json
+- [ ] S3984_java.html
+- [ ] S3984_java.json
+- [ ] S3985_java.html
+- [ ] S3985_java.json
+- [ ] S3986_java.html
+- [ ] S3986_java.json
+- [ ] S4011_java.html
+- [ ] S4011_java.json
+- [ ] S4032_java.html
+- [ ] S4032_java.json
+- [ ] S4034_java.html
+- [ ] S4034_java.json
+- [ ] S4042_java.html
+- [ ] S4042_java.json
+- [ ] S4065_java.html
+- [ ] S4065_java.json
+- [ ] S4087_java.html
+- [ ] S4087_java.json
+- [ ] S4142_java.html
+- [ ] S4142_java.json
+- [ ] S4143_java.html
+- [ ] S4143_java.json
+- [ ] S4144_java.html
+- [ ] S4144_java.json
+- [ ] S4165_java.html
+- [ ] S4165_java.json
+- [ ] S4174_java.html
+- [ ] S4174_java.json
+- [ ] S4201_java.html
+- [ ] S4201_java.json
+- [ ] S4248_java.html
+- [ ] S4248_java.json
+- [ ] S4266_java.html
+- [ ] S4266_java.json
+- [ ] S4274_java.html
+- [ ] S4274_java.json
+- [ ] S4275_java.html
+- [ ] S4275_java.json
+- [ ] S4276_java.html
+- [ ] S4276_java.json
+- [ ] S4288_java.html
+- [ ] S4288_java.json
+- [ ] S4347_java.html
+- [ ] S4347_java.json
+- [ ] S4348_java.html
+- [ ] S4348_java.json
+- [ ] S4349_java.html
+- [ ] S4349_java.json
+- [ ] S4351_java.html
+- [ ] S4351_java.json
+- [ ] S4423_java.html
+- [ ] S4423_java.json
+- [ ] S4424_java.html
+- [ ] S4424_java.json
+- [ ] S4425_java.html
+- [ ] S4425_java.json
+- [ ] S4426_java.html
+- [ ] S4426_java.json
+- [ ] S4432_java.html
+- [ ] S4432_java.json
+- [ ] S4433_java.html
+- [ ] S4433_java.json
+- [ ] S4434_java.html
+- [ ] S4434_java.json
+- [ ] S4435_java.html
+- [ ] S4435_java.json
+- [ ] S4449_java.html
+- [ ] S4449_java.json
+- [ ] S4454_java.html
+- [ ] S4454_java.json
+- [ ] S4488_java.html
+- [ ] S4488_java.json
+- [ ] S4499_java.html
+- [ ] S4499_java.json
+- [ ] S4502_java.html
+- [ ] S4502_java.json
+- [ ] S4507_java.html
+- [ ] S4507_java.json
+- [ ] S4508_java.html
+- [ ] S4508_java.json
+- [ ] S4510_java.html
+- [ ] S4510_java.json
+- [ ] S4512_java.html
+- [ ] S4512_java.json
+- [ ] S4517_java.html
+- [ ] S4517_java.json
+- [ ] S4524_java.html
+- [ ] S4524_java.json
+- [ ] S4530_java.html
+- [ ] S4530_java.json
+- [ ] S4531_java.html
+- [ ] S4531_java.json
+- [ ] S4544_java.html
+- [ ] S4544_java.json
+- [ ] S4551_java.html
+- [ ] S4551_java.json
+- [ ] S4601_java.html
+- [ ] S4601_java.json
+- [ ] S4602_java.html
+- [ ] S4602_java.json
+- [ ] S4603_java.html
+- [ ] S4603_java.json
+- [ ] S4604_java.html
+- [ ] S4604_java.json
+- [ ] S4605_java.html
+- [ ] S4605_java.json
+- [ ] S4635_java.html
+- [ ] S4635_java.json
+- [ ] S4682_java.html
+- [ ] S4682_java.json
+- [ ] S4684_java.html
+- [ ] S4684_java.json
+- [ ] S4719_java.html
+- [ ] S4719_java.json
+- [ ] S4738_java.html
+- [ ] S4738_java.json
+- [ ] S4784_java.html
+- [ ] S4784_java.json
+- [ ] S4787_java.html
+- [ ] S4787_java.json
+- [ ] S4790_java.html
+- [ ] S4790_java.json
+- [ ] S4792_java.html
+- [ ] S4792_java.json
+- [ ] S4818_java.html
+- [ ] S4818_java.json
+- [ ] S4823_java.html
+- [ ] S4823_java.json
+- [ ] S4829_java.html
+- [ ] S4829_java.json
+- [ ] S4834_java.html
+- [ ] S4834_java.json
+- [ ] S4838_java.html
+- [ ] S4838_java.json
+- [ ] S4925_java.html
+- [ ] S4925_java.json
+- [ ] S4926_java.html
+- [ ] S4926_java.json
+- [ ] S4929_java.html
+- [ ] S4929_java.json
+- [ ] S4973_java.html
+- [ ] S4973_java.json
+- [ ] S5042_java.html
+- [ ] S5042_java.json
+- [ ] S5122_java.html
+- [ ] S5122_java.json
+- [ ] S5128_java.html
+- [ ] S5128_java.json
+- [ ] S5164_java.html
+- [ ] S5164_java.json
+- [ ] S5194_java.html
+- [ ] S5194_java.json
+- [ ] S5261_java.html
+- [ ] S5261_java.json
+- [ ] S5300_java.html
+- [ ] S5300_java.json
+- [ ] S5304_java.html
+- [ ] S5304_java.json
+- [ ] S5320_java.html
+- [ ] S5320_java.json
+- [ ] S5322_java.html
+- [ ] S5322_java.json
+- [ ] S5324_java.html
+- [ ] S5324_java.json
+- [ ] S5326_java.html
+- [ ] S5326_java.json
+- [ ] S5344_java.html
+- [ ] S5344_java.json
+- [ ] S5361_java.html
+- [ ] S5361_java.json
+- [ ] S5411_java.html
+- [ ] S5411_java.json
+- [ ] S5413_java.html
+- [ ] S5413_java.json
 - [ ] S818_java.html
 - [ ] S818_java.json
 - [ ] S864_java.html
@@ -831,5 +1128,4 @@ sonar-check.jar 内に部分書き込みを行う方法については、
 - [ ] S899_java.json
 - [ ] S923_java.html
 - [ ] S923_java.json
-- [ ] Sonar_security_way_profile.json
 - [ ] Sonar_way_profile.json
